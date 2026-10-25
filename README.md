@@ -1,80 +1,55 @@
 # Mua hàng tự động
 
-## Cài làm tiện ích Chrome / Cốc Cốc (khuyến nghị)
+Hỗ trợ quy trình mua hàng: nhập tên, model hoặc ảnh sản phẩm, app tự tìm hiểu trên **Google**, hỏi lại bạn các câu hỏi dựng từ dữ liệu vừa đọc, so sánh giá nhà cung cấp (NCC), đề xuất NCC, tìm hiểu giá, ưu nhược điểm, công nghệ, phân loại, lưu ý khi mua, tóm tắt bài viết bạn đưa vào, rồi xuất Excel.
 
-Cách này không cần Python hay Flask. App chạy ngay trong trình duyệt của bạn nên: tìm được bằng **Cốc Cốc** và **DuckDuckGo** không cần khóa, đọc được cả trang cần JavaScript (Shopee, TikTok Shop), không bị chặn CORS, và crawl ảnh về album.
+## Cài đặt (tiện ích Chrome / Cốc Cốc / Brave / Edge)
 
-Dùng được trên **Google Chrome** (từ bản 110), **Cốc Cốc**, **Brave**, Microsoft Edge, Opera, Vivaldi (cùng nền Chromium, cùng một mã, cài bằng cùng cách; Brave vào `brave://extensions`). **Safari** không cài thẳng được: trên macOS cần chuyển bằng Xcode (`xcrun safari-web-extension-converter docs/`) rồi bật trong Safari, tôi chưa thử vì đang dùng Windows. Safari cũng không phải là một engine tìm kiếm riêng (nó dùng Google, Bing, DuckDuckGo...), nên các engine ở trên vẫn là nguồn dữ liệu. Engine "Cốc Cốc" vẫn dùng được khi bạn cài tiện ích trên Chrome: tiện ích chỉ mở trang `coccoc.com` trong một tab nền, không cần cài trình duyệt Cốc Cốc.
+App chạy trong trình duyệt của bạn dưới dạng tiện ích, vì cần mở google.com và đọc các website khác mà trang web thường không được phép (CORS). Cài bằng cùng một cách trên mọi trình duyệt Chromium:
 
-**Engine tìm kiếm** (thứ tự ưu tiên, ba engine đầu tick sẵn): Google qua trình duyệt, Cốc Cốc, DuckDuckGo, rồi Bing và Brave Search qua trình duyệt (không cần khóa), Brave API và Google API nếu bạn nhập khóa. Chọn engine ở tab Tư vấn hoặc Yêu cầu mới, lựa chọn dùng chung.
+1. Mở trang tiện ích: `chrome://extensions` (Chrome), `coccoc://extensions` (Cốc Cốc), `brave://extensions` (Brave), `edge://extensions` (Edge).
+2. Bật **Chế độ nhà phát triển** (Developer mode).
+3. Bấm **Tải tiện ích đã giải nén** (Load unpacked), chọn thư mục `docs` của dự án.
+4. Bấm biểu tượng **Mua hàng tự động** để mở app. Sau khi sửa mã hoặc cập nhật, **bấm nút tải lại** ở tiện ích (nếu không, tiện ích chạy bản cũ và app báo banner đỏ).
+5. Vào **Cài đặt**, bấm **Thử Google** để kiểm tra.
 
-**"10 trang" là 10 trang kết quả của engine** (trang 1, 2, 3... như thanh phân trang cuối kết quả), không phải 10 link. Mỗi engine được crawl từ trang 1 đến trang bạn chọn (tối đa 10, có ô chọn 1/2/3/5/10); engine hết kết quả sớm thì dừng ở trang cuối. Mọi kết quả (tiêu đề, mô tả, link) được thu thập; tối đa 30 link tốt nhất (mỗi website một link) được mở ra đọc đầy đủ, các kết quả còn lại vẫn góp tiêu đề và mô tả vào phân tích. Engine API (Google, Brave) chỉ lấy tối đa 3 trang để tiết kiệm hạn mức. Mỗi trang kết quả mở trong một tab nền vài giây nên 10 trang × 3 engine mất vài phút, tiến trình hiện từng bước. Nếu engine hiện trang xác minh (CAPTCHA), app báo lỗi để bạn tự mở engine đó xác minh rồi thử lại, app không vượt qua bước đó.
+Yêu cầu Chrome từ bản 110. Safari không cài thẳng được (cần macOS và Xcode: `xcrun safari-web-extension-converter docs/`), chưa thử.
 
-**Quy trình:**
-1. Nhập yêu cầu (tên/mã, số lượng, mục đích, ảnh).
-2. App crawl các engine, đọc các trang, nhận diện **nhóm ngành** (gia dụng, thiết bị máy móc, sản phẩm tiêu dùng, khác) và rút tên, model, hãng, dung lượng pin, điện áp, công suất, dung tích, chất liệu, bảo hành, mục đích, khoảng giá.
-3. Hiện **5 đến 10 question card** dựng từ chính dữ liệu đó, kèm "thấy ở n/N trang" và danh sách trang đã dùng. Luôn có: mã sản phẩm/model, số lượng, mục đích sử dụng. Các card còn lại (thông số, hãng, ngân sách, bảo hành, chất liệu, VAT, ưu tiên...) được chọn theo mức bằng chứng.
-4. Sau khi bạn xác nhận, app tìm NCC, chấm điểm, điền form, và **tìm hiểu sản phẩm theo ngành hàng**: giá cả, hãng sản xuất, ưu nhược điểm của hãng và sản phẩm, lưu ý khi mua, công nghệ sử dụng, phân loại, ưu nhược điểm từng công nghệ, thay thế và rủi ro, cộng các câu hỏi riêng của ngành (gia dụng: công suất, an toàn, bảo trì; máy móc: thông số, tiêu chuẩn, phụ tùng, chi phí vận hành; tiêu dùng: chất liệu, hàng giả, đổi trả, đối tượng). Câu trả lời là câu trích nguyên văn từ trang web kèm link nguồn, không phải AI viết lại.
+**Điện thoại:** giao diện co giãn theo màn hình (bảng NCC và lịch sử thành thẻ xếp dọc). Nhưng Chrome trên điện thoại không cài được tiện ích nên không mở được Google và đọc trang NCC; trên điện thoại chỉ xem lại lịch sử và kết quả đã có, sửa bảng, xuất file. Muốn tìm kiếm trên điện thoại thì cần trình duyệt điện thoại hỗ trợ tiện ích (như Kiwi Browser hoặc Firefox cho Android, tôi chưa thử).
 
-**Tab Tư vấn** (đứng đầu, mở sẵn): nhập tên sản phẩm và/hoặc ảnh, ngân sách, nhu cầu. App crawl rồi tổng hợp: mặt bằng giá và vị trí ngân sách của bạn, loại/công nghệ nên cân nhắc, hãng, các trang đúng sản phẩm gần ngân sách, lưu ý khi mua, và nút điền sẵn yêu cầu mua. Có thanh tiến trình từng bước (chuẩn bị, đọc ảnh, crawl từng engine, đọc trang, phân tích, tìm hiểu theo ngành, tổng hợp, lưu). Dữ liệu tư vấn tự lưu trong trình duyệt và tải về được thành file `.json`; ở tab **Yêu cầu mới**, nút "Nạp dữ liệu tư vấn (.json)" hoặc "Nạp tư vấn gần nhất" điền sẵn tên, nhu cầu, link gợi ý và dùng dữ liệu đó để dựng question card (kể cả ngân sách), không crawl lại.
+## Luồng dùng
 
-**Điện thoại:** giao diện co giãn theo màn hình (bảng NCC thành thẻ xếp dọc, tab vuốt ngang)
+**Tab Yêu cầu mới**
+1. **Dữ liệu đầu vào:** nhập tên, model, số lượng, mục đích, hoặc chỉ cung cấp ảnh. Nếu chỉ có ảnh, app đọc chữ trong ảnh rồi tự điền tên, model và từ khóa tìm kiếm (cần khóa Anthropic ở Cài đặt, hoặc trình duyệt có bộ đọc chữ sẵn).
+2. **Cấu hình:** số trang Google cần research (1-5, mỗi trang mở hết các link), số ảnh vào album (1-20), thời gian chờ giữa hai lần mở trang (mặc định 3 giây; gửi lệnh xong có phản hồi mới chờ rồi gửi lệnh kế, không dồn dập).
+3. **Tìm hiểu:** tick hoặc bỏ 5 chủ đề (giá trung bình, ưu nhược điểm, công nghệ sử dụng, phân loại, lưu ý khi mua); gõ thêm từ khóa/câu hỏi (app đọc bài ở trang 1-2 của Google để trả lời); nhập link hoặc nhập từ Excel/CSV các bài viết tham khảo (app đọc và tóm tắt).
+4. **Tiến trình:** hiện từng bước và chi tiết "trang Google 2/3, đọc link 4/10". Có nút Dừng; dừng sớm thì tổng hợp phần đã có.
+5. **10 câu hỏi, trong một khối, trả lời xong tự sang câu kế:** 5 câu cố định (tên sản phẩm, model, số lượng, mục đích sử dụng, hãng sản xuất = tên hãng trên sản phẩm, không phải tên website/NCC) và 5 câu dựng từ dữ liệu crawl (thông số, ngân sách, bảo hành, chất liệu, VAT, ưu tiên...). Mỗi lựa chọn kèm "thấy ở n/N trang"; chọn sẵn giá trị khi có từ 2 trang trở lên đồng ý; không có dữ liệu web thì dùng gợi ý chung và ghi rõ.
+6. **Kết quả:**
+   - **Bảng so sánh giá và đề xuất:** Tên NCC, Tên sản phẩm / model, Số lượng, Đơn giá, VAT, Thông tin sản phẩm (thông số kỹ thuật), Liên hệ. Bấm tên sản phẩm mở đúng trang bán sản phẩm đó (không phải trang chủ NCC). Chỉ trang bán một sản phẩm, đúng model, mới vào bảng; giá phải đọc chắc chắn từ dữ liệu của trang (JSON-LD, thẻ giá, hoặc số sau chữ "giá"), nếu không thì để trống và báo "Chưa có giá chính xác". Liên hệ lấy từ trang sản phẩm và trang Liên hệ của NCC. Xuất Excel .xlsx.
+   - Tìm hiểu theo chủ đề đã chọn, trả lời cho câu hỏi bạn gõ thêm, tóm tắt từng bài tham khảo (đề mục, ý chính, số liệu, câu hỏi liên quan theo ngành hàng), đều có link nguồn; album ảnh Google Hình ảnh đặt theo tên + model để so khớp; kịch bản đàm phán, luận điểm thuyết phục sếp, soạn email.
 
-**Ảnh:** crawl từ trang Hình ảnh của các engine bạn đang chọn (Google Hình ảnh trong Chrome/Cốc Cốc, Bing, Brave, DuckDuckGo), mặc định Google; ảnh lưu thu nhỏ trong trình duyệt.
+**Tab Lịch sử tìm kiếm:** bảng STT, Tiêu đề, Số lượng, Từ khóa đã tìm, Các trang đã tìm; bấm một dòng để xem chỉ tiêu chi tiết và mở lại từng lần tìm; xuất Excel.
 
-**Form duyệt báo giá** (bảng trên màn hình và file Excel) có các cột: NCC, Tên sản phẩm, Số lượng, Đơn giá, VAT, Thông tin sản phẩm (pin, điện áp, bảo hành, ghi chú; bấm "Sửa thông tin"), Ngày cập nhật, Liên hệ, Điểm, Trạng thái.. Lưu ý: Chrome trên điện thoại không cài được tiện ích, nên trên điện thoại bạn chỉ dùng được giao diện (xem lại lịch sử, sửa bảng, xuất file) khi mở bản chạy trên máy tính, hoặc bản trang web (GitHub Pages) với các engine có khóa; tính năng crawl bằng trình duyệt cần máy tính.
+**Tab Cài đặt:** thử Google, giá trị mặc định (số trang, số ảnh, thời gian chờ), khóa Anthropic, email sếp, sao lưu và khôi phục.
 
-1. Mở `chrome://extensions` (Chrome) hoặc `coccoc://extensions` (Cốc Cốc) hoặc `edge://extensions` (Edge).
-2. Bật **Chế độ nhà phát triển** (Developer mode) ở góc trên.
-3. Bấm **Tải tiện ích đã giải nén** (Load unpacked), chọn thư mục `docs` của dự án này.
-4. Bấm biểu tượng tiện ích **Mua hàng tự động** trên thanh công cụ để mở giao diện (ghim nó nếu không thấy).
-5. Vào tab **Cài đặt**, bấm **Thử Cốc Cốc** và **Thử DuckDuckGo** để kiểm tra. Khi tìm, tiện ích mở một tab nền như bạn tự tìm rồi tự đóng, mỗi lượt vài giây.
+## Giới hạn cần biết
 
-Quyền tiện ích xin: đọc mọi website (để tải trang NCC và ảnh) và mở/đọc tab nền. Dữ liệu và khóa chỉ lưu trong trình duyệt của bạn. Sau khi sửa mã trong `docs/`, bấm nút tải lại trên trang tiện ích.
+- Google có thể hiện trang xác minh hoặc báo 403 khi truy cập tự động. App báo rõ và **không vượt qua**; hãy tăng thời gian chờ, giảm số trang, hoặc mở google.com xác minh rồi thử lại.
+- Mỗi trang Google mở hết các link nên chạy lâu (vài phút); thời gian chờ càng lớn càng chậm nhưng càng ít bị chặn.
+- Câu trả lời tìm hiểu là câu trích nguyên văn từ bài viết bằng quy tắc từ khóa, không phải AI viết; hãy mở nguồn để kiểm tra. Giá chỉ để tham khảo vì trang có thể có nhiều phiên bản, khuyến mãi.
+- Dữ liệu và khóa chỉ lưu trong trình duyệt; ảnh album lưu thu nhỏ và không nằm trong file sao lưu.
 
-Chạy thử như trang web thường (không có Cốc Cốc, không crawl ảnh): `python tools/serve_docs.py` rồi mở http://localhost:8080.
-
-Bản Python (Flask) bên dưới vẫn còn nhưng không còn là hướng chính.
-
-Hỗ trợ quy trình mua hàng: nhập tên sản phẩm hoặc ảnh, xác nhận bằng question card, so sánh NCC, điền form duyệt báo giá (Excel), gợi ý NCC tốt nhất, soạn kịch bản đàm phán và luận điểm thuyết phục sếp.
-
-Repository có **hai bản**:
-
-| Bản | Thư mục | Chạy ở đâu | Tải trang NCC |
-|---|---|---|---|
-| **Web tĩnh (GitHub Pages)** | `docs/` | Trình duyệt, không cần máy chủ | Trực tiếp nếu website cho phép, hoặc qua proxy của bạn |
-| Bản Python (Flask) | `app.py`, `purchasing/` | Máy của bạn | Server tải trang, không bị chặn CORS |
-
-## Cài đặt qua GitHub Pages (bản web tĩnh)
-
-1. Đẩy mã lên GitHub (nhánh `main`).
-2. Vào repository → **Settings → Pages**.
-3. Mục **Build and deployment**: Source chọn **Deploy from a branch**, Branch chọn **main**, thư mục **/docs**, bấm **Save**.
-4. Đợi 1-2 phút, trang chạy tại `https://TEN_BAN.github.io/TEN_REPO/` (ở repository này: `https://donniehieu.github.io/PurchasingOnline/`).
-5. Mở trang, vào tab **Cài đặt** để nhập khóa và proxy (xem bên dưới).
-
-Lưu ý quan trọng của bản web tĩnh:
-- GitHub Pages chỉ phục vụ file tĩnh, nên mọi xử lý chạy trong trình duyệt. **Dữ liệu và khóa API chỉ lưu trong trình duyệt của bạn** (localStorage), nên hãy dùng nút sao lưu ở tab Cài đặt.
-- Trình duyệt chỉ đọc trực tiếp được website nào cho phép (CORS). Thử thực tế: `vuabaoho.com` đọc được, `kenkovn.com` và `baoholaodongmienbac.com` thì không. NCC không đọc được vẫn hiện trong bảng để bạn mở link và nhập tay.
-- Để đọc được nhiều website hơn và dùng Brave, hãy triển khai Cloudflare Worker miễn phí của bạn từ `tools/cors-worker.js` (hướng dẫn ngay trong tab Cài đặt). Mã Worker chưa được chạy thử trên Cloudflare. Các proxy công cộng miễn phí khi thử đều không dùng được (hết thời gian hoặc đòi khóa).
-- Không gửi được email trực tiếp. Nút "Soạn email" tải file xlsx và mở email nháp để bạn tự đính kèm file.
-- Repository để **Private** thì GitHub Pages cần gói trả phí; repository Public thì ai cũng mở được trang (không có dữ liệu của bạn vì nó nằm trong trình duyệt).
-
-Chạy thử bản web tĩnh trên máy:
+## Kiểm thử
 
 ```bash
-python -m http.server 8080 --directory docs
+node --test tests-js/core.test.mjs tests-js/flow.test.mjs
 ```
 
-Trên Windows nếu trình duyệt báo lỗi MIME của file .js, dùng một máy chủ tĩnh khác (ví dụ `npx serve docs`).
-
-Chạy test lõi JavaScript:
-
-```bash
-node --test tests-js/core.test.mjs
-```
+Chạy thử giao diện như trang web thường (không có Google và crawl): `python tools/serve_docs.py` rồi mở http://localhost:8080.
 
 ---
+
+**Bản Python (Flask) dưới đây không còn được cập nhật, chỉ giữ để tham khảo.**
 
 # Bản Python (Flask)
 

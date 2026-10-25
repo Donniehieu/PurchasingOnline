@@ -170,3 +170,29 @@ body.dark .error-banner { background:#3b1d1d; color:#fecaca; border-color:#7f1d1
 .badge.bad { background:#fee2e2; color:#991b1b; }
 .note.warn, .muted.warn { color:#b45309; }
 .pick .note { font-size:12px; }
+
+/* ---- bản điều chỉnh: wizard, lịch sử dạng bảng, ảnh xem trước ---- */
+.thumbs { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; } .thumbs img { width:72px; height:72px; object-fit:cover; border-radius:10px; border:1px solid var(--line); }
+.wizard { border:1px solid var(--line); border-radius:16px; padding:16px; background:linear-gradient(180deg,var(--card),var(--accent-soft)); }
+.wiz-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; font-weight:700; color:var(--accent); }
+.wiz-bar { flex:1; height:8px; background:var(--accent-soft); border-radius:999px; overflow:hidden; } .wiz-bar i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .3s; }
+.q-card .q-text { font-size:16px; font-weight:600; margin:4px 0; }
+.q-card .opt { display:block; padding:10px 12px; border:1px solid var(--line); border-radius:12px; margin:8px 0; font-weight:500; color:var(--text); cursor:pointer; background:var(--card); }
+.q-card .opt:has(input:checked) { border-color:var(--accent); background:var(--accent-soft); }
+.q-card .custom { display:none; width:100%; margin-top:6px; } .q-card .custom.show { display:block; }
+ol.sum { padding-left:20px; line-height:1.8; } ol.sum a { margin-left:6px; font-size:13px; }
+a.mini { text-decoration:none; font-size:12px; margin-left:4px; }
+.clip { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; max-width:360px; }
+.qa { margin:6px 0; } h5 { margin:10px 0 2px; font-size:13px; color:var(--muted); }
+table.hist { min-width:760px; } table.hist th { position:static; } tr.hrow { cursor:pointer; } tr.hrow:hover td { background:var(--hover); } tr.drow td { background:var(--card); padding:12px 16px; }
+ul.tight { padding-left:16px; margin:0; line-height:1.5; font-size:13px; }
+.hist-wrap { cursor:auto; user-select:text; }
+@media (max-width:760px) {
+  .wizard { padding:12px; }
+  #history table.hist, #history table.hist thead, #history table.hist tbody, #history table.hist tr, #history table.hist td { display:block; min-width:0; width:100%; }
+  #history table.hist thead { display:none; }
+  #history table.hist tr.hrow { border:1px solid var(--line); border-radius:14px; margin-bottom:8px; background:var(--card); }
+  #history table.hist td { border-bottom:1px dashed var(--line); } #history table.hist td::before { content:attr(data-label); display:block; font-size:12px; font-weight:600; color:var(--muted); }
+  #history table.hist tr.drow td { border:0; }
+  .clip { max-width:none; }
+}

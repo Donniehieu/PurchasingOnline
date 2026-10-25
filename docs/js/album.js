@@ -1,6 +1,6 @@
 // Album ảnh của từng yêu cầu: lưu trong IndexedDB của trình duyệt (ảnh thu nhỏ), kèm nguồn và độ giống ảnh gốc.
 // Crawl ảnh cần chạy dạng tiện ích (tải ảnh từ website khác không bị chặn CORS).
-import { browserImages, duckduckgoImages, isExt } from "./net.js";
+import { googleImages, isExt, sleep } from "./net.js";
 
 const DB_NAME = "po_album", STORE = "photos", THUMB_MAX = 640, MIN_SIDE = 150, MAX_BYTES = 6 * 1024 * 1024;
 
@@ -72,7 +72,7 @@ export async function addUploads(jobId, files) {
   return added;
 }
 
-/* ---------------- crawl từ web ---------------- */
+/* ---------------- crawl từ Google Hình ảnh ---------------- */
 async function fetchImage(url, referrer) {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(12000), referrer: referrer || undefined });
@@ -91,48 +91,38 @@ async function downloadImage(item) {
   }
   return null;
 }
-// Engine người dùng đã chọn -> nguồn ảnh. Cốc Cốc dẫn sang Google Hình ảnh nên dùng chung nguồn Google.
-const IMAGE_SOURCES = { googleweb: "google", coccoc: "google", bing: "bing", bravesearch: "brave", duckduckgo: "ddg" };
-export const imageSourcesFor = (engines) => [...new Set((engines || []).map((e) => IMAGE_SOURCES[e]).filter(Boolean))];
-const SOURCE_LABEL = { google: "Google Hình ảnh", bing: "Bing Hình ảnh", brave: "Brave Hình ảnh", ddg: "DuckDuckGo" };
 
-async function findImages(sources, query, onSource) {
-  const per = {};
-  await Promise.all(sources.map(async (src) => {
-    try { per[src] = src === "ddg" ? await duckduckgoImages(query) : await browserImages(src, query); onSource && onSource(src, per[src].length, ""); }
-    catch (e) { per[src] = []; onSource && onSource(src, 0, e.message); }
-  }));
-  const merged = [], seen = new Set(), lists = sources.map((s) => (per[s] || []).map((i) => ({ ...i, engine: SOURCE_LABEL[s] })));
-  for (let i = 0; i < Math.max(0, ...lists.map((l) => l.length)); i++) for (const l of lists) {
-    const it = l[i]; if (it && it.image_url && !seen.has(it.image_url)) { seen.add(it.image_url); merged.push(it); }
-  }
-  return merged;
-}
-
-/** Tìm và tải ảnh theo từ khóa vào album, lấy từ trang Hình ảnh của các engine đang dùng (mặc định Google trong trình duyệt).
- *  Trả về { added, tried, error }. onSource(src, count, error) báo tiến trình từng nguồn. */
-export async function crawlAlbum(jobId, query, limit = 12, engines = [], onSource = null) {
+/**
+ * Tìm ảnh theo "tên + mã/model" trên Google Hình ảnh và lấy `limit` ảnh đầu tiên (1-20) vào album của yêu cầu.
+ * Ảnh trùng nội dung bị bỏ; có ảnh do bạn up thì tính độ giống để so khớp. Tải lần lượt, nghỉ `gapMs` giữa các ảnh.
+ * Trả về { added, tried, error }.
+ */
+export async function crawlAlbum(jobId, query, limit = 3, gapMs = 400) {
   if (!isExt) return { added: [], tried: 0, error: "Crawl ảnh chỉ chạy khi cài làm tiện ích trình duyệt" };
-  const sources = imageSourcesFor(engines); if (!sources.length) sources.push("google");
-  let candidates = await findImages(sources, query, onSource);
-  if (!candidates.length) return { added: [], tried: 0, error: "Không lấy được ảnh nào (trang ảnh có thể đang yêu cầu xác minh hoặc đổi cấu trúc)" };
+  limit = Math.min(20, Math.max(1, Math.round(limit) || 3));
+  let candidates;
+  try { candidates = await googleImages(query); } catch (e) { return { added: [], tried: 0, error: e.message }; }
+  if (!candidates.length) return { added: [], tried: 0, error: "Google Hình ảnh không trả ảnh nào (có thể đang yêu cầu xác minh hoặc đổi cấu trúc)" };
   const have = await listPhotos(jobId), knownDigests = new Set(have.map((p) => p.digest)), knownUrls = new Set(have.map((p) => p.image_url));
   const refs = have.filter((p) => p.source === "upload").map((p) => p.hash);
-  candidates = candidates.filter((c) => !knownUrls.has(c.image_url)).slice(0, limit * 3);
+  const seenUrls = new Set(); candidates = candidates.filter((c) => c.image_url && !knownUrls.has(c.image_url) && !seenUrls.has(c.image_url) && seenUrls.add(c.image_url));
 
-  const added = [];
-  let next = 0;
-  await Promise.all(Array.from({ length: 6 }, async () => {
-    while (next < candidates.length && added.length < limit) {
-      const item = candidates[next++], info = await downloadImage(item);
-      if (!info) continue;
+  const added = []; let tried = 0;
+  for (const item of candidates) {
+    if (added.length >= limit || tried >= limit * 6) break;
+    tried++;
+    const info = await downloadImage(item);
+    if (info) {
       const { bitmap, digest, hash } = info;
-      if (Math.min(bitmap.width, bitmap.height) < MIN_SIDE || knownDigests.has(digest) || added.length >= limit) { bitmap.close(); continue; }
-      knownDigests.add(digest);
-      const photo = { id: uid(), jobId, source: "web", title: (item.title || "").slice(0, 160), page_url: item.page_url, image_url: item.image_url, engine: item.engine, query,
-        width: bitmap.width, height: bitmap.height, digest, hash, match: refs.length ? Math.max(...refs.map((r) => similarity(hash, r))) : null, blob: await thumbnail(bitmap), time: Date.now() };
-      bitmap.close(); await putPhoto(photo); added.push(photo);
+      if (Math.min(bitmap.width, bitmap.height) < MIN_SIDE || knownDigests.has(digest)) bitmap.close();
+      else {
+        knownDigests.add(digest);
+        const photo = { id: uid(), jobId, source: "web", title: (item.title || "").slice(0, 160), page_url: item.page_url, image_url: item.image_url, engine: "Google Hình ảnh", query,
+          width: bitmap.width, height: bitmap.height, digest, hash, match: refs.length ? Math.max(...refs.map((r) => similarity(hash, r))) : null, blob: await thumbnail(bitmap), time: Date.now() };
+        bitmap.close(); await putPhoto(photo); added.push(photo);
+      }
     }
-  }));
-  return { added, tried: candidates.length, error: "" };
+    await sleep(gapMs);
+  }
+  return { added, tried, error: "" };
 }

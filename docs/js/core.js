@@ -165,6 +165,50 @@ export function extractPrice(html, text, tags = null, pseudo = false) {
   return { value: best, source: "text" };
 }
 
+/* ------------------------------------------------------------------ nhận diện trang sản phẩm, hãng, model từ dữ liệu của trang */
+/** Các sản phẩm khai báo trong JSON-LD của trang: { name, brand, model }. */
+export function jsonLdProducts(html) {
+  const out = [];
+  const isProduct = (t) => [].concat(t || []).some((x) => /^(Product|ProductGroup|IndividualProduct)$/i.test(String(x)));
+  const str = (v) => (typeof v === "string" ? v.trim() : v && typeof v === "object" && typeof v.name === "string" ? v.name.trim() : "");
+  const walk = (n) => {
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (!n || typeof n !== "object") return;
+    if (isProduct(n["@type"])) out.push({ name: str(n.name), brand: str(n.brand), model: str(n.model) || str(n.mpn) || str(n.sku) });
+    for (const v of Object.values(n)) if (v && typeof v === "object") walk(v);
+  };
+  for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) { try { walk(JSON.parse(m[1].trim())); } catch { /* bỏ qua khối lỗi */ } }
+  return out;
+}
+/** Tên cửa hàng/website (không phải tên hãng sản phẩm): og:site_name, nếu không có thì tên miền. */
+export function siteNameOf(html, url, tags = null) {
+  const t = tags || metaTags(html);
+  const og = metaContent(t, "og:site_name", "application-name");
+  if (og) return og.slice(0, 60);
+  const title = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).replace(/\s+/g, " ").trim(), tail = title.split(/\s[|\-–—]\s/).pop().trim();
+  if (title.includes(tail) && tail !== title && tail.length >= 2 && tail.length <= 30) return tail; // "... | FPT Shop" -> "FPT Shop"
+  const d = domainOf(url).split(".")[0] || domainOf(url);
+  return d ? d.charAt(0).toUpperCase() + d.slice(1) : "NCC";
+}
+/** Từ khóa thuộc tên website/cửa hàng (để không nhầm tên website, NCC là hãng sản xuất). */
+export function siteTokensOf(html, url) {
+  const set = new Set();
+  const add = (s) => String(s).split(/[^\p{L}0-9]+/u).filter((w) => w.length >= 3).forEach((w) => set.add(stripAccents(w).toUpperCase()));
+  const label = domainOf(url).split(".").slice(0, -1).join("").replace(/[^a-z0-9]/gi, "").toUpperCase();
+  add(domainOf(url).split(".").slice(0, -1).join(" ")); add(siteNameOf(html, url));
+  for (let n = 3; n < label.length; n++) set.add(label.slice(0, n)); // "FPT", "FPTS"... là tiền tố của tên miền fptshop
+  const parts = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).split(/\s[|\-–—]\s/);
+  if (parts.length > 1) { const tail = parts[parts.length - 1].trim(); add(tail); if (tail.length >= 2 && tail.length <= 4) set.add(stripAccents(tail).toUpperCase()); } // đoạn cuối tiêu đề thường là tên cửa hàng (kể cả tên ngắn như "HC")
+  return set;
+}
+/** Trang có phải trang bán MỘT sản phẩm (không phải trang danh mục, bài viết) không. */
+export function isProductPage(html, text, tags, price) {
+  if (jsonLdProducts(html).length) return true;
+  if (/^(og:)?product$/i.test(metaContent(tags || metaTags(html), "og:type"))) return true;
+  if (metaContent(tags || metaTags(html), "product:price:amount", "og:price:amount")) return true;
+  return !!(price && price.source === "label" && /thêm vào giỏ|mua ngay|add to cart|đặt hàng ngay|chọn mua/i.test(text));
+}
+
 /** Đọc HTML một trang NCC. Trả về null nếu không đúng sản phẩm. */
 export function parsePage(html, url, tokens, productCode = "") {
   const tags = metaTags(html);
@@ -172,7 +216,8 @@ export function parsePage(html, url, tokens, productCode = "") {
   const text = htmlToText(html);
   const norm = stripAccents(text);
   let relevance = phraseRelevance(tokens, norm);
-  if (productCode) relevance = Math.min(relevance, new RegExp(`\\b${stripAccents(productCode).trim()}\\b`).test(norm) ? 1 : 0.5);
+  const modelOk = !productCode || new RegExp(`\\b${stripAccents(productCode).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(norm);
+  if (productCode) relevance = Math.min(relevance, modelOk ? 1 : 0.5);
   if (relevance === 0) return null;
 
   const found = extractPrice(html, text, tags);
@@ -184,10 +229,12 @@ export function parsePage(html, url, tokens, productCode = "") {
   if (/hóa\s*đơn\s*(vat|gtgt)|xuất\s*hóa\s*đơn|có\s*hóa\s*đơn/i.test(text)) vat = true;
   const domain = domainOf(url);
   return {
-    name: domain, title: (title || domain).slice(0, 120), product_name: cleanTitle(title || domain), url, description: metaContent(tags, "og:description", "description").slice(0, 240),
+    name: siteNameOf(html, url, tags), site_url: (() => { try { return new URL(url).origin; } catch { return ""; } })(), model_ok: modelOk, is_product: isProductPage(html, text, tags, found),
+    title: (title || domain).slice(0, 120), product_name: cleanTitle(title || domain), url, description: metaContent(tags, "og:description", "description").slice(0, 240),
     date: pageDate(html, tags, text), price: found.value, price_source: found.source, vat,
     vat_included: /đã\s*(bao\s*gồm\s*|gồm\s*)?vat/i.test(text), mah: mah[0] ?? null, volt: volt ? +volt[1] : null,
     warranty_months: war ? +war[1] * (war[2].toLowerCase() === "năm" ? 12 : 1) : null,
+    specs: SPEC_DEFS.map((d) => { const m = new RegExp(d.re.source, d.re.flags).exec(text); return m ? `${d.label}: ${numStr(m[1])} ${d.unit}` : null; }).filter(Boolean).slice(0, 4),
     relevance: Math.round(relevance * 100) / 100, contacts: extractContacts(html, url, text), note: "",
   };
 }
@@ -228,7 +275,7 @@ export function scoreSuppliers(items, requireVat = true, budget = null) {
       WEIGHTS.vat * vatScore + WEIGHTS.relevance * (item.relevance ?? 1)) * 1000) / 1000;
     return row;
   });
-  const eligible = scored.filter((r) => r.eligible);
+  const eligible = scored.filter((r) => r.eligible && r.price); // chỉ đề xuất NCC có giá đọc chắc chắn từ trang
   if (eligible.length) { const b = eligible.reduce((a, c) => (c.score > a.score ? c : a)); b.recommended = true; b.reason = "Khuyến nghị: điểm cao nhất"; }
   scored.forEach((r) => { r.recommended = !!r.recommended; });
   return scored.sort((a, b) => (a.eligible === b.eligible ? (b.score || 0) - (a.score || 0) : a.eligible ? -1 : 1));
@@ -238,6 +285,7 @@ export function supplierInfo(s) {
   const p = [];
   if (s.mah) p.push(`Pin ${Number(s.mah).toLocaleString("vi-VN")} mAh`);
   if (s.volt) p.push(`${s.volt}V`);
+  for (const x of s.specs || []) p.push(x); // thông số kỹ thuật đọc từ trang: công suất, dung tích...
   p.push(s.warranty_months ? `Bảo hành ${s.warranty_months} tháng` : "Bảo hành chưa rõ");
   return p.join(" · ");
 }
@@ -399,11 +447,12 @@ export function titleModels(title) {
 }
 const cleanTitle = (t) => String(t).split(/\s[|\-–—]\s/)[0].replace(/\s+/g, " ").trim().slice(0, 80);
 /** Hãng nhắc trong tiêu đề (từ IN HOA như YAMAKO) và trong câu "thương hiệu X", "hãng X". */
-export function brandsIn(title, text, queryTokens = []) {
-  const skip = new Set(queryTokens.map((t) => t.toUpperCase()));
+export function brandsIn(title, text, queryTokens = [], siteTokens = new Set()) {
+  const skip = new Set([...queryTokens.map((t) => t.toUpperCase()), ...siteTokens]); // bỏ từ khóa tìm kiếm và tên website/cửa hàng
   const found = new Set();
-  for (const m of String(title).matchAll(/\b\p{Lu}{3,12}\b/gu)) { const k = stripAccents(m[0]).toUpperCase(); if (!BRAND_STOP.has(k) && !skip.has(k) && !/\d/.test(m[0])) found.add(m[0]); }
-  for (const m of String(text).slice(0, 30000).matchAll(/(?:thương hiệu|hãng|nhãn hiệu|nhà sản xuất)\s*[:\-]?\s*(\p{Lu}[\p{L}0-9&-]{1,18})/gu)) { const k = stripAccents(m[1]).toUpperCase(); if (!BRAND_STOP.has(k) && !skip.has(k)) found.add(m[1]); }
+  // Token IN HOA đứng ngay trước chữ số hoặc "-số" là một phần của model (VCE-9304), không phải hãng.
+  for (const m of String(title).matchAll(/\b\p{Lu}{3,12}\b(?![-\s]?\d)/gu)) { const k = stripAccents(m[0]).toUpperCase(); if (!BRAND_STOP.has(k) && !skip.has(k) && !/\d/.test(m[0])) found.add(m[0]); }
+  for (const m of String(text).slice(0, 30000).matchAll(/(?:thương hiệu|hãng|nhãn hiệu|nhà sản xuất)\s*:?\s+(\p{Lu}[\p{L}0-9&-]{1,18})/gu)) { const k = stripAccents(m[1]).toUpperCase(); if (!BRAND_STOP.has(k) && !skip.has(k)) found.add(m[1]); }
   return [...found];
 }
 const medianOf = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
@@ -421,7 +470,7 @@ export function buildDiscovery(pages, queryTokens, subject = "") {
     const rel = phraseRelevance(queryTokens, stripAccents(text));
     if (rel < 0.5) continue;
     const title = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(p.html) || [, ""])[1]).replace(/\s+/g, " ").trim();
-    used.push({ url: p.url, domain: domainOf(p.url), title, text, rel, html: p.html, pseudo: !!p.pseudo });
+    used.push({ url: p.url, domain: domainOf(p.url), title, text, rel, html: p.html, pseudo: !!p.pseudo, site: siteTokensOf(p.html, p.url), ld: p.pseudo ? [] : jsonLdProducts(p.html) });
   }
   const tally = (extract, keyFn = (v) => normKey(String(v))) => {
     const map = new Map();
@@ -436,8 +485,9 @@ export function buildDiscovery(pages, queryTokens, subject = "") {
   };
   const mah = tally((u) => [...u.text.matchAll(MAH_RE)].map((m) => toInt(m[1])).filter((v) => v >= 1000 && v <= 100000));
   const volt = tally((u) => [...u.text.matchAll(/\b(\d{1,2})\s*V(?:DC)?\b/g)].map((m) => +m[1]).filter((v) => v >= 3 && v <= 48));
-  const models = tally((u) => titleModels(u.title));
-  const brands = tally((u) => brandsIn(u.title, u.text, queryTokens), (v) => stripAccents(v));
+  // Model và hãng: ưu tiên dữ liệu sản phẩm khai báo trong trang (JSON-LD), sau đó mới đoán từ tiêu đề; luôn bỏ tên website/NCC.
+  const models = tally((u) => [...u.ld.map((p) => p.model).filter((m) => m && m.length <= 24 && /\d/.test(m)), ...titleModels(u.title)]);
+  const brands = tally((u) => [...u.ld.map((p) => p.brand).filter((b) => b && !u.site.has(stripAccents(b).toUpperCase())), ...brandsIn(u.title, u.text, queryTokens, u.site)], (v) => stripAccents(v));
   const purposes = tally((u) => [...u.text.slice(0, 20000).matchAll(PURPOSE_RE)].map((m) => m[1].trim()));
   const warranty = tally((u) => { const m = /bảo\s*hành[^.\n]{0,25}?(\d{1,2})\s*(tháng|năm)/i.exec(u.text); return m ? [+m[1] * (m[2].toLowerCase() === "năm" ? 12 : 1)] : []; });
   const specs = SPEC_DEFS.map((d) => ({ id: d.id, label: d.label, unit: d.unit, values: tally((u) => [...u.text.matchAll(d.re)].map((m) => numStr(m[1])).filter((v) => +v > 0), (v) => v).slice(0, 4) })).filter((s) => s.values.length && s.values[0].count >= 2);
@@ -488,6 +538,7 @@ export function buildCards(req, suggestedName = null, ocrText = "", discovery = 
   const webModels = web(d ? d.models : []);
   const models = [...(code ? [{ value: code, label: `Đúng: ${code}` }] : []), ...webModels, none("Không rõ, để app tự tìm"), custom];
   const webPurposes = web(d ? d.purposes : []);
+  const webBrands = web(d ? d.brands.filter((b) => b.count >= 2 || d.total <= 2) : []);
   const purposeOpts = webPurposes.length ? webPurposes : ["Dùng cho công việc, sản xuất", "Dùng trong gia đình, văn phòng", "Làm quà tặng, kinh doanh lại"].map((p) => ({ value: p, label: p }));
   const qty = [{ value: String(quantity), label: `${quantity} cái` }, ...[1, 10, 50, 100, 150].map((q) => ({ value: String(q), label: `${q} cái` })), custom];
 
@@ -496,6 +547,8 @@ export function buildCards(req, suggestedName = null, ocrText = "", discovery = 
     { id: "model", title: "Mã sản phẩm / model", question: "Sản phẩm có mã hoặc model cụ thể không?", options: uniq(models), default: code || "", evidence: evidence(webModels), required: true },
     { id: "quantity", title: "Số lượng", question: "Bạn cần mua bao nhiêu cái?", options: uniq(qty), default: String(quantity), evidence: "", required: true },
     { id: "purpose", title: "Mục đích sử dụng", question: "Sản phẩm dùng cho mục đích gì?", options: uniq([...(purpose ? [{ value: purpose, label: `Đúng: ${purpose}` }] : []), ...purposeOpts, none("Chưa xác định"), custom]), default: purpose || "", evidence: evidence(webPurposes), required: true },
+    // Hãng sản xuất = tên hãng ghi trên sản phẩm (từ dữ liệu sản phẩm hoặc tiêu đề), không phải tên website hay NCC.
+    { id: "brand", kind: "brand", title: "Hãng sản xuất", question: "Sản phẩm của hãng nào? (tên hãng trên sản phẩm, không phải tên cửa hàng)", options: uniq([...(req.brand ? [{ value: req.brand, label: `Đúng: ${req.brand}` }] : []), ...webBrands, none("Không rõ / không ưu tiên hãng"), custom]), default: req.brand || (webBrands[0] && webBrands[0].count >= 2 ? webBrands[0].value : ""), evidence: evidence(webBrands), required: true },
   ];
 
   // Card bổ sung: mỗi ứng viên có điểm = độ nhiều bằng chứng; lấy tối đa (MAX_CARDS - 4) card điểm cao nhất.
@@ -514,22 +567,22 @@ export function buildCards(req, suggestedName = null, ocrText = "", discovery = 
   if (d) {
     for (const s of d.specs) specCard(`spec_${s.id}`, "spec", s.label, `${s.label} cần là bao nhiêu (${s.unit})?`, s.values, (v) => `${v} ${s.unit}`, s.values[0].count >= 2 ? s.values[0].value : "", { spec: { id: s.id, label: s.label, unit: s.unit } });
     if (d.materials.length >= 1) extras.push({ score: d.materials[0].count * 8, card: { id: "material", kind: "material", title: "Chất liệu", question: "Bạn muốn chất liệu nào?", options: uniq([...web(d.materials), none("Không quan trọng"), custom]), default: "", evidence: evidence(d.materials) } });
-    if (d.brands.length >= 1 && d.brands[0].count >= 2) extras.push({ score: d.brands[0].count * 9, card: { id: "brand", kind: "brand", title: "Hãng / thương hiệu", question: "Có hãng nào bạn muốn ưu tiên không?", options: uniq([...web(d.brands.filter((b) => b.count >= 2)), none("Không ưu tiên hãng"), custom]), default: "", evidence: evidence(d.brands) } });
-    const preBudget = req.advice_budget ? Math.round(+req.advice_budget) : null;
-    if ((d.price && d.price.count >= 3) || preBudget) {
+    if (d.price && d.price.count >= 3) {
       let levels = [];
       if (d.price && d.price.count >= 3) {
         const sp = d.price.sorted, at = (q) => sp[Math.min(sp.length - 1, Math.floor(q * (sp.length - 1)))];
         levels = [[at(0.25), "rẻ"], [at(0.5), "trung bình"], [at(0.75), "cao"], [sp[sp.length - 1], "cao nhất"]].map(([v, t]) => ({ value: String(Math.round(v)), label: `Tối đa ${vnd(v)} (mức ${t} trên web)` }));
       }
-      if (preBudget) levels.unshift({ value: String(preBudget), label: `Tối đa ${vnd(preBudget)} (ngân sách bạn đã nhập ở tab Tư vấn)` });
-      extras.push({ score: preBudget ? 90 : 40, card: { id: "budget", kind: "budget", title: "Ngân sách mỗi sản phẩm", question: d.price ? `Giá trên web từ ${vnd(d.price.min)} đến ${vnd(d.price.max)}. Bạn chấp nhận tối đa bao nhiêu mỗi cái?` : "Bạn chấp nhận tối đa bao nhiêu mỗi cái?", options: uniq([...levels, none("Không giới hạn"), custom]), default: preBudget ? String(preBudget) : "", evidence: d.price ? `Dựa trên ${d.price.count} mức giá đọc từ ${total} nguồn web.` : "" } });
+      extras.push({ score: 40, card: { id: "budget", kind: "budget", title: "Ngân sách mỗi sản phẩm", question: d.price ? `Giá trên web từ ${vnd(d.price.min)} đến ${vnd(d.price.max)}. Bạn chấp nhận tối đa bao nhiêu mỗi cái?` : "Bạn chấp nhận tối đa bao nhiêu mỗi cái?", options: uniq([...levels, none("Không giới hạn"), custom]), default: "", evidence: d.price ? `Dựa trên ${d.price.count} mức giá đọc từ ${total} nguồn web.` : "" } });
     }
     if (d.warranty.length) extras.push({ score: d.warranty[0].count * 7, card: { id: "warranty", kind: "warranty", title: "Bảo hành tối thiểu", question: "Bạn cần bảo hành tối thiểu bao lâu?", options: uniq([...web(d.warranty, (v) => `Từ ${v} tháng`), none("Không yêu cầu"), custom]), default: "", evidence: evidence(d.warranty) } });
   }
   if (ocrText) extras.push({ score: 100, card: { id: "ocr", kind: "ocr", title: "Chữ đọc được trong ảnh", question: `Thêm chữ này vào từ khóa tìm kiếm? "${ocrText.slice(0, 120)}"`, options: [{ value: "use", label: "Có, thêm vào từ khóa" }, { value: "skip", label: "Không, bỏ qua" }], default: "use", evidence: "" } });
   extras.push({ score: 20, card: { id: "vat", kind: "vat", title: "Hóa đơn VAT", question: "Có bắt buộc nhà cung cấp xuất hóa đơn VAT không?", options: [{ value: "yes", label: "Bắt buộc có VAT (loại NCC không xuất hóa đơn)" }, { value: "no", label: "Không bắt buộc" }], default: "yes", evidence: "Hóa đơn VAT thường là điều kiện để duyệt chi." } });
   extras.push({ score: 15, card: { id: "priority", kind: "priority", title: "Ưu tiên khi chọn NCC", question: "Bạn ưu tiên điều gì nhất khi chọn nhà cung cấp?", options: [{ value: "balanced", label: "Cân bằng giá, bảo hành, VAT" }, { value: "price", label: "Giá rẻ nhất" }, { value: "warranty", label: "Bảo hành tốt nhất" }, { value: "trust", label: "Chính hãng, uy tín" }], default: "balanced", evidence: "" } });
+  // Luôn đủ ít nhất 4 card bổ sung dù web không cho dữ liệu: bổ sung card chung (ghi rõ là gợi ý chung).
+  if (!extras.some((e) => e.card.id === "warranty")) extras.push({ score: 12, card: { id: "warranty", kind: "warranty", title: "Bảo hành tối thiểu", question: "Bạn cần bảo hành tối thiểu bao lâu?", options: [...[6, 12, 24, 36].map((m) => ({ value: String(m), label: `Từ ${m} tháng` })), none("Không yêu cầu"), custom], default: "", evidence: "Các trang đã đọc không nêu rõ bảo hành, đây là gợi ý chung." } });
+  if (!extras.some((e) => e.card.id === "budget")) extras.push({ score: 10, card: { id: "budget", kind: "budget", title: "Ngân sách mỗi sản phẩm", question: "Bạn chấp nhận tối đa bao nhiêu đồng mỗi cái?", options: [none("Không giới hạn"), custom], default: "", evidence: "Chưa đủ giá trên web để gợi ý mức ngân sách." } });
   const picked = extras.sort((a, b) => b.score - a.score).slice(0, MAX_CARDS - required.length).map((e) => e.card);
   return [...required, ...picked];
 }
@@ -614,7 +667,7 @@ export function parseField(field, value) {
 export function groupHistory(jobs) {
   const groups = new Map();
   for (const job of jobs) {
-    if (!["done", "error", "running", "queued"].includes(job.status) || !job.query) continue;
+    if (!["done", "error", "stopped", "running", "queued", "awaiting_confirmation"].includes(job.status) || !job.query) continue;
     const k = normKey(job.query); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(job);
   }
   const result = [];
@@ -622,7 +675,7 @@ export function groupHistory(jobs) {
     items.sort((a, b) => (a.created || "").localeCompare(b.created || ""));
     const keywords = [], engines = new Set(), sites = new Map(), sup = new Map(), rec = new Map(), prices = [], jobMeans = [];
     for (const j of items) {
-      for (const w of [j.keywords, ...Object.values(j.research || {}).map((r) => r.query)]) if (w && !keywords.includes(w)) keywords.push(w);
+      for (const w of [j.search_text, j.keywords, ...(j.queries || ((j.cfg && j.cfg.extra_q) || [])), ...(j.queries ? [] : Object.values(j.research || {}).map((r) => r.query))]) if (w && !keywords.includes(w)) keywords.push(w);
       (j.engines || []).forEach((e) => engines.add(e));
       for (const u of new Set([...(j.sites_searched || []), ...j.suppliers.map((s) => s.url)])) { const d = domainOf(u); sites.set(d, (sites.get(d) || 0) + 1); }
       const jp = j.suppliers.filter((s) => s.price).map((s) => s.price); prices.push(...jp); if (jp.length) jobMeans.push(mean(jp));

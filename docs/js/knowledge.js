@@ -1,6 +1,6 @@
 // Tìm hiểu sản phẩm theo nhóm ngành hàng và tư vấn mua hàng. Không dùng AI: bộ câu hỏi cố định theo ngành,
 // câu trả lời là các câu trích nguyên văn từ các trang đã crawl (kèm nguồn), nên cần người mua đọc và đánh giá lại.
-import { CATEGORIES, brandsIn, domainOf, findPrices, htmlToText, normKey, phraseRelevance, stripAccents } from "./core.js";
+import { CATEGORIES, brandsIn, domainOf, findPrices, htmlToText, normKey, phraseRelevance, siteTokensOf, stripAccents } from "./core.js";
 
 export const GROUPS = {
   gia: "Giá cả",
@@ -68,6 +68,7 @@ export function planKnowledge(product, category) {
   };
 }
 
+const MAH_RE = /(\d{1,3}(?:[.,]\d{3})+|\d{4,6})\s*m\s?ah/gi;
 const SENTENCE_SPLIT = /(?<=[.!?])\s+|\s{2,}|\s[-•·|]\s/;
 const MIN_LEN = 50, MIN_LEN_PRICE = 14; // câu nêu giá thường ngắn ("Giá: 1.190.000đ.")
 const pageSentences = (text) => text.slice(0, 40000).split(SENTENCE_SPLIT).map((s) => s.trim()).filter((s) => s.length >= MIN_LEN_PRICE && s.length <= 300);
@@ -83,11 +84,11 @@ export function answerKnowledge(plan, pages, queryTokens) {
     if (!p || !p.html) continue;
     const text = htmlToText(p.html), rel = phraseRelevance(queryTokens, stripAccents(text));
     if (rel < 0.5) continue;
-    docs.push({ url: p.url, text, rel, sentences: pageSentences(text), title: ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(p.html) || [, ""])[1]).replace(/\s+/g, " ").trim() });
+    docs.push({ url: p.url, text, rel, site: siteTokensOf(p.html, p.url), sentences: pageSentences(text), title: ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(p.html) || [, ""])[1]).replace(/\s+/g, " ").trim() });
   }
   // Hãng: đếm số trang nhắc tới
   const brandCount = new Map();
-  for (const d of docs) for (const b of new Set(brandsIn(d.title, d.text, queryTokens))) { const k = stripAccents(b); const e = brandCount.get(k) || { value: b, count: 0 }; e.count++; brandCount.set(k, e); }
+  for (const d of docs) for (const b of new Set(brandsIn(d.title, d.text, queryTokens, d.site))) { const k = stripAccents(b); const e = brandCount.get(k) || { value: b, count: 0 }; e.count++; brandCount.set(k, e); }
   const brands = [...brandCount.values()].sort((a, b) => b.count - a.count).slice(0, 6);
   const brandKeys = brands.slice(0, 5).map((b) => stripAccents(b.value));
 
@@ -121,60 +122,82 @@ export function answerKnowledge(plan, pages, queryTokens) {
   return out;
 }
 
-/* ------------------------------------------------------------------ tư vấn */
-const vnd = (v) => `${Math.round(v).toLocaleString("vi-VN")} đ`;
-/**
- * Tư vấn theo tên sản phẩm (hoặc ảnh), ngân sách và nhu cầu. Chỉ dựa trên dữ liệu crawl, không bịa thêm.
- * input: { query, need, budget }; discovery: kết quả buildDiscovery; research: kết quả answerKnowledge.
- */
-export function buildAdvice(input, discovery, research) {
-  const need = (input.need || "").trim(), budget = input.budget ? +input.budget : null, query = input.query;
-  const needTokens = stripAccents(need).split(/\s+/).filter((t) => t.length >= 3);
-  const sections = [], cat = CATEGORIES[discovery.category] || CATEGORIES.chung;
-  const first = (id, n = 2) => ((research[id] || {}).snippets || []).slice(0, n);
-  const fmt = (list) => list.map((s) => ({ text: s.text, url: s.url }));
+/* ------------------------------------------------------------------ chủ đề tìm hiểu do người dùng chọn */
+/** Năm chủ đề người dùng có thể bật/tắt. suffix là cụm từ thêm vào truy vấn Google để ra các bài viết đúng chủ đề. */
+export const TOPIC_DEFS = [
+  { id: "price", label: "Giá trung bình", suffix: "giá bao nhiêu giá bán" },
+  { id: "pros", label: "Ưu nhược điểm", suffix: "ưu nhược điểm đánh giá" },
+  { id: "using", label: "Công nghệ sử dụng", suffix: "công nghệ sử dụng nguyên lý" },
+  { id: "types", label: "Phân loại", suffix: "phân loại các loại" },
+  { id: "buy", label: "Lưu ý khi mua", suffix: "lưu ý khi mua kinh nghiệm chọn mua" },
+];
+const ALL_QUESTIONS = [...COMMON, ...Object.values(BY_CATEGORY).flat()];
 
-  const understand = [`Sản phẩm: ${query}${need ? `. Nhu cầu: ${need}` : ""}${budget ? `. Ngân sách: ${vnd(budget)}` : ""}.`, `Nhóm ngành hàng nhận diện: ${cat.label}. Đã đọc ${discovery.read} trang, ${discovery.total} trang đúng sản phẩm.`];
-  sections.push({ heading: "1. Hiểu nhu cầu", points: understand.map((t) => ({ text: t })) });
+/** Trả lời một chủ đề bằng câu trích từ các bài đã đọc. Trả về { label, group, query, snippets, price?, pages }. */
+export function answerTopic(topicId, product, pages, queryTokens) {
+  const bank = ALL_QUESTIONS.find((q) => q.id === topicId);
+  if (!bank) throw new Error(`Chủ đề không hợp lệ: ${topicId}`);
+  const plan = { questions: [{ id: bank.id, ask: bank.ask(product) }], _bank: [bank] };
+  const entry = answerKnowledge(plan, pages, queryTokens)[topicId];
+  const def = TOPIC_DEFS.find((t) => t.id === topicId);
+  return { ...entry, label: def ? def.label : entry.label };
+}
 
-  const price = [];
-  if (discovery.price) {
-    const p = discovery.price;
-    price.push({ text: `Mặt bằng giá trên web: thấp nhất ${vnd(p.min)}, trung vị ${vnd(p.median)}, cao nhất ${vnd(p.max)} (${p.count} mức giá, trong đó ${p.confident ?? 0} giá đọc từ dữ liệu hoặc chữ "giá" của trang${p.outliers ? `; đã loại ${p.outliers} giá lệch hẳn mặt bằng, thường là phụ kiện hoặc voucher` : ""}).` });
-    price.push({ text: "Giá chỉ để tham khảo: một trang có thể có nhiều phiên bản, khuyến mãi hoặc giá theo thời điểm, hãy mở trang để xem giá hiện tại." });
-    if (budget) {
-      const ok = (i) => i.price && !i.price_flag, ratio = budget / p.median, inBudget = discovery.items.filter((i) => ok(i) && i.price <= budget).length;
-      price.push({ text: ratio < 0.6 ? `Ngân sách thấp hơn nhiều so với mức phổ biến (${Math.round(ratio * 100)}% trung vị): dễ gặp hàng kém chất lượng hoặc chỉ mua được phụ kiện, nên kiểm tra kỹ.`
-        : ratio <= 1.2 ? `Ngân sách phù hợp với mặt bằng giá (${Math.round(ratio * 100)}% trung vị).` : `Ngân sách cao hơn mức phổ biến (${Math.round(ratio * 100)}% trung vị): có thể cân nhắc bản cao cấp, chính hãng hoặc mua số lượng để đàm phán chiết khấu.` });
-      price.push({ text: `${inBudget}/${discovery.items.filter(ok).length} trang có giá nằm trong ngân sách.` });
+const QSTOP = new Set(["va", "la", "cua", "cho", "co", "khong", "nhu", "the", "nao", "gi", "duoc", "nay", "mot", "cac", "nhung", "bao", "nhieu", "khi", "hay", "voi", "trong", "thi", "da", "se", "ra", "vao", "can", "nen", "hon"]);
+/** Trả lời câu hỏi/từ khóa người dùng gõ thêm: lấy các câu trong bài chứa nhiều từ của câu hỏi nhất. */
+export function answerCustom(question, pages, queryTokens) {
+  const qTokens = [...new Set(stripAccents(question).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !QSTOP.has(t)))];
+  const need = Math.max(1, Math.ceil(qTokens.length * 0.5));
+  const cands = [];
+  for (const p of pages) {
+    if (!p || !p.html) continue;
+    const text = htmlToText(p.html);
+    if (phraseRelevance(queryTokens, stripAccents(text)) < 0.5) continue;
+    for (const s of pageSentences(text)) {
+      if (s.length < MIN_LEN) continue;
+      const norm = stripAccents(s), hit = qTokens.filter((t) => norm.includes(t)).length;
+      if (hit >= need) cands.push({ text: s, url: p.url, score: hit });
     }
-  } else price.push({ text: "Các trang đã đọc không có giá rõ ràng, hãy mở trang nguồn hoặc hỏi báo giá NCC." });
-  price.push(...fmt(first("price", 2)));
-  sections.push({ heading: "2. Mặt bằng giá và ngân sách", points: price });
+  }
+  cands.sort((a, b) => b.score - a.score || Math.abs(a.text.length - 140) - Math.abs(b.text.length - 140));
+  const snippets = [], per = new Map(), seen = new Set();
+  for (const c of cands) {
+    const k = normKey(c.text).slice(0, 60);
+    if (seen.has(k) || (per.get(c.url) || 0) >= 2) continue;
+    seen.add(k); per.set(c.url, (per.get(c.url) || 0) + 1); snippets.push({ text: c.text, url: c.url });
+    if (snippets.length >= 6) break;
+  }
+  return { question, snippets, pages: new Set(snippets.map((s) => s.url)).size };
+}
 
-  const fit = [];
-  const pool = ["types", "using", "tech", "pros", "purpose"].flatMap((id) => first(id, 4));
-  const matched = needTokens.length ? pool.filter((s) => needTokens.some((t) => stripAccents(s.text).includes(t))).slice(0, 3) : [];
-  if (need) fit.push(...(matched.length ? matched.map((s) => ({ text: `Liên quan đến nhu cầu "${need}": ${s.text}`, url: s.url })) : [{ text: `Chưa thấy trang nào nêu riêng về nhu cầu "${need}". Dưới đây là phân loại và công nghệ phổ biến để bạn tự đối chiếu.` }]));
-  fit.push(...fmt(first("types", 2)), ...fmt(first("tech", 2)), ...fmt(first("using", 1)));
-  if (discovery.purposes && discovery.purposes.length) fit.push({ text: `Mục đích sử dụng hay được nêu: ${discovery.purposes.map((p) => p.value).join("; ")}.` });
-  sections.push({ heading: "3. Loại và công nghệ nên cân nhắc", points: fit });
+/* ------------------------------------------------------------------ tóm tắt bài viết tham khảo */
+const strip = (h) => htmlToText(String(h));
+/** Tóm tắt một bài viết: tiêu đề, mô tả, các đề mục, vài ý chính và số liệu cụ thể. */
+export function summarizeArticle(html, url) {
+  const title = strip((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]);
+  const meta = (/<meta[^>]+(?:property|name)=["'](?:og:description|description)["'][^>]*content=["']([^"']*)["']/i.exec(html) || [, ""])[1];
+  const headings = [];
+  for (const m of html.matchAll(/<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi)) { const t = strip(m[2]); if (t.length >= 4 && t.length <= 140 && !headings.includes(t)) headings.push(t); if (headings.length >= 10) break; }
+  const sentences = [];
+  for (const m of html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)) for (const s of strip(m[1]).split(SENTENCE_SPLIT)) { const t = s.trim(); if (t.length >= 60 && t.length <= 260) sentences.push(t); }
+  const rank = (s) => (/\d/.test(s) ? 2 : 0) + (/(ưu điểm|nhược điểm|lưu ý|nên|công nghệ|giá|bảo hành|khuyến nghị|so với)/i.test(s) ? 2 : 0);
+  const keyPoints = [...new Map(sentences.map((s, i) => [normKey(s).slice(0, 50), { s, i, r: rank(s) }])).values()]
+    .sort((a, b) => b.r - a.r || a.i - b.i).slice(0, 5).sort((a, b) => a.i - b.i).map((x) => x.s);
+  const text = strip(html);
+  const prices = findPrices(text).slice(0, 5), mah = [...new Set([...text.matchAll(MAH_RE)].map((m) => toIntLocal(m[1])))].slice(0, 3);
+  const facts = [];
+  if (prices.length) facts.push(`Giá nhắc tới: ${[...new Set(prices)].map((p) => `${Math.round(p).toLocaleString("vi-VN")} đ`).join(", ")}`);
+  if (mah.length) facts.push(`Dung lượng pin: ${mah.map((v) => `${v.toLocaleString("vi-VN")} mAh`).join(", ")}`);
+  const w = /(\d{1,5})\s*W\b/.exec(text); if (w) facts.push(`Công suất: ${w[1]} W`);
+  const war = /bảo\s*hành[^.\n]{0,25}?(\d{1,2})\s*(tháng|năm)/i.exec(text); if (war) facts.push(`Bảo hành: ${war[1]} ${war[2]}`);
+  return { url, domain: domainOf(url), title: title.slice(0, 160), description: strip(meta).slice(0, 300), headings, keyPoints, facts, text };
+}
+const toIntLocal = (raw) => parseInt(String(raw).replace(/[.,]/g, ""), 10);
 
-  const brandPts = [];
-  const brands = ((research.brands || {}).brands || []);
-  brandPts.push({ text: brands.length ? `Hãng/thương hiệu hay gặp: ${brands.map((b) => `${b.value} (${b.count} trang)`).join(", ")}.` : "Chưa nhận diện được hãng nào rõ ràng từ các trang đã đọc." });
-  brandPts.push(...fmt(first("brand_pros", 2)));
-  sections.push({ heading: "4. Hãng sản xuất", points: brandPts });
-
-  const sure = (i) => !i.price_flag && ["jsonld", "meta", "itemprop", "label"].includes(i.price_source);
-  const noteOf = (i) => (i.price_flag ? "Giá lệch hẳn mặt bằng, có thể là phụ kiện, voucher hoặc giá sai" : sure(i) ? "Giá đọc từ trang" : i.price_source === "snippet" ? "Giá lấy từ mô tả tìm kiếm, chưa mở trang" : "Giá đoán từ chữ trên trang, hãy mở link kiểm tra");
-  const picks = discovery.items.filter((i) => i.price).map((i) => ({ ...i, note: noteOf(i), sure: sure(i), fit: i.price_flag ? "Nghi sai giá" : budget ? (i.price <= budget ? "Trong ngân sách" : `Vượt ${Math.round((i.price / budget - 1) * 100)}%`) : "" }));
-  // Giá đáng tin lên trước, giá nghi sai xuống cuối; trong mỗi nhóm gần ngân sách (hoặc rẻ) lên trước.
-  picks.sort((a, b) => (a.price_flag ? 1 : 0) - (b.price_flag ? 1 : 0) || (b.sure ? 1 : 0) - (a.sure ? 1 : 0) || (budget ? Math.abs(a.price - budget) - Math.abs(b.price - budget) : a.price - b.price));
-  sections.push({ heading: "5. Gợi ý trang để xem (đúng sản phẩm, có giá)", points: picks.length ? [] : [{ text: "Chưa có trang nào có giá rõ ràng." }], picks: picks.slice(0, 6) });
-
-  const careful = [...fmt(first("buy", 3)), ...fmt(first("risks", 1))];
-  if (!careful.length) careful.push({ text: "Chưa trích được lưu ý cụ thể từ web. Nên xin báo giá từ ít nhất 3 NCC, yêu cầu hóa đơn VAT và bảo hành bằng văn bản." });
-  sections.push({ heading: "6. Lưu ý khi mua", points: careful });
-  return { query, need, budget, category: cat.label, sections, domains: [...new Set(discovery.items.map((i) => i.domain || domainOf(i.url)))] };
+/** Câu hỏi liên quan ngành hàng/mặt hàng và câu trả lời trích từ chính bài viết đó (chỉ giữ câu hỏi có trả lời). */
+export function articleQuestions(article, product, category, max = 6) {
+  const bank = [...COMMON.filter((q) => !q.kind), ...(BY_CATEGORY[category] || [])];
+  const plan = { questions: bank.map((q) => ({ id: q.id, ask: q.ask(product) })), _bank: bank };
+  const res = answerKnowledge(plan, [{ url: article.url, html: `<html><head><title>${article.title}</title></head><body><p>${article.text.slice(0, 40000).replace(/</g, " ")}</p></body></html>` }], []);
+  return Object.entries(res).filter(([, r]) => r.snippets.length).slice(0, max).map(([id, r]) => ({ id, label: r.label, ask: r.query, snippets: r.snippets.slice(0, 2) }));
 }

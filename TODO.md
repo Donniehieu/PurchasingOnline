@@ -1,5 +1,38 @@
 # TODO - Ứng dụng mua hàng tự động
 
+## Yêu cầu hiện tại (điều chỉnh app)
+- Bỏ mục Tư vấn và Lịch sử điều chỉnh. Bỏ các tính năng nhiều browser/search engine, chỉ dùng google.com. App dùng được trên PC và điện thoại.
+
+### Tab Yêu cầu mới
+- [x] **Dữ liệu đầu vào:** chữ hoặc ảnh. Chỉ có ảnh: đọc chữ trong ảnh, tự điền tên, model, từ khóa tìm kiếm (Claude khi có khóa Anthropic, hoặc bộ đọc chữ của trình duyệt)
+- [x] Đủ tên + model: lấy ảnh từ Google Hình ảnh vào album đặt theo tên + model, số ảnh cấu hình 1-20 (mặc định 3); chỉ có ảnh cũng lấy ảnh vào album
+- [x] Cấu hình số trang Google 1-5, mỗi trang mở hết các link để đọc
+- [x] Gửi lệnh xong có phản hồi rồi mới chờ một khoảng (1-15 giây, mặc định 3, ±25% ngẫu nhiên) mới gửi lệnh kế, không dồn dập; có nút Dừng
+- [x] "Thấy ở n/N trang", chọn sẵn khi có từ 2 trang đồng ý, không có dữ liệu web thì dùng gợi ý chung và ghi rõ
+- [x] Điền tên sản phẩm, model, số lượng, mục đích, hãng sản xuất (tên hãng trên sản phẩm, loại tên website/NCC) rồi hỏi tổng cộng 10 câu (5 cố định + 5 từ dữ liệu crawl), nằm trong một khối, trả lời xong tự sang câu kế, có xem lại và sửa
+- [x] Khối gõ thêm từ khóa/câu hỏi: tìm kèm tên sản phẩm, đọc bài ở trang 1-2 để trả lời, kèm link
+- [x] 5 chủ đề tick hoặc bỏ: giá trung bình, ưu nhược điểm, công nghệ sử dụng, phân loại, lưu ý khi mua; mỗi chủ đề tìm và đọc bài liên quan, trả lời theo khối rõ ràng, có link và đoạn trả lời trích từ bài
+- [x] Nhập link hoặc Excel/CSV bài tham khảo: đọc chính bài, tóm tắt bằng tiêu đề, đề mục, ý chính, số liệu; câu hỏi liên quan theo ngành hàng và câu trả lời kèm link
+- [x] Bảng so sánh giá và đề xuất: Tên NCC, Tên sản phẩm / model, Số lượng, Đơn giá, VAT, Thông tin sản phẩm (thông số kỹ thuật), Liên hệ. Tên sản phẩm là link đúng trang bán sản phẩm; chỉ trang sản phẩm đúng model mới vào bảng; giá phải chắc chắn từ trang sản phẩm, không chắc thì để trống; liên hệ lấy cả trang Liên hệ của NCC
+- [x] Xuất Excel .xlsx (bảng so sánh, thông tin yêu cầu, so sánh giá, đàm phán, thuyết phục, tìm hiểu, câu hỏi thêm, bài tham khảo, nguồn)
+
+### Tab Lịch sử tìm kiếm
+- [x] Giữ tính năng cũ, trình bày dạng bảng: STT, Tiêu đề, Số lượng, Từ khóa đã tìm, Các trang đã tìm (bấm dòng xem chỉ tiêu chi tiết, mở lại từng lần); xuất Excel
+
+### Chưa chắc / còn lại
+- [ ] **Chưa chạy thử với Google thật trong trình duyệt**: mở tab nền, đọc kết quả, phân trang, Google Hình ảnh; chỉ thử với dữ liệu mẫu. Google có thể chặn (403, xác minh), app không vượt qua
+- [ ] Trang bán hàng không có dữ liệu sản phẩm có cấu trúc (JSON-LD, thẻ giá) và không có nút mua sẽ bị loại khỏi bảng; Shopee, TikTok Shop vẽ giá bằng JavaScript nên dễ không đọc được giá
+- [ ] Nhận diện hãng và model còn là quy tắc (dữ liệu sản phẩm, token IN HOA trong tiêu đề), có thể sai ở trang lạ
+- [ ] Trên điện thoại Chrome không cài được tiện ích nên không crawl được; chưa thử Kiwi Browser, Firefox Android, Safari
+- [ ] Chưa tự động hóa việc đọc chữ trong ảnh khi không có khóa Anthropic và trình duyệt không có TextDetector
+- [ ] Bản Flask (`app.py`, `purchasing/`) không còn được cập nhật
+
+---
+
+# Lịch sử các đợt trước (tham khảo)
+
+# TODO - Ứng dụng mua hàng tự động
+
 ## Yêu cầu
 - Nhập tên hoặc mã sản phẩm, số lượng, mục đích sử dụng, hoặc upload ảnh sản phẩm.
 - App tự tìm web theo engine đã chọn (Google, Brave, Bing, Yahoo), đọc trang NCC, điền form duyệt báo giá.

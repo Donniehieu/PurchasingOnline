@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../docs/js/core.js";
 import * as knowledge from "../docs/js/knowledge.js";
-import * as net from "../docs/js/net.js";
 
 const sup = (name, price, mah = null, months = null, vat = null) => ({ name, price, mah, warranty_months: months, vat, vat_included: false, relevance: 1, url: "https://" + name, title: name, contacts: {} });
 
@@ -56,20 +55,6 @@ test("tìm hiểu từ trang web: thông số, model, hãng, bảo hành, giá",
   assert.equal(d.warranty[0].value, "12"); assert.ok(d.specs.some((s) => s.id === "power" && s.values[0].value === "30"));
   assert.ok(d.purposes[0].value.includes("công nhân")); assert.deepEqual([d.price.min, d.price.max], [1190000, 1800000]);
 });
-test("question card: 5 đến 10 câu, luôn có model, số lượng, mục đích; lựa chọn lấy từ dữ liệu crawl", () => {
-  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
-  const cards = core.buildCards({ query: "áo điều hòa", quantity: 5 }, null, "", d), ids = cards.map((c) => c.id);
-  assert.ok(cards.length >= 5 && cards.length <= 10, `số card ${cards.length}`);
-  for (const must of ["product", "model", "quantity", "purpose"]) assert.ok(ids.includes(must), must);
-  const by = Object.fromEntries(cards.map((c) => [c.id, c]));
-  assert.equal(by.mah.default, "20000"); assert.equal(by.volt.default, "18");
-  assert.ok(by.mah.options.some((o) => o.label.includes("thấy ở 2/3 trang")));
-  assert.ok(by.purpose.options.some((o) => o.label.includes("công nhân"))); assert.match(by.mah.evidence, /3 trang/);
-  assert.ok(ids.includes("brand") && ids.includes("budget"));
-  const none = core.buildCards({ query: "áo điều hòa", quantity: 5 }, null, "", null);
-  assert.ok(none.length >= 5 && none.length <= 10); assert.ok(!none.some((c) => c.id === "brand"));
-  assert.match(none.find((c) => c.id === "model").evidence, /gợi ý chung/);
-});
 test("question card nhận ra thông số trong tên và áp câu trả lời", () => {
   const cards = core.buildCards({ query: "quạt 20000mAh 18V", quantity: 5 }, null, "GIFV F20");
   const by = Object.fromEntries(cards.map((c) => [c.id, c]));
@@ -102,22 +87,6 @@ test("tìm hiểu theo ngành: kế hoạch câu hỏi, câu trả lời có ngu
   assert.ok(r.buy.snippets.length && r.buy.snippets[0].url.startsWith("https://")); assert.ok(r.pros.snippets.some((s) => /nhược điểm/.test(s.text)));
   assert.equal(r.price.group, "gia"); assert.equal(r.price.group_label, "Giá cả");
 });
-test("tư vấn theo ngân sách và nhu cầu từ dữ liệu crawl", () => {
-  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
-  const plan = knowledge.planKnowledge("áo điều hòa", d.category), research = knowledge.answerKnowledge(plan, SHIRT, SHIRT_TOKENS);
-  const adv = knowledge.buildAdvice({ query: "áo điều hòa", need: "công nhân làm ngoài trời", budget: 1300000 }, d, research);
-  assert.equal(adv.sections.length, 6); const text = JSON.stringify(adv);
-  assert.match(text, /Trong ngân sách/); assert.match(text, /Vượt/); assert.match(text, /Mặt bằng giá/); assert.match(text, /Yamako/i);
-  assert.ok(adv.sections[4].picks.length >= 2);
-});
-test("giải link bọc chuyển hướng của Google, DuckDuckGo, Bing", async () => {
-  assert.equal(await net.resolveUrl("https://www.google.com/url?q=https%3A%2F%2Fshop.vn%2Fp&sa=U"), "https://shop.vn/p");
-  assert.equal(await net.resolveUrl("https://duckduckgo.com/l/?uddg=https%3A%2F%2Fa.vn%2Fx&rut=1"), "https://a.vn/x");
-  const b64 = Buffer.from("https://b.vn/y").toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
-  assert.equal(await net.resolveUrl(`https://www.bing.com/ck/a?!&&p=1&u=a1${b64}&ntb=1`), "https://b.vn/y");
-  assert.equal(await net.resolveUrl("https://shop.vn/direct"), "https://shop.vn/direct");
-  assert.equal(await net.resolveUrl("https://www.google.com/search?q=x"), "");
-});
 test("cột NCC mới: tên sản phẩm, số lượng, thông tin sản phẩm có thể sửa", () => {
   assert.equal(core.parseField("quantity", "12"), 12); assert.throws(() => core.parseField("quantity", "0"), /khoảng/);
   assert.equal(core.parseField("product_name", "  Áo điều hòa X  "), "Áo điều hòa X");
@@ -125,13 +94,6 @@ test("cột NCC mới: tên sản phẩm, số lượng, thông tin sản phẩm
   assert.equal(core.supplierInfo({}), "Bảo hành chưa rõ");
   const s = core.parsePage("<html><head><title>Áo điều hòa Yamako F20 - Shop A</title></head><body>Áo điều hòa giá 1.190.000đ</body></html>", "https://a.vn", core.queryKeywords("áo điều hòa"));
   assert.equal(s.product_name, "Áo điều hòa Yamako F20");
-});
-test("ngân sách đã nhập ở tab Tư vấn thành lựa chọn đầu tiên của card ngân sách", () => {
-  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
-  const budget = core.buildCards({ query: "áo điều hòa", quantity: 2, advice_budget: 1450000 }, null, "", d).find((c) => c.id === "budget");
-  assert.equal(budget.default, "1450000"); assert.match(budget.options[0].label, /tab Tư vấn/);
-  const noWeb = core.buildCards({ query: "áo điều hòa", quantity: 2, advice_budget: 1450000 }, null, "", null);
-  assert.ok(!noWeb.some((c) => c.id === "budget")); // không có dữ liệu web thì không tạo card ngân sách
 });
 test("giá bán: ưu tiên dữ liệu có cấu trúc, không lấy số nhỏ nhất (voucher, phí ship, phụ kiện)", () => {
   const noise = "Giảm 50.000đ cho đơn đầu tiên. Phí vận chuyển 55.000đ. Ốp lưng 99.000đ. Giá: 4.990.000đ.";
@@ -148,15 +110,6 @@ test("giá bán: ưu tiên dữ liệu có cấu trúc, không lấy số nhỏ 
   assert.deepEqual(core.extractPrice("", "Máy hút bụi giá 3.500.000đ rẻ nhất", null, true), { value: 3500000, source: "snippet" });
   assert.equal(core.extractPrice("", "Từ 50.000đ phụ kiện", null, true).value, null); // đoạn mô tả không có chữ "giá" thì không đoán
   assert.equal(core.isConfidentPrice("jsonld"), true); assert.equal(core.isConfidentPrice("text"), false);
-});
-test("khoảng giá loại giá lệch hẳn mặt bằng (phụ kiện, voucher) và đánh dấu", () => {
-  const mk = (n, price) => ({ url: `https://s${n}.vn/p`, html: `<html><head><title>Máy hút bụi cầm tay ${n}</title></head><body>Máy hút bụi cầm tay chính hãng. Giá: ${price}đ</body></html>` });
-  const d = core.buildDiscovery([mk(1, "3.200.000"), mk(2, "3.500.000"), mk(3, "2.900.000"), mk(4, "3.800.000"), mk(5, "95.000"), mk(6, "60.000.000")], core.queryKeywords("máy hút bụi"), "máy hút bụi cầm tay");
-  const flagged = d.items.filter((i) => i.price_flag).map((i) => i.price_flag).sort();
-  assert.deepEqual(flagged, ["high", "low"]); assert.equal(d.price.outliers, 2); assert.equal(d.price.min, 2900000); assert.equal(d.price.max, 3800000); assert.equal(d.price.confident, 6);
-  const adv = knowledge.buildAdvice({ query: "máy hút bụi", budget: 3300000 }, d, {});
-  const picks = adv.sections[4].picks; assert.ok(picks[picks.length - 1].price_flag && picks[picks.length - 2].price_flag); assert.equal(picks[0].fit, "Trong ngân sách");
-  assert.match(JSON.stringify(adv.sections[1]), /loại 2 giá lệch/);
 });
 test("từ khóa không lặp thông số đã có", () => {
   assert.equal(core.searchKeywords({ query: "áo điều hòa pin 20000mAh", spec: { mah: "20000", volt: "18" } }), "áo điều hòa pin 20000mAh 18V");

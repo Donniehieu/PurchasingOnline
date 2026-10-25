@@ -58,31 +58,34 @@ function statusText(s) {
   return l.join("\n");
 }
 
-/** Form duyệt báo giá. Cột: NCC, Tên sản phẩm, Số lượng, Đơn giá, VAT, Thông tin sản phẩm, Ngày cập nhật, Liên hệ, Điểm, Trạng thái. */
+/** Form duyệt báo giá. Cột: Tên NCC, Tên sản phẩm / model, Số lượng, Đơn giá, VAT, Thông tin sản phẩm, Liên hệ. */
 export function buildJobWorkbook(job) {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Thông báo duyệt giá");
-  const COLS = ["NCC", "Tên sản phẩm", "Số lượng", "Đơn giá chưa VAT (đ)", "VAT", "Thông tin sản phẩm", "Ngày cập nhật", "Liên hệ", "Điểm", "Trạng thái"];
-  ws.addRow([`BẢNG DUYỆT BÁO GIÁ: ${job.query}`]).font = { bold: true, size: 14 }; ws.mergeCells(1, 1, 1, COLS.length);
+  const ws = wb.addWorksheet("Bảng so sánh giá");
+  const COLS = ["Tên NCC", "Tên sản phẩm / model", "Số lượng", "Đơn giá chưa VAT (đ)", "VAT", "Thông tin sản phẩm", "Liên hệ"];
+  ws.addRow([`BẢNG SO SÁNH GIÁ: ${[job.query, job.product_code].filter(Boolean).join(" ")}`]).font = { bold: true, size: 14 }; ws.mergeCells(1, 1, 1, COLS.length);
   headerRow(ws, COLS);
-  widths(ws, [24, 36, 10, 20, 12, 46, 16, 34, 8, 24]);
+  widths(ws, [24, 44, 10, 20, 12, 52, 38]);
   const list = job.suppliers;
   list.forEach((s) => {
     const price = s.price && s.vat_included ? Math.round(s.price / 1.1) : s.price;
     const info = productInfo(s), contact = contactText(s);
-    const row = ws.addRow([s.name, s.product_name || s.title || job.query, s.quantity ?? job.quantity, price, yesNo(s.vat), info, toDate(s.date), contact, s.score ?? "", statusText(s)]);
+    const productCell = s.url ? { text: s.product_name || s.title || job.query, hyperlink: s.url } : (s.product_name || job.query);
+    const row = ws.addRow([(s.recommended ? "★ " : "") + s.name, productCell, s.quantity ?? job.quantity, price ?? "Chưa có giá chính xác", yesNo(s.vat), info, contact]);
     row.height = Math.max(32, 15 * Math.max(lineCount(info), lineCount(contact)));
     for (let c = 1; c <= COLS.length; c++) {
       const cell = row.getCell(c); cell.border = BORDER; cell.alignment = WRAP;
       if (s.recommended) { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GREEN } }; cell.font = { bold: true }; }
     }
-    row.getCell(4).numFmt = "#,##0"; row.getCell(7).numFmt = "dd/mm/yyyy";
+    row.getCell(2).font = { ...(s.recommended ? { bold: true } : {}), color: { argb: "FF0563C1" }, underline: true };
+    row.getCell(4).numFmt = "#,##0";
   });
+  const rec = list.find((s) => s.recommended);
   const after = 3 + Math.max(list.length, 1) + 1;
-  ws.getCell(`A${after}`).value = "Mục đích sử dụng:"; ws.getCell(`A${after}`).font = { bold: true };
-  ws.getCell(`B${after}`).value = job.purpose || "Chưa nhập";
-  ws.getCell(`A${after + 1}`).value = "Thông số đã xác nhận:"; ws.getCell(`A${after + 1}`).font = { bold: true };
-  ws.getCell(`B${after + 1}`).value = specText(job.spec);
+  const note = (r, label, value) => { ws.getCell(`A${r}`).value = label; ws.getCell(`A${r}`).font = { bold: true }; ws.getCell(`B${r}`).value = value; };
+  note(after, "Đề xuất:", rec ? `${rec.name}: ${rec.product_name || rec.title}, đơn giá ${money(rec.price)}${rec.score != null ? `, điểm ${rec.score}` : ""}` : "Chưa đề xuất được (chưa có NCC với giá đọc chính xác từ trang sản phẩm)");
+  note(after + 1, "Mục đích sử dụng:", job.purpose || "Chưa nhập");
+  note(after + 2, "Thông số đã xác nhận:", specText(job.spec));
   ws.views = [{ state: "frozen", ySplit: 2, xSplit: 1 }];
 
   const info = wb.addWorksheet("Thông tin yêu cầu");
@@ -118,18 +121,41 @@ export function buildJobWorkbook(job) {
   }
   widths(per, [130]); per.eachRow((r) => { r.alignment = { vertical: "top", wrapText: true }; });
 
+  const topics = Object.values(job.research || {});
+  if (topics.length) {
+    const kn = wb.addWorksheet("Tìm hiểu sản phẩm");
+    headerRow(kn, ["Chủ đề", "Câu trả lời trích từ bài viết", "Nguồn"]);
+    for (const r of topics) {
+      if (r.price) kn.addRow([r.label, `Giá thấp nhất ${money(r.price.min)}, trung vị ${money(r.price.median)}, cao nhất ${money(r.price.max)}`, ""]);
+      if (r.brands && r.brands.length) kn.addRow([r.label, `Hãng thấy trên bài viết: ${r.brands.map((b) => `${b.value} (${b.count})`).join(", ")}`, ""]);
+      if (!r.snippets.length && !r.price) kn.addRow([r.label, "Chưa tìm được câu trả lời rõ ràng", ""]);
+      r.snippets.forEach((s) => kn.addRow([r.label, s.text, s.url]));
+    }
+    widths(kn, [26, 100, 60]); kn.eachRow((r, i) => { if (i > 1) r.alignment = { vertical: "top", wrapText: true }; });
+  }
+  if ((job.custom_answers || []).length) {
+    const ca = wb.addWorksheet("Câu hỏi thêm");
+    headerRow(ca, ["Câu hỏi / từ khóa", "Câu trả lời trích từ bài viết", "Nguồn"]);
+    for (const a of job.custom_answers) { if (!a.snippets.length) ca.addRow([a.question, "Chưa tìm được câu trả lời rõ ràng", ""]); a.snippets.forEach((s) => ca.addRow([a.question, s.text, s.url])); }
+    widths(ca, [34, 100, 60]); ca.eachRow((r, i) => { if (i > 1) r.alignment = { vertical: "top", wrapText: true }; });
+  }
+  if ((job.refs || []).length) {
+    const rf = wb.addWorksheet("Bài viết tham khảo");
+    headerRow(rf, ["Bài viết", "Link", "Tóm tắt (đề mục, ý chính, số liệu)", "Câu hỏi liên quan và trả lời"]);
+    for (const a of job.refs) {
+      const summary = [a.description, ...(a.headings.length ? ["Đề mục: " + a.headings.join(" | ")] : []), ...a.keyPoints.map((k) => `- ${k}`), ...a.facts].filter(Boolean).join("\n");
+      const qa = a.qa.map((q) => `${q.label}: ${q.snippets.map((s) => s.text).join(" / ")}`).join("\n");
+      rf.addRow([a.title, a.url, summary, qa]);
+    }
+    widths(rf, [40, 44, 90, 90]); rf.eachRow((r, i) => { if (i > 1) r.alignment = { vertical: "top", wrapText: true }; });
+  }
+
   const src = wb.addWorksheet("Nguồn tham khảo");
   headerRow(src, ["STT", "NCC", "Tiêu đề trang", "Link tham khảo", "Giá tìm được (đ)", "Ngày cập nhật web", "Đủ điều kiện", "Ghi chú"]);
   list.forEach((s, i) => src.addRow([i + 1, s.name, s.title, s.url, s.price, toDate(s.date), s.eligible ? "Có" : "Không", notes(s)]));
   src.getColumn(5).numFmt = "#,##0"; src.getColumn(6).numFmt = "dd/mm/yyyy"; widths(src, [6, 26, 40, 60, 18, 18, 14, 60]);
   src.eachRow((r, i) => { if (i > 1) r.alignment = { vertical: "top", wrapText: true }; });
 
-  if ((job.edits || []).length) {
-    const ed = wb.addWorksheet("Lịch sử điều chỉnh");
-    headerRow(ed, ["Thời gian", "NCC", "Trường", "Giá trị cũ", "Giá trị mới"]);
-    job.edits.forEach((e) => ed.addRow([e.time.replace("T", " "), e.supplier, e.field_label, String(e.old), String(e.new)]));
-    widths(ed, [20, 30, 22, 30, 30]);
-  }
   return wb;
 }
 
@@ -147,24 +173,16 @@ export function downloadLinks(job) {
   return download(wb, `link_ncc_${job.id}.xlsx`);
 }
 export function downloadHistory(groups) {
-  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Tổng hợp theo sản phẩm");
-  headerRow(ws, ["Sản phẩm", "Số lượt tìm", "Từ khóa đã dùng", "Số trang web", "Các trang web", "Số NCC", "Các NCC", "Giá trung bình (đ)", "Giá trung vị (đ)", "Giá thấp nhất (đ)", "Giá cao nhất (đ)", "Biến động giá (%)", "Lần đầu tìm", "Lần gần nhất", "Engine đã dùng", "NCC được khuyến nghị", "Số lần sửa bảng"]);
-  groups.forEach((g) => ws.addRow([g.name, g.searches, g.keywords.join("\n"), g.sites.length, g.sites.map((s) => s.domain).join("\n"), g.supplier_count,
-    g.suppliers.map((s) => s.name).join("\n"), g.avg_price, g.median_price, g.min_price, g.max_price, g.price_change_pct, g.first_search.replace("T", " "),
-    g.last_search.replace("T", " "), g.engines.join(", "), g.recommended.map((r) => `${r.name} (${r.times})`).join(", "), g.edit_count]));
-  widths(ws, [30, 10, 45, 10, 40, 8, 40, 16, 16, 16, 16, 12, 20, 20, 18, 36, 12]);
+  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Lịch sử tìm kiếm");
+  headerRow(ws, ["STT", "Tiêu đề", "Số lượng", "Từ khóa đã tìm", "Các trang đã tìm", "Số lượt tìm", "Số NCC", "Giá trung bình (đ)", "Giá thấp nhất (đ)", "Giá cao nhất (đ)", "Lần gần nhất", "NCC được đề xuất"]);
+  groups.forEach((g, i) => ws.addRow([i + 1, g.name, g.total_quantity, g.keywords.join(String.fromCharCode(10)), g.sites.map((s) => `${s.domain} (${s.visits})`).join(String.fromCharCode(10)), g.searches, g.supplier_count,
+    g.avg_price, g.min_price, g.max_price, g.last_search.replace("T", " "), g.recommended.map((r) => `${r.name} (${r.times})`).join(", ")]));
+  widths(ws, [6, 34, 10, 50, 44, 10, 8, 16, 16, 16, 20, 30]);
   ws.eachRow((r, i) => { if (i > 1) r.alignment = { vertical: "top", wrapText: true }; });
   const d = wb.addWorksheet("Chi tiết NCC"); headerRow(d, ["Sản phẩm", "NCC", "Số lần xuất hiện", "Giá thấp nhất (đ)", "Giá gần nhất (đ)", "Link"]);
   groups.forEach((g) => g.suppliers.forEach((s) => d.addRow([g.name, s.name, s.times, s.min_price, s.last_price, s.url]))); widths(d, [30, 30, 14, 18, 18, 80]);
   return download(wb, "lich_su_tim_kiem.xlsx");
 }
-export function downloadEdits(edits) {
-  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Lịch sử điều chỉnh");
-  headerRow(ws, ["Thời gian", "Sản phẩm", "NCC", "Trường", "Giá trị cũ", "Giá trị mới", "Mã yêu cầu"]);
-  edits.forEach((e) => ws.addRow([e.time.replace("T", " "), e.product, e.supplier, e.field_label, String(e.old), String(e.new), e.job_id])); widths(ws, [20, 30, 28, 22, 28, 28, 14]);
-  return download(wb, "lich_su_dieu_chinh.xlsx");
-}
-
 /** Đọc link từ .xlsx / .csv / .txt người dùng chọn. */
 export async function readLinkFile(file) {
   if (file.name.toLowerCase().endsWith(".xlsx")) {
