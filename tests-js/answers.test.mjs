@@ -134,3 +134,51 @@ test("thứ tự chạy: lấy ảnh trước, rồi mới tìm NCC và trả l�
   assert.equal(rec[0], "album"); assert.ok(first("album") < first("suppliers") && first("suppliers") < first("topics"), rec.join(">"));
   assert.equal(j.status, "done");
 });
+
+/* ---------------- đúng sản phẩm/model, chữ Việt, menu ---------------- */
+const AIRFRYER = "nồi chiên không dầu Sunhouse";
+const FTOKENS = core.queryKeywords(AIRFRYER);
+const menu = "Máy tính Trung tâm bảo hành uỷ quyền Apple Kênh thông tin giải trí công nghệ cho giới trẻ Trang thông tin công nghệ mới nhất iPhone 18 Pro";
+const FPAGES = {
+  // bài đúng model SHD4080, chữ Việt mã hóa bằng ký tự HTML như ngoài thực tế
+  "https://a.vn/shd4080": html("N&#7891;i chi&ecirc;n kh&ocirc;ng d&#7847;u Sunhouse SHD4080 | Điện Máy A", `<header><p>${menu}</p></header><nav><a>Trang chủ</a></nav><p>N&#7891;i chi&ecirc;n kh&ocirc;ng d&#7847;u Sunhouse SHD4080 c&oacute; &#432;u &#273;i&#7875;m l&agrave; chi&ecirc;n n&#432;&#7899;ng &iacute;t d&#7847;u m&#7905;, nh&#432;&#7907;c &#273;i&#7875;m l&agrave; c&#7891;ng k&#7873;nh khi &#273;&#7863;t tr&ecirc;n b&agrave;n nh&#7887;.</p><p>N&#7891;i chi&ecirc;n kh&ocirc;ng d&#7847;u Sunhouse SHD4080 &#273;&#432;&#7907;c &#7913;ng d&#7909;ng c&ocirc;ng ngh&#7879; Rapid Air gi&uacute;p l&agrave;m ch&iacute;n th&#7921;c ph&#7849;m nhanh v&agrave; &#273;&#7873;u.</p><footer>${menu}</footer>`),
+  // bài về model KHÁC: câu nhắc SHD4026 phải bị loại
+  "https://b.vn/shd4026": html("Nồi chiên không dầu Sunhouse SHD4026 6L", "<p>Nồi chiên không dầu Sunhouse SHD4026 6L có ưu điểm là mặt trước thân nồi được cấu tạo từ chất liệu inox sáng bền, nhược điểm là giá cao hơn.</p><p>Nồi chiên không dầu Sunhouse SHD4026 sử dụng công nghệ nướng đối lưu hiện đại.</p>"),
+  // bài chỉ nói về loại sản phẩm nói chung (không nhắc model): chỉ là tham khảo chung
+  "https://c.vn/chung": html("Nồi chiên không dầu là gì", "<p>Nồi chiên không dầu Sunhouse và các hãng khác có ưu điểm là ít dầu mỡ, nhược điểm là dung tích nhỏ nên khó nấu cho đông người.</p><p>Nồi chiên không dầu thường sử dụng công nghệ đối lưu không khí nóng để làm chín thức ăn.</p>"),
+};
+
+test("ký tự HTML tiếng Việt được giải mã; menu và chân trang không thành đáp án", () => {
+  const d = asDoc({ url: "https://a.vn/shd4080", html: FPAGES["https://a.vn/shd4080"] });
+  assert.equal(d.title, "Nồi chiên không dầu Sunhouse SHD4080 | Điện Máy A"); assert.ok(!/&[a-z]+;|&#\d+;/i.test(d.text), d.text.slice(0, 120));
+  assert.ok(d.sentences.length >= 2 && d.sentences.every((s) => !core.isBoilerplate(s.t) && !/Apple Kênh/.test(s.t) && !/&[a-z]+;/.test(s.t)), d.sentences.map((s) => s.t).join(" | "));
+  assert.ok(d.sentences.some((x) => /Nồi chiên không dầu Sunhouse SHD4080 có ưu điểm/.test(x.t)));
+  assert.equal(core.decodeEntities("chi&ecirc;n &amp;ecirc; &#x1EC7; &agrave; &Dstrok; &unknown;"), "chiên ê ệ à Đ &unknown;");
+  assert.ok(core.isBoilerplate(menu)); assert.ok(!core.isBoilerplate("Nồi chiên không dầu Sunhouse được ứng dụng công nghệ Rapid Air tiên tiến, giúp làm chín thực phẩm nhanh."));
+});
+
+test("đúng model: câu nhắc model khác bị loại, bài không nhắc model chỉ là tham khảo chung và không tính là đủ đáp án", () => {
+  const s = new AnswerStore({ product: `${AIRFRYER} SHD4080`, code: "SHD4080", queryTokens: FTOKENS, topicIds: ["pros", "using"] });
+  const docs = Object.entries(FPAGES).map(([url, h]) => asDoc({ url, html: h })); s.prime(docs); docs.forEach((d) => s.ingest(d));
+  const pros = s.get("pros"), main = s.snippets(pros), general = s.generalSnippets(pros);
+  assert.ok(main.length >= 1 && main.every((x) => x.url === "https://a.vn/shd4080"), JSON.stringify(main));
+  assert.ok(!pros.items.some((i) => /SHD4026/.test(i.text)), "đáp án nói về model SHD4026");
+  assert.ok(general.length >= 1 && general.every((x) => x.url === "https://c.vn/chung")); assert.ok(!general.some((x) => /SHD4026/.test(x.text)));
+  const using = s.get("using"); assert.ok(s.snippets(using).some((x) => /Rapid Air/.test(x.text))); assert.ok(!using.items.some((i) => /SHD4026/.test(i.text)));
+  assert.equal(s.enough(pros), false, "đáp án chung không được tính là đủ");
+  const out = s.topicsOut(docs); assert.ok(out.pros.snippets.length >= 1 && out.pros.general.length >= 1);
+  // không có model thì không phân biệt: bài về model khác vẫn dùng được
+  const any = new AnswerStore({ product: AIRFRYER, code: "", queryTokens: FTOKENS, topicIds: ["pros"] }); docs.forEach((d) => any.ingest(d));
+  assert.ok(any.snippets(any.get("pros")).some((x) => x.url === "https://b.vn/shd4026") && any.general(any.get("pros")).length === 0);
+});
+
+test("chữ lặp ở nhiều bài (chân trang) không thành đáp án; lưu và nạp lại giữ nguyên tầng đáp án", () => {
+  const boiler = "Nồi chiên không dầu Sunhouse có ưu điểm bảo hành 12 tháng và giao hàng toàn quốc miễn phí cho mọi đơn hàng.";
+  const docs = [1, 2, 3, 4].map((i) => asDoc({ url: `https://s${i}.vn/p`, html: html(`Nồi chiên không dầu Sunhouse SHD4080 mẫu ${i}`, `<p>Nồi chiên không dầu Sunhouse SHD4080 mẫu ${i} có ưu điểm riêng số ${i} là chiên nhanh và tiết kiệm điện năng.</p><p>${boiler}</p>`) }));
+  const s = new AnswerStore({ product: AIRFRYER, code: "SHD4080", queryTokens: FTOKENS, topicIds: ["pros"] });
+  s.prime(docs); docs.forEach((d) => s.ingest(d));
+  assert.ok(!s.get("pros").items.some((i) => i.text === boiler), "chữ lặp ở 4 bài vẫn thành đáp án");
+  assert.ok(s.get("pros").items.length >= 3);
+  const back = AnswerStore.fromJSON(JSON.parse(JSON.stringify(s.toJSON())), { product: AIRFRYER, code: "SHD4080", queryTokens: FTOKENS, topicIds: ["pros"] });
+  assert.deepEqual(back.topicsOut(docs), s.topicsOut(docs)); assert.ok(back.get("pros").items.every((i) => i.tier === "model"));
+});

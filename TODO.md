@@ -40,6 +40,15 @@
 - [x] Mô phỏng (5 chủ đề + 3 câu hỏi thêm): 20 → 14 lượt tải Google, 95 → 62 lần mở trang, không mở lại trang nào; 40 test JS đạt
 - [ ] Chưa thử với Google thật; ngưỡng "đủ đáp án" (3 câu từ 2 bài) và tối đa 6 bài mỗi câu là giá trị chọn tạm, có thể chỉnh
 
+### Sửa lỗi: chữ lỗi và đáp án không liên quan
+- [x] Giải mã đầy đủ ký tự HTML (tên: `&ecirc;` `&aacute;`... Latin-1 và `&dstrok;`; số thập phân/thập lục phân; mã hóa hai lần `&amp;ecirc;`) cho nội dung, tiêu đề, thẻ meta; dữ liệu cũ còn ký tự thô cũng được giải mã khi hiển thị
+- [x] Câu lấy từ nội dung chính (bỏ head, title, nav, header, footer, aside, form, danh sách toàn liên kết); câu giống menu (nhiều từ viết hoa nối liền không dấu câu, nhiều mục điều hướng) và câu lặp ở từ 3 bài trở lên bị bỏ
+- [x] Đúng model: bài nhắc model mới cho đáp án chính (cộng điểm cho câu nhắc model); câu nhắc model khác bị loại; bài không nhắc model chỉ là "tham khảo chung" (thu gọn, ghi rõ) và không tính là đủ đáp án
+- [x] Từ khóa kiểm tra bài đúng sản phẩm chỉ lấy 5 từ đầu của tên
+- [x] 43 test JS đạt (giải mã chữ Việt, menu, model khác, chữ lặp, tầng đáp án)
+- [ ] Nhận diện "model" dựa trên token dạng mã (chữ in hoa + số); model viết toàn chữ thường hoặc không có số (VD "Hero Light") chưa lọc được theo model
+- [ ] Bài cũ đã lưu trong kho trước bản này vẫn chứa menu; hãy chạy lại yêu cầu để kho sạch
+
 ### Chưa chắc / còn lại
 - [ ] **Chưa chạy thử với Google thật trong trình duyệt**: mở tab nền, đọc kết quả, phân trang, Google Hình ảnh; chỉ thử với dữ liệu mẫu. Google có thể chặn (403, xác minh), app không vượt qua
 - [ ] Trang bán hàng không có dữ liệu sản phẩm có cấu trúc (JSON-LD, thẻ giá) và không có nút mua sẽ bị loại khỏi bảng; Shopee, TikTok Shop vẽ giá bằng JavaScript nên dễ không đọc được giá

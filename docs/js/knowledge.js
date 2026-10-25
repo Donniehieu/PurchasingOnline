@@ -1,6 +1,6 @@
 // Tìm hiểu sản phẩm theo nhóm ngành hàng và tư vấn mua hàng. Không dùng AI: bộ câu hỏi cố định theo ngành,
 // câu trả lời là các câu trích nguyên văn từ các trang đã crawl (kèm nguồn), nên cần người mua đọc và đánh giá lại.
-import { CATEGORIES, brandsIn, findPrices, normKey, phraseRelevance, priceSummary, stripAccents } from "./core.js";
+import { CATEGORIES, brandsIn, findPrices, normKey, phraseRelevance, priceSummary, stripAccents, titleModels } from "./core.js";
 import { MIN_LEN, asDoc } from "./corpus.js";
 
 export const GROUPS = {
@@ -107,21 +107,37 @@ export const makeCustomSpecs = (questions, productTokens = []) => questions.map(
 });
 
 /** Chấm MỘT tài liệu cho TẤT CẢ câu hỏi: mỗi câu của tài liệu được duyệt đúng một lần và đẩy ứng viên vào từng spec. */
-export function scoreDoc(d, rel, tspecs, cspecs, queryTokens, brandKeys = []) {
+/**
+ * Nhận diện model sản phẩm trong văn bản: lấy token dạng mã (SHD4080, VCE-9304) từ chuỗi model người dùng nhập, nếu không có thì dùng nguyên chuỗi.
+ * Trả về { re, token } hoặc null khi chưa có model. re so khớp trên văn bản đã bỏ dấu, chữ thường (doc.norm, sentence.n).
+ */
+export function modelMatcher(code) {
+  const raw = String(code || "").trim(); if (!raw) return null;
+  const token = (titleModels(raw.toUpperCase().replace(/[^A-Z0-9 -]/g, " "))[0] || raw).toLowerCase(), esc = stripAccents(token).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return { re: new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`), token: token.toUpperCase() };
+}
+/** Câu nhắc tới một model khác (VD hỏi SHD4080 mà câu nói về SHD4026) mà không nhắc model đang hỏi: không dùng làm đáp án. */
+export const mentionsOtherModel = (text, m) => {
+  const toks = titleModels(text.toUpperCase().replace(/[^A-Z0-9 -]/g, " "));
+  return toks.length > 0 && !toks.some((t) => t === m.token || t.includes(m.token) || m.token.includes(t));
+};
+
+export function scoreDoc(d, rel, tspecs, cspecs, queryTokens, brandKeys = [], model = null) {
   for (const s of d.sentences) {
+    if (model && mentionsOtherModel(s.t, model) && !model.re.test(s.n)) continue;
     if (rel >= 0.8 || queryTokens.some((t) => s.n.includes(t))) { // trang chỉ liên quan một phần thì câu phải nhắc sản phẩm
       for (const sp of tspecs) {
         const q = sp.q;
         if (s.t.length < MIN_LEN && q.kind !== "price") continue;
         if (q.needsBrand && !brandKeys.some((k) => s.n.includes(k))) continue;
         const score = q.patterns.reduce((n, re) => n + (re.test(s.t) ? 1 : 0), 0);
-        if (score >= q.min) sp.cands.push({ text: s.t, url: d.url, score: score + (q.kind === "price" && findPrices(s.t).length ? 1 : 0) });
+        if (score >= q.min) sp.cands.push({ text: s.t, url: d.url, score: score + (q.kind === "price" && findPrices(s.t).length ? 1 : 0) + (model && model.re.test(s.n) ? 2 : 0) });
       }
     }
     if (s.t.length >= MIN_LEN) for (const sp of cspecs) {
       if (!sp.qTokens.length) continue;
       const hit = sp.qTokens.filter((t) => s.n.includes(t)).length;
-      if (hit >= sp.need) sp.cands.push({ text: s.t, url: d.url, score: hit });
+      if (hit >= sp.need) sp.cands.push({ text: s.t, url: d.url, score: hit + (model && model.re.test(s.n) ? 2 : 0) });
     }
   }
 }

@@ -15,6 +15,8 @@ import * as net from "./net.js";
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10));
 export const spaced = (...parts) => parts.map((p) => String(p || "").trim()).filter(Boolean).join(" ");
+/** Từ khóa kiểm tra bài đúng sản phẩm: chỉ 5 từ đầu của tên (tên dài kiểu quảng cáo "... phù hợp mọi nhu cầu" làm lọc sai). */
+const relTokens = (text) => core.queryKeywords(text).slice(0, 5);
 const albumQuery = (job) => spaced(job.query, job.product_code);
 const MAX_ROUNDS = 2, MAX_CUSTOM_SEARCHES = 4;
 
@@ -78,7 +80,7 @@ export async function prepare(job, ctx) {
   // 4. Phân tích kho dữ liệu đã đọc
   step("analyze", "start");
   const subject = job.query || searchText;
-  job.discovery = core.buildDiscovery(crawler.corpus.list(), core.queryKeywords(subject), subject);
+  job.discovery = core.buildDiscovery(crawler.corpus.list(), relTokens(subject), subject);
   const d = job.discovery;
   step("analyze", "done", `${d.total} nguồn đúng sản phẩm, nhóm ngành ${core.CATEGORIES[d.category].label}` + (d.price ? `, giá thấy trên web ${core.money(d.price.min)} đến ${core.money(d.price.max)}` : ""));
   job.questions = core.buildCards(job, job.suggested_name, "", d);
@@ -89,7 +91,7 @@ export async function prepare(job, ctx) {
 /* ------------------------------------------------------------------ giai đoạn 2 */
 /** Tạo bảng NCC từ các tài liệu đã đọc: chỉ trang bán một sản phẩm đúng model mới vào bảng, giá phải đọc chắc chắn từ trang. */
 export function buildSuppliers(job, docsIn) {
-  const tokens = core.queryKeywords(job.query), code = core.stripAccents(job.product_code || "").trim();
+  const tokens = relTokens(job.query), code = core.stripAccents(job.product_code || "").trim();
   const codeRe = code ? new RegExp(`\\b${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`) : null;
   const seenUrl = new Set(), perDomain = new Map(), suppliers = [], others = [];
   for (const raw of docsIn) {
@@ -137,7 +139,7 @@ async function enrichContacts(job, crawler, step) {
 const MAX_OPEN_PER_QUESTION = 6; // mỗi câu hỏi mở tối đa 6 bài MỚI (bài đã mở rồi thì dùng luôn, không tính)
 
 function loadStore(job) {
-  const opts = { product: spaced(job.query, job.product_code), queryTokens: core.queryKeywords(job.query), topicIds: job.cfg.topics, questions: job.cfg.extra_q || [] };
+  const opts = { product: spaced(job.query, job.product_code), code: job.product_code || "", queryTokens: relTokens(job.query), topicIds: job.cfg.topics, questions: job.cfg.extra_q || [] };
   return job.answer_store ? AnswerStore.fromJSON(job.answer_store, opts) : new AnswerStore(opts);
 }
 /** Đưa kho đáp án vào job để hiển thị và lưu (đáp án tích lũy, không mất khi tải lại). */
@@ -176,6 +178,7 @@ export async function findAnswers(store, entry, crawler, { product, maxPages = 2
  */
 export async function answerQuestions(job, crawler, { step = () => {}, log = () => {}, maxPages = 2 } = {}) {
   const product = spaced(job.query, job.product_code), store = loadStore(job);
+  store.prime(crawler.corpus.list()); // đếm chữ lặp ở nhiều bài (menu, chân trang) trước khi chấm
   let saved = 0; for (const d of crawler.corpus.list()) saved += store.ingest(d);
   const entries = store.list();
   publish(job, store, crawler);
@@ -269,6 +272,7 @@ export async function run(job, ctx) {
  */
 export async function askMore(job, question, crawler, { allowSearch = true, maxPages = 2 } = {}) {
   const product = spaced(job.query, job.product_code), store = loadStore(job);
+  store.prime(crawler.corpus.list());
   for (const d of crawler.corpus.list()) store.ingest(d); // bài chưa chấm (nếu có)
   const e = store.addCustom(question, crawler.corpus.list()); // chấm toàn bộ kho cho câu hỏi mới
   let searched = false, opened = 0;

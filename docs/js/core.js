@@ -33,10 +33,47 @@ const PRICE_MIN = 50_000, PRICE_MAX = 200_000_000;
 const GENERIC = new Set(["gia", "mua", "cho", "va", "loai", "tot", "re", "nhat", "ban", "hang", "chinh"]);
 const toInt = (raw) => parseInt(String(raw).replace(/[.,]/g, ""), 10);
 
+/* Ký tự HTML có tên: chữ Latin-1 (à á â ã ä å ... ê ô ơ... dùng nhiều trong tiếng Việt), dấu câu và ký hiệu thường gặp. */
+const LATIN1 = "Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml".split(" ");
+const ENTITIES = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", ndash: "–", mdash: "—", hellip: "…", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", bull: "•", middot: "·", copy: "©", reg: "®", trade: "™", deg: "°", plusmn: "±", euro: "€", laquo: "«", raquo: "»", dstrok: "đ", Dstrok: "Đ", abreve: "ă", Abreve: "Ă", ecaron: "ě", ohorn: "ơ", uhorn: "ư", sup2: "²", sup3: "³", frac12: "½", pound: "£", yen: "¥", cent: "¢", sect: "§", para: "¶", shy: "" };
+LATIN1.forEach((name, i) => { ENTITIES[name] = String.fromCharCode(0xc0 + i); });
+/** Giải mã ký tự HTML: số thập phân (&#259;), thập lục phân (&#x103;) và tên (&ecirc;, &amp;...). Gặp "&amp;ecirc;" (mã hóa hai lần) thì giải mã tiếp. */
+export function decodeEntities(text) {
+  let s = String(text);
+  for (let pass = 0; pass < 2 && s.includes("&"); pass++) {
+    const out = s.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi, (m, e) => {
+      if (e[0] === "#") { const code = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return code > 0 && code < 0x110000 ? String.fromCodePoint(code) : m; }
+      return Object.hasOwn(ENTITIES, e) ? ENTITIES[e] : (Object.hasOwn(ENTITIES, e.toLowerCase()) && e === e.toLowerCase() ? ENTITIES[e.toLowerCase()] : m);
+    });
+    if (out === s) break; s = out;
+  }
+  return s;
+}
 export function htmlToText(html) {
-  return html.replace(/<(script|style|noscript)\b[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/\s+/g, " ").trim();
+  return decodeEntities(html.replace(/<(script|style|noscript)\b[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+}
+/** Văn bản nội dung chính của trang: bỏ menu, đầu trang, chân trang, thanh bên, biểu mẫu, danh sách liên kết... (chữ trong đó không phải câu trả lời). */
+export function mainText(html) {
+  const cleaned = html
+    .replace(/<(head|title|script|style|noscript|svg|nav|header|footer|aside|form|select|button|iframe)\b[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<(ul|ol)\b[^>]*>(?:(?!<\/\1>)[\s\S]){0,4000}?<\/\1>/gi, (m) => { const li = (m.match(/<li\b/gi) || []).length, links = (m.match(/<a\b/gi) || []).length; return li >= 4 && links >= li * 0.8 ? " " : m; }); // danh sách toàn liên kết = menu
+  return htmlToText(cleaned);
+}
+const NAV_WORDS = ["trang chu", "dang nhap", "dang ky", "gio hang", "tin tuc", "danh muc", "tim kiem", "lien he", "gioi thieu", "chinh sach", "huong dan", "khuyen mai", "he thong cua hang", "tuyen dung", "dieu khoan", "ban quyen", "theo doi chung toi", "tai ung dung"];
+/** Chữ có vẻ là menu/chân trang/tiêu đề liệt kê chứ không phải câu văn: nhiều từ viết hoa liên tiếp hoặc nhiều mục điều hướng. */
+export function isBoilerplate(sentence) {
+  const words = sentence.split(/\s+/).filter(Boolean);
+  if (words.length >= 8) {
+    const caps = words.filter((w) => /^[\p{Lu}\d]/u.test(w)).length;
+    if (caps / words.length > 0.55) return true;
+  }
+  if (words.length >= 12) { // nhiều mục menu nối liền: giữa câu có nhiều từ viết hoa và không kết thúc bằng dấu câu
+    const mid = words.slice(1), capsMid = mid.filter((w) => /^\p{Lu}/u.test(w)).length;
+    if (capsMid >= 5 && capsMid / mid.length >= 0.15 && !/[.!?:;)]$/.test(sentence.trim())) return true;
+  }
+  const n = stripAccents(sentence);
+  if (NAV_WORDS.filter((w) => n.includes(w)).length >= 2) return true;
+  return /[|›»]/.test(sentence) && words.length >= 6 && !/[.!?]$/.test(sentence.trim());
 }
 function metaTags(html) {
   const tags = [];
@@ -50,7 +87,7 @@ function metaTags(html) {
 function metaContent(tags, ...names) {
   for (const name of names) {
     const t = tags.find((x) => (x.property || x.name || "").toLowerCase() === name && x.content);
-    if (t) return t.content.trim();
+    if (t) return decodeEntities(t.content).trim();
   }
   return "";
 }
@@ -185,7 +222,7 @@ export function siteNameOf(html, url, tags = null) {
   const t = tags || metaTags(html);
   const og = metaContent(t, "og:site_name", "application-name");
   if (og) return og.slice(0, 60);
-  const title = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).replace(/\s+/g, " ").trim(), tail = title.split(/\s[|\-–—]\s/).pop().trim();
+  const title = decodeEntities((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).replace(/\s+/g, " ").trim(), tail = title.split(/\s[|\-–—]\s/).pop().trim();
   if (title.includes(tail) && tail !== title && tail.length >= 2 && tail.length <= 30) return tail; // "... | FPT Shop" -> "FPT Shop"
   const d = domainOf(url).split(".")[0] || domainOf(url);
   return d ? d.charAt(0).toUpperCase() + d.slice(1) : "NCC";
@@ -197,7 +234,7 @@ export function siteTokensOf(html, url) {
   const label = domainOf(url).split(".").slice(0, -1).join("").replace(/[^a-z0-9]/gi, "").toUpperCase();
   add(domainOf(url).split(".").slice(0, -1).join(" ")); add(siteNameOf(html, url));
   for (let n = 3; n < label.length; n++) set.add(label.slice(0, n)); // "FPT", "FPTS"... là tiền tố của tên miền fptshop
-  const parts = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).split(/\s[|\-–—]\s/);
+  const parts = decodeEntities((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).split(/\s[|\-–—]\s/);
   if (parts.length > 1) { const tail = parts[parts.length - 1].trim(); add(tail); if (tail.length >= 2 && tail.length <= 4) set.add(stripAccents(tail).toUpperCase()); } // đoạn cuối tiêu đề thường là tên cửa hàng (kể cả tên ngắn như "HC")
   return set;
 }
@@ -212,7 +249,7 @@ export function isProductPage(html, text, tags, price) {
 /** Đọc HTML một trang NCC. Trả về null nếu không đúng sản phẩm. */
 export function parsePage(html, url, tokens, productCode = "") {
   const tags = metaTags(html);
-  const title = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1].replace(/\s+/g, " ").trim();
+  const title = decodeEntities((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).replace(/\s+/g, " ").trim();
   const text = htmlToText(html);
   const norm = stripAccents(text);
   let relevance = phraseRelevance(tokens, norm);

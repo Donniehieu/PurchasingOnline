@@ -2,7 +2,7 @@
 // các bước sau cần (câu đã chuẩn hóa để trả lời mọi câu hỏi, giá, hãng/model, thông số, liên hệ, tóm tắt, đề mục) rồi bỏ HTML.
 // Nhờ đó nhiều câu hỏi (giá, ưu nhược điểm, công nghệ, phân loại, lưu ý khi mua, câu hỏi gõ thêm, so sánh NCC, liên hệ...)
 // cùng khai thác một lượt đọc thay vì mỗi câu hỏi đi mở lại trang. Kho được lưu bền vững để hỏi thêm sau này không cần mở lại.
-import { domainOf, extractPrice, findPrices, htmlToText, jsonLdProducts, normKey, parsePage, siteTokensOf, stripAccents } from "./core.js";
+import { decodeEntities, domainOf, extractPrice, findPrices, htmlToText, isBoilerplate, jsonLdProducts, mainText, normKey, parsePage, siteTokensOf, stripAccents } from "./core.js";
 
 export const MIN_LEN = 50, MIN_LEN_PRICE = 14, MAX_LEN = 300, MAX_SENT = 400;
 const SENT_SPLIT = /(?<=[.!?])\s+|\s{2,}|\s[-•·|]\s/;
@@ -14,7 +14,7 @@ export function splitSentences(text, max = MAX_SENT) {
   const out = [];
   for (const raw of text.split(SENT_SPLIT)) {
     const t = raw.trim();
-    if (t.length >= MIN_LEN_PRICE && t.length <= MAX_LEN) { out.push({ t, n: stripAccents(t) }); if (out.length >= max) break; }
+    if (t.length >= MIN_LEN_PRICE && t.length <= MAX_LEN && !isBoilerplate(t)) { out.push({ t, n: stripAccents(t) }); if (out.length >= max) break; }
   }
   return out;
 }
@@ -45,13 +45,13 @@ function summaryParts(html, text) {
 export function makeDoc(p) {
   if (!p || !p.html || !p.url) return null;
   const pseudo = !!p.pseudo, html = p.html;
-  const text = htmlToText(html).slice(0, 60000);
-  const title = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).replace(/\s+/g, " ").trim();
+  const fullText = htmlToText(html).slice(0, 60000), text = (pseudo ? fullText : mainText(html).slice(0, 60000)) || fullText; // câu trả lời lấy từ nội dung chính, không từ menu/chân trang
+  const title = decodeEntities((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [, ""])[1]).replace(/\s+/g, " ").trim();
   let page = null;
   if (!pseudo) { try { page = parsePage(html, p.url, [], ""); } catch { page = null; } } // thông tin NCC/sản phẩm chưa lọc theo từ khóa
   return {
     url: p.url, domain: domainOf(p.url), title, pseudo, text: text.slice(0, 40000), norm: stripAccents(text), sentences: splitSentences(text),
-    site: siteTokensOf(html, p.url), ld: pseudo ? [] : jsonLdProducts(html), price: extractPrice(html, text, null, pseudo), page,
+    site: siteTokensOf(html, p.url), ld: pseudo ? [] : jsonLdProducts(html), price: extractPrice(html, fullText, null, pseudo), page,
     summary: pseudo ? null : { title, ...summaryParts(html, text) },
   };
 }

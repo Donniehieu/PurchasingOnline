@@ -196,3 +196,4 @@ ul.tight { padding-left:16px; margin:0; line-height:1.5; font-size:13px; }
   #history table.hist tr.drow td { border:0; }
   .clip { max-width:none; }
 }
+details.general { margin-top:8px; border:1px dashed var(--line); border-radius:12px; padding:6px 12px; background:var(--accent-soft); font-size:13px; } details.general summary { cursor:pointer; font-weight:600; color:var(--muted); }

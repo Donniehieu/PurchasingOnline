@@ -159,7 +159,7 @@ function showWizard(job) {
   wiz = { job, idx: 0, answers: Object.fromEntries(job.questions.map((c) => [c.id, { value: c.default, custom: "" }])) };
   const d = job.discovery;
   $("cards-sources").innerHTML = d && d.total ? `<div class="notice">Đã đọc ${d.read} trang Google, ${d.total} nguồn đúng sản phẩm, nhóm ngành ${esc(core.CATEGORIES[d.category].label)}.${d.price ? ` Giá thấy trên web ${esc(money(d.price.min))} đến ${esc(money(d.price.max))}.` : ""}
-    Các lựa chọn bên dưới lấy từ dữ liệu đó, kèm "thấy ở n/N trang". <details><summary>Các trang đã dùng</summary><ul class="points">${d.pages.map((p) => `<li><a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">${esc(p.domain)}</a> · ${esc(p.title)}</li>`).join("")}</ul></details></div>`
+    Các lựa chọn bên dưới lấy từ dữ liệu đó, kèm "thấy ở n/N trang". <details><summary>Các trang đã dùng</summary><ul class="points">${d.pages.map((p) => `<li><a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">${esc(p.domain)}</a> · ${txt(p.title)}</li>`).join("")}</ul></details></div>`
     : '<div class="notice">Chưa đọc được trang web nào đúng sản phẩm nên các lựa chọn chỉ là gợi ý chung.</div>';
   $("wizard-card").hidden = false; $("wizard").hidden = false; $("wiz-summary").hidden = true;
   renderStep(); $("wizard-card").scrollIntoView({ behavior: "smooth" });
@@ -332,7 +332,7 @@ $("contact-modal").addEventListener("click", (e) => { if (e.target.id === "conta
 function renderOthers(job) {
   const o = job.others || []; $("others-wrap").hidden = !o.length;
   $("others-title").textContent = `${o.length} trang đã đọc nhưng không đưa vào bảng so sánh`;
-  $("others").innerHTML = `<ul class="points">${o.map((x) => `<li><a href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">${esc(x.title || x.url)}</a> <span class="muted">· ${esc(x.reason)}</span></li>`).join("")}</ul>`;
+  $("others").innerHTML = `<ul class="points">${o.map((x) => `<li><a href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">${txt(x.title || x.url)}</a> <span class="muted">· ${esc(x.reason)}</span></li>`).join("")}</ul>`;
 }
 function renderPrice(job) {
   const st = job.price_stats;
@@ -342,27 +342,35 @@ function renderPrice(job) {
   const max = Math.max(...priced.map((s) => s.price)), min = priced[0].price;
   $("price-bars").innerHTML = priced.map((s) => `<div class="bar-row"><div class="bar-label" title="${esc(s.name)}">${esc(s.name)}</div><div class="bar-track"><div class="bar-fill ${s.recommended ? "best" : ""}" style="width:${(s.price / max * 100).toFixed(1)}%"></div></div><div class="bar-value">${money(s.price)} · ${(s.price / min * 100).toFixed(0)}%</div></div>`).join("") + '<p class="muted">Tỷ lệ % tính theo NCC có giá thấp nhất (100%).</p>';
 }
-const snippetItem = (s) => `<li>${esc(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`;
-const snippetList = (snippets) => (snippets.length ? `<div class="muted">${snippets.length} đáp án từ ${new Set(snippets.map((s) => s.url)).size} bài</div><ul class="points">${snippets.slice(0, 5).map(snippetItem).join("")}</ul>${snippets.length > 5 ? `<details><summary>Xem thêm ${snippets.length - 5} đáp án từ các bài khác</summary><ul class="points">${snippets.slice(5).map(snippetItem).join("")}</ul></details>` : ""}` : '<p class="muted">Chưa tìm được câu trả lời rõ ràng trong các bài đã đọc.</p>');
+const txt = (x) => esc(core.decodeEntities(x)); // hiển thị: giải mã ký tự HTML còn sót trong dữ liệu đã lưu từ bản cũ
+const snippetItem = (s) => `<li>${txt(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`;
+/** Đáp án đúng model/sản phẩm (hiện 5 câu đầu, còn lại thu gọn) và đáp án chung về loại sản phẩm (thu gọn, ghi rõ không nêu đúng model). */
+function snippetList(snippets, general = [], job = {}) {
+  const code = job.product_code ? ` ${job.product_code}` : "";
+  const main = snippets.length ? `<div class="muted">${snippets.length} đáp án từ ${new Set(snippets.map((s) => s.url)).size} bài</div><ul class="points">${snippets.slice(0, 5).map(snippetItem).join("")}</ul>${snippets.length > 5 ? `<details><summary>Xem thêm ${snippets.length - 5} đáp án từ các bài khác</summary><ul class="points">${snippets.slice(5).map(snippetItem).join("")}</ul></details>` : ""}`
+    : `<p class="muted">${job.product_code ? `Chưa có bài nêu đúng model${code} trả lời câu này.` : "Chưa tìm được câu trả lời rõ ràng trong các bài đã đọc."}</p>`;
+  const gen = general.length ? `<details class="general"><summary>Tham khảo chung về loại sản phẩm, KHÔNG nêu đúng model${code} (${general.length})</summary><ul class="points">${general.map(snippetItem).join("")}</ul></details>` : "";
+  return main + gen;
+}
 function renderResearch(job) {
   const defs = knowledge.TOPIC_DEFS.filter((t) => job.research && job.research[t.id]); $("research-wrap").hidden = !defs.length;
   $("research").innerHTML = defs.map((t) => {
     const r = job.research[t.id];
     const price = r.price ? `<div class="chips"><span class="chip static">Thấp nhất ${esc(money(r.price.min))}</span><span class="chip static">Trung vị ${esc(money(r.price.median))}</span><span class="chip static">Cao nhất ${esc(money(r.price.max))}</span></div>` : "";
-    return `<div class="block"><h4>${esc(t.label)}</h4><div class="muted">${esc(r.query)}${r.pages_read != null ? ` · đã đọc ${r.pages_read} bài` : ""}</div>${price}${snippetList(r.snippets)}</div>`;
+    return `<div class="block"><h4>${esc(t.label)}</h4><div class="muted">${esc(r.query)}${r.pages_read != null ? ` · đã đọc ${r.pages_read} bài` : ""}</div>${price}${snippetList(r.snippets, r.general || [], job)}</div>`;
   }).join("");
 }
 function renderCustom(job) {
   const list = job.custom_answers || []; $("custom-wrap").hidden = false; // luôn hiện để có ô hỏi thêm từ kho dữ liệu
-  $("custom-answers").innerHTML = list.map((a) => `<div class="block"><h4>${esc(a.question)}</h4><div class="muted">đã tìm trong ${a.pages_read ?? 0} bài đã đọc</div>${snippetList(a.snippets)}</div>`).join("");
+  $("custom-answers").innerHTML = list.map((a) => `<div class="block"><h4>${esc(a.question)}</h4><div class="muted">đã tìm trong ${a.pages_read ?? 0} bài đã đọc</div>${snippetList(a.snippets, a.general || [], job)}</div>`).join("");
 }
 function renderRefs(job) {
   const list = job.refs || []; $("refs-wrap").hidden = !list.length;
-  $("refs").innerHTML = list.map((a) => `<div class="block"><h4><a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">${esc(a.title || a.url)}</a></h4><div class="muted">${esc(a.domain)}</div>
-    ${a.description ? `<p>${esc(a.description)}</p>` : ""}
+  $("refs").innerHTML = list.map((a) => `<div class="block"><h4><a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">${txt(a.title || a.url)}</a></h4><div class="muted">${esc(a.domain)}</div>
+    ${a.description ? `<p>${txt(a.description)}</p>` : ""}
     ${a.facts.length ? `<div class="chips">${a.facts.map((f) => `<span class="chip static">${esc(f)}</span>`).join("")}</div>` : ""}
-    ${a.keyPoints.length ? `<h5>Ý chính</h5><ul class="points">${a.keyPoints.map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : ""}
-    ${a.headings.length ? `<details><summary>Các đề mục của bài (${a.headings.length})</summary><ul class="points">${a.headings.map((h) => `<li>${esc(h)}</li>`).join("")}</ul></details>` : ""}
+    ${a.keyPoints.length ? `<h5>Ý chính</h5><ul class="points">${a.keyPoints.map((k) => `<li>${txt(k)}</li>`).join("")}</ul>` : ""}
+    ${a.headings.length ? `<details><summary>Các đề mục của bài (${a.headings.length})</summary><ul class="points">${a.headings.map((h) => `<li>${txt(h)}</li>`).join("")}</ul></details>` : ""}
     ${a.qa.length ? `<h5>Câu hỏi liên quan và câu trả lời trong bài</h5>${a.qa.map((q) => `<div class="qa"><b>${esc(q.label)}</b><ul class="points">${q.snippets.map((s) => `<li>${esc(s.text)}</li>`).join("")}</ul></div>`).join("")}<a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">[nguồn: mở bài viết]</a>` : ""}</div>`).join("");
 }
 const list = (title, items) => (items && items.length ? `<h4>${title}</h4><ul class="points">${items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
