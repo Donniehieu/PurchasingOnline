@@ -44,6 +44,8 @@ node --test tests-js/core.test.mjs
 
 ## Chạy trên máy
 
+Cách nhanh trên Windows: bấm đúp `run.bat` (tự cài thư viện, mở trình duyệt tại http://127.0.0.1:5000). Engine DuckDuckGo không cần khóa nên chạy được ngay.
+
 ```bash
 pip install -r requirements.txt
 ```

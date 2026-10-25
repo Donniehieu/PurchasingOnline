@@ -27,6 +27,7 @@ SKIP_DOMAINS = (
 ENGINE_LABELS = {
     "google": "Google (Custom Search API)",
     "brave": "Brave Search API",
+    "duckduckgo": "DuckDuckGo (không cần khóa)",
     "bing": "Bing (HTML, không cần khóa)",
     "yahoo": "Yahoo (HTML, không cần khóa)",
 }
@@ -41,6 +42,8 @@ def engine_status():
             available, reason = False, "Chưa nhập Google API key hoặc Search engine ID (tab Cài đặt)"
         if engine_id == "brave" and not settings_store.get("BRAVE_API_KEY"):
             available, reason = False, "Chưa nhập Brave API key (tab Cài đặt)"
+        if engine_id == "bing":
+            reason = "Từ một số máy trả kết quả không liên quan đến từ khóa"
         if engine_id == "yahoo":
             reason = "Thường bị Yahoo chặn, có thể không có kết quả"
         status.append({"id": engine_id, "label": label, "available": available, "reason": reason})
@@ -140,6 +143,12 @@ def _yahoo(query, count):
     return filter_domains([u for u in urls if u.startswith("http")], count)
 
 
+def _duckduckgo(query, count):
+    from ddgs import DDGS
+    results = DDGS().text(query, region="vn-vi", max_results=count * 2)
+    return filter_domains([r["href"] for r in results if r.get("href")], count)
+
+
 def _decode_bing_link(href):
     """Bing bọc link đích trong tham số u (base64 url-safe, bắt đầu bằng 'a1')."""
     parsed = urlparse(href)
@@ -155,4 +164,4 @@ def _decode_bing_link(href):
         return href
 
 
-_SEARCHERS = {"google": _google, "brave": _brave, "bing": _bing, "yahoo": _yahoo}
+_SEARCHERS = {"google": _google, "brave": _brave, "duckduckgo": _duckduckgo, "bing": _bing, "yahoo": _yahoo}

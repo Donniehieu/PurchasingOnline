@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bs4 import BeautifulSoup
 
-from purchasing import crawler, history, insights, links, pipeline, questions, scoring, settings_store
+from purchasing import crawler, history, images, insights, links, pipeline, questions, scoring, settings_store
 
 
 def supplier(name, price, mah=None, months=None, vat=None, relevance=1.0):
@@ -130,6 +130,43 @@ class PersuasionTests(unittest.TestCase):
         self.assertIn("4. Rủi ro và cách kiểm soát", headings)
         self.assertIn("a.vn", insights.persuasion_text(result["persuasion"]))
         self.assertTrue(result["negotiation"][0]["steps"])
+
+
+class AlbumTests(unittest.TestCase):
+    @staticmethod
+    def _png(color, size=(200, 200)):
+        from PIL import Image
+        buf = io.BytesIO()
+        image = Image.new("RGB", size, color)
+        for x in range(size[0] // 2):  # nửa trái sáng hơn để dHash có đặc trưng
+            for y in range(size[1]):
+                image.putpixel((x, y), (255, 255, 255))
+        image.save(buf, "PNG")
+        return buf.getvalue()
+
+    def test_similarity_same_image_is_100(self):
+        from PIL import Image
+        img = Image.open(io.BytesIO(self._png((10, 10, 10))))
+        self.assertEqual(images.similarity(images.dhash(img), images.dhash(img.resize((90, 90)))), 100)
+
+    def test_private_hosts_are_blocked(self):
+        self.assertFalse(images._is_public_host("http://127.0.0.1/a.png"))
+        self.assertFalse(images._is_public_host("file:///etc/passwd"))
+
+    def test_crawl_album_saves_dedupes_and_scores(self):
+        from unittest import mock
+        data = self._png((10, 10, 10))
+        items = [{"image_url": "https://x.vn/a.png", "page_url": "https://x.vn", "title": "A", "engine": "bing"},
+                 {"image_url": "https://x.vn/b.png", "page_url": "https://x.vn", "title": "B", "engine": "bing"}]  # cùng nội dung
+        with tempfile.TemporaryDirectory() as tmp:
+            ref = Path(tmp) / "ref.png"
+            ref.write_bytes(data)
+            with mock.patch.object(images, "find_image_urls", return_value=(items, {})), \
+                 mock.patch.object(images, "_download", side_effect=lambda i: (data, __import__("PIL.Image", fromlist=["Image"]).open(io.BytesIO(data)), "PNG")):
+                added, _, _ = images.crawl_album(Path(tmp) / "album", ["bing"], "quạt", reference_images=[ref])
+            self.assertEqual(len(added), 1)
+            self.assertEqual(added[0]["match"], 100)
+            self.assertTrue((Path(tmp) / "album" / added[0]["file"]).exists())
 
 
 if __name__ == "__main__":

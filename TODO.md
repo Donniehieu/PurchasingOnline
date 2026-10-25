@@ -71,6 +71,23 @@
 - [x] Giao diện mới: bo góc mềm, đổ bóng nhẹ, nút dạng viên thuốc, thanh tab dạng phân đoạn, chế độ tối
 - [x] Test: 12 unit test đạt, thêm kiểm thử API sửa ô, lịch sử, xuất xlsx; kiểm thử giao diện (mở/đóng phiếu, sửa ô, ẩn cột, lọc)
 
+## Đợt cập nhật: album ảnh crawl từ web (bản Flask)
+- [x] Sau khi xác nhận đủ dữ liệu đầu vào, app crawl ảnh theo từ khóa của yêu cầu (Bing HTML không cần khóa, Brave/Google khi có khóa) và lưu vào `jobs/<id>/album/`
+- [x] Mỗi yêu cầu có album riêng: lọc ảnh hỏng/quá nhỏ/trùng nội dung, chặn tải từ địa chỉ nội bộ, giới hạn 6MB mỗi ảnh
+- [x] Đối chiếu: tính độ giống (dHash) với ảnh người dùng upload, sắp xếp ảnh giống nhất lên đầu, kèm trang nguồn
+- [x] Giao diện: mục "Album ảnh đối chiếu" trong kết quả, xem ảnh phóng to, xóa ảnh, ô từ khóa riêng + nút "Tìm thêm ảnh"
+- [x] API: `POST /api/jobs/<id>/album`, `DELETE /api/jobs/<id>/album/<file>`, ảnh phục vụ qua `/album/<file>` và `/images/<file>`
+- [x] Thêm engine DuckDuckGo (thư viện `ddgs`, không cần khóa) cho cả tìm NCC và ảnh, tick mặc định. Thử thật: trả ảnh đúng sản phẩm (Shopee, TikTok Shop, shop Việt), tải được khoảng 5/20 ảnh (còn lại bị chặn hotlink hoặc lỗi)
+- [x] Bing ảnh từ máy này bỏ qua từ khóa (trả ảnh không liên quan), nên không còn là mặc định
+- [x] Cốc Cốc: không dùng được, trang chặn bot bằng chuyển hướng JavaScript + cookie
+- [x] Chỉ hiện nhãn "giống ảnh upload" khi từ 70% trở lên (dưới mức đó là nhiễu của dHash)
+- [x] Ảnh người dùng up nằm chung album (nút "Up ảnh của bạn", dùng làm ảnh gốc tính độ giống), crawl ảnh là ô tick khi tạo yêu cầu
+- [x] Nút "Tìm trên Cốc Cốc" mở kết quả trong trình duyệt của bạn để dán link shop vào ô Link NCC (app không tự đọc được Cốc Cốc vì trang chặn bot)
+- [x] `run.bat` để chạy app. Đã thử cả luồng thật (tạo, xác nhận, crawl DuckDuckGo, 5 NCC, 6 ảnh album, up, tìm thêm, xóa) và giao diện trên trình duyệt
+- [ ] Giá trên Shopee/TikTok Shop nằm trong JavaScript nên app thường không đọc được giá, hãy nhập tay hoặc dùng link shop riêng
+- [ ] Chưa chạy thử với Brave/Google thật (chưa có khóa). Độ giống dHash chỉ gợi ý, không thay cho việc người dùng kiểm tra
+- [ ] Bản web tĩnh `docs/` chưa có album (trình duyệt bị CORS khi tải ảnh từ web)
+
 ## Chưa làm / cần bạn quyết định
 - [ ] Card dựng theo quy tắc, chưa dùng AI. Có thể soạn card bằng Claude khi có ANTHROPIC_API_KEY để gợi ý sát sản phẩm hơn
 - [ ] Tìm kiếm ảnh ngược (reverse image search). Hiện ảnh chỉ được mô tả bằng Claude khi có ANTHROPIC_API_KEY

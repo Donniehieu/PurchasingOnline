@@ -91,6 +91,16 @@
   .contact-tile .t { font-weight:700; margin-bottom:6px; } .contact-tile a { display:block; word-break:break-all; margin:3px 0; font-size:13px; }
   details.guide { border:1px solid var(--line); border-radius:14px; padding:10px 14px; margin:10px 0; } details.guide summary { cursor:pointer; font-weight:600; } details.guide ol { line-height:1.7; }
   .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#10162e; color:#fff; padding:11px 18px; border-radius:999px; display:none; z-index:30; box-shadow:var(--shadow); }
+  .album { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; margin-top:10px; }
+  .photo { border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--card); display:flex; flex-direction:column; font-size:12px; }
+  .photo.ref { border-color:var(--accent); }
+  .photo img { width:100%; height:150px; object-fit:cover; display:block; background:var(--accent-soft); cursor:zoom-in; }
+  .photo .cap { padding:8px 10px; display:flex; flex-direction:column; gap:4px; }
+  .photo .cap .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .badge { align-self:flex-start; border-radius:999px; padding:2px 9px; font-weight:700; background:var(--accent-soft); color:var(--accent); }
+  .badge.high { background:var(--green); color:#1d2a10; }
+  .lightbox { position:fixed; inset:0; background:rgba(15,18,32,.85); display:none; align-items:center; justify-content:center; z-index:40; padding:20px; cursor:zoom-out; }
+  .lightbox.show { display:flex; } .lightbox img { max-width:100%; max-height:100%; border-radius:12px; }
   table.plain { min-width:0; } table.plain th { position:static; }
   [hidden] { display:none !important; }
   @media print { header, form, .actions, .toolbar { display:none !important; } }
@@ -131,13 +141,15 @@
       <label>Engine tìm kiếm</label>
       <div class="engines" id="engines">Đang tải...</div>
       <p class="muted">Engine mờ là chưa có khóa: vào tab <a href="#" data-goto="settings">Cài đặt</a> để nhập.</p>
+      <label class="chip" style="margin-top:10px"><input type="checkbox" name="crawl_images" checked> Crawl ảnh từ web về album để đối chiếu</label>
       <label for="seed-urls">Link NCC / website (tùy chọn, mỗi dòng một link)</label>
       <textarea id="seed-urls" name="seed_urls" rows="3" placeholder="https://..."></textarea>
       <div class="actions">
         <label class="button secondary">Nhập link từ Excel/CSV<input type="file" id="link-file" accept=".xlsx,.csv,.txt" hidden></label>
+        <a class="button secondary" id="coccoc-btn" href="#" target="_blank" rel="noopener">Tìm trên Cốc Cốc</a>
         <span class="muted" id="link-status"></span>
       </div>
-      <p class="muted">Để trống link: app tự tìm NCC và tự điền link.</p>
+      <p class="muted">Để trống link: app tự tìm NCC và tự điền link. Cốc Cốc chặn app tự đọc, nên bấm "Tìm trên Cốc Cốc" để mở trong trình duyệt của bạn rồi dán các link shop vào ô trên.</p>
       <div class="actions"><button type="submit" id="submit-btn">Tìm NCC và điền form</button></div>
     </form>
   </section>
@@ -169,6 +181,17 @@
     <h3>Giá và tỷ lệ so sánh</h3>
     <div class="stats" id="price-stats"></div>
     <div id="price-bars" style="margin-top:12px"></div>
+
+    <h3>Album ảnh đối chiếu</h3>
+    <p class="muted">Ảnh crawl từ web theo từ khóa của yêu cầu này. Chỉ số "giống" so với ảnh bạn upload (nếu có), chỉ để tham khảo: hãy mở trang nguồn để xác nhận đúng sản phẩm.</p>
+    <div class="toolbar">
+      <input type="search" id="album-query" placeholder="Từ khóa ảnh (để trống: dùng từ khóa của yêu cầu)">
+      <button type="button" class="secondary" id="album-more">Tìm thêm ảnh</button>
+      <label class="button secondary">Up ảnh của bạn<input type="file" id="album-upload" accept="image/*" multiple hidden></label>
+      <span class="muted" id="album-state"></span>
+    </div>
+    <div id="album-refs"></div>
+    <div class="album" id="album"></div>
 
     <div id="research-wrap" hidden><h3>Kiến thức sản phẩm (từ web)</h3><div id="research"></div></div>
 
@@ -275,6 +298,7 @@
 </main>
 
 <div class="modal-bg" id="contact-modal"><div class="modal" id="contact-body"></div></div>
+<div class="lightbox" id="lightbox"><img alt=""></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -308,13 +332,18 @@ $("theme-btn").addEventListener("click", () => { document.body.classList.toggle(
 async function loadEngines() {
   const { body } = await api("/api/engines");
   $("engines").innerHTML = body.map((e) => `<label class="chip ${e.available ? "" : "off"}" title="${esc(e.reason)}">
-    <input type="checkbox" name="engines" value="${e.id}" ${e.available && e.id === "bing" ? "checked" : ""} ${e.available ? "" : "disabled"}>
+    <input type="checkbox" name="engines" value="${e.id}" ${e.available && e.id === "duckduckgo" ? "checked" : ""} ${e.available ? "" : "disabled"}>
     ${esc(e.label)}${e.available ? "" : " (chưa cấu hình)"}</label>`).join("");
 }
 async function loadTopics() {
   const { body } = await api("/api/topics");
   $("topics").innerHTML = body.map((t) => `<label class="chip"><input type="checkbox" name="topics" value="${t.id}"> ${esc(t.label)}</label>`).join("");
 }
+$("coccoc-btn").addEventListener("click", (e) => {
+  const q = [$("query").value, $("product-code").value, $("extra-keywords").value].map((s) => s.trim()).filter(Boolean).join(" ");
+  if (!q) { e.preventDefault(); toast("Nhập tên sản phẩm trước"); return; }
+  e.currentTarget.href = "https://coccoc.com/search?query=" + encodeURIComponent(q);
+});
 $("link-file").addEventListener("change", async (e) => {
   const file = e.target.files[0]; if (!file) return;
   const data = new FormData(); data.append("file", file);
@@ -480,9 +509,48 @@ $("copy-persuasion").addEventListener("click", () => {
   const text = [p.title, "", ...p.sections.flatMap((s) => [s.heading, ...s.points.map((x) => "- " + x), ""]), p.closing].join("\n");
   navigator.clipboard.writeText(text).then(() => toast("Đã sao chép"));
 });
+/* ---------- Album ảnh crawl ---------- */
+function showPhoto(src) { $("lightbox").querySelector("img").src = src; $("lightbox").classList.add("show"); }
+$("lightbox").addEventListener("click", () => $("lightbox").classList.remove("show"));
+function renderAlbum(job) {
+  const refs = (job.images || []).map((n) => `<div class="photo ref"><img src="/api/jobs/${job.id}/images/${encodeURIComponent(n)}" data-zoom alt=""><div class="cap"><span class="badge">Ảnh bạn upload</span></div></div>`).join("");
+  $("album-refs").innerHTML = refs ? `<div class="album">${refs}</div><p class="muted">Ảnh crawl từ web:</p>` : "";
+  const album = job.album || [];
+  $("album").innerHTML = album.length ? album.map((a) => {
+    const src = `/api/jobs/${job.id}/album/${encodeURIComponent(a.file)}`;
+    const match = a.engine === "upload" ? '<span class="badge high">Ảnh bạn up</span>' : (a.match == null || a.match < 70) ? "" : `<span class="badge ${a.match >= 80 ? "high" : ""}">Giống ảnh upload ${a.match}%</span>`;
+    return `<div class="photo"><img src="${src}" data-zoom loading="lazy" alt="${esc(a.title)}"><div class="cap">${match}
+      <span class="t" title="${esc(a.title)}">${esc(a.title || "(không tiêu đề)")}</span>
+      <span class="muted">${a.width}×${a.height} · ${esc(a.engine)}</span>
+      <span>${safeUrl(a.page_url) ? `<a href="${esc(a.page_url)}" target="_blank" rel="noopener">Trang nguồn</a> · ` : ""}<a href="#" data-del-photo="${esc(a.file)}">Xóa</a></span></div></div>`;
+  }).join("") : '<p class="muted">Chưa có ảnh. Chọn Bing, Brave hoặc Google khi tạo yêu cầu, hoặc bấm "Tìm thêm ảnh".</p>';
+  document.querySelectorAll("#album-refs [data-zoom], #album [data-zoom]").forEach((img) => img.addEventListener("click", () => showPhoto(img.src)));
+  document.querySelectorAll("[data-del-photo]").forEach((a) => a.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const { ok, body } = await api(`/api/jobs/${currentJobId}/album/${encodeURIComponent(a.dataset.delPhoto)}`, { method: "DELETE" });
+    if (ok) { currentJob = body; renderAlbum(body); } else toast(body.error || "Không xóa được");
+  }));
+}
+$("album-more").addEventListener("click", async () => {
+  if (!currentJobId) return;
+  $("album-more").disabled = true; $("album-state").textContent = "Đang tìm và tải ảnh...";
+  const { ok, body } = await api(`/api/jobs/${currentJobId}/album`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: $("album-query").value }) });
+  $("album-more").disabled = false;
+  if (!ok) { $("album-state").textContent = body.error || "Lỗi"; return; }
+  $("album-state").textContent = ""; currentJob = body; renderAlbum(body);
+});
+$("album-upload").addEventListener("change", async (e) => {
+  if (!currentJobId || !e.target.files.length) return;
+  const data = new FormData(); [...e.target.files].forEach((f) => data.append("images", f));
+  $("album-state").textContent = "Đang up ảnh...";
+  const { ok, body } = await api(`/api/jobs/${currentJobId}/album/upload`, { method: "POST", body: data });
+  e.target.value = "";
+  if (!ok) { $("album-state").textContent = body.error || "Lỗi"; return; }
+  $("album-state").textContent = ""; currentJob = body; renderAlbum(body);
+});
 function renderResult(job) {
   $("result-card").hidden = false;
-  renderTable(job); renderPrice(job); renderResearch(job); renderAnalysis(job);
+  renderTable(job); renderPrice(job); renderAlbum(job); renderResearch(job); renderAnalysis(job);
   $("download").href = `/api/jobs/${job.id}/file`; $("export-links").href = `/api/jobs/${job.id}/links.xlsx`;
 }
 function render(job) {

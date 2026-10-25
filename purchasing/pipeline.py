@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import crawler, form_writer, questions, research, scoring, vision
+from . import crawler, form_writer, images, questions, research, scoring, vision
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = BASE_DIR / "Form duyệt báo giá.xlsx"
@@ -74,6 +74,8 @@ def create_job(request_data, uploads):
         "extra_keywords": request_data.get("extra_keywords", ""),
         "created": datetime.now().isoformat(timespec="seconds"),
         "images": image_names,
+        "album": [],
+        "crawl_images": request_data.get("crawl_images", True),
         "suggested_name": None,
         "ocr_text": "",
         "research": {},
@@ -194,6 +196,8 @@ def run_job(job_id):
         engines = job["engines"]
         if engines:
             _log(job, f"Tìm trên engine: {', '.join(engines)}")
+            if job.get("crawl_images", True):
+                _crawl_album(job, keywords)
 
         found, errors, attempted = crawler.crawl(
             f"{keywords} giá mua",
@@ -251,6 +255,109 @@ def _build_outputs(job):
     )
     job["analysis"] = analysis
     job["file"] = output.name
+
+
+# ---------------------------------------------------------------- album ảnh crawl từ web
+ALBUM_LIMIT = 12
+
+
+def album_dir(job_id):
+    return JOBS_DIR / job_id / "album"
+
+
+def _crawl_album(job, query, limit=ALBUM_LIMIT):
+    """Crawl ảnh theo từ khóa vào album của job. Lỗi ở bước này không làm hỏng việc tìm NCC."""
+    job.setdefault("album", [])
+    usable = [e for e in job["engines"] if e in images.IMAGE_ENGINES]
+    if not usable:
+        _log(job, "Bỏ qua album ảnh: cần chọn Bing, Brave hoặc Google")
+        return 0
+    try:
+        added, errors, tried = images.crawl_album(
+            album_dir(job["id"]), usable, query, limit=limit, existing=job["album"],
+            reference_images=_image_paths(job) + [album_dir(job["id"]) / a["file"] for a in job["album"] if a["engine"] == "upload"],
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log(job, f"Không crawl được ảnh: {exc}")
+        return 0
+    for engine_id, message in errors.items():
+        _log(job, f"Ảnh - engine {engine_id} lỗi: {message}")
+    job["album"] += added
+    job["album"].sort(key=lambda a: -1000 if a["engine"] == "upload" else -(a.get("match") or -1))
+    _log(job, f"Album: thêm {len(added)} ảnh (đã thử {tried} link ảnh) cho từ khóa '{query}'")
+    return len(added)
+
+
+def add_album_images(job_id, query=None):
+    """Crawl thêm ảnh vào album của một yêu cầu, theo từ khóa tùy chọn (mặc định là từ khóa của yêu cầu)."""
+    job = load_job(job_id)
+    if job is None:
+        raise LookupError("Không tìm thấy yêu cầu")
+    if job["status"] in ("awaiting_confirmation", "queued", "running"):
+        raise ValueError("Yêu cầu chưa xử lý xong")
+    query = (query or "").strip() or job.get("keywords") or job["query"]
+    if not _crawl_album_locked(job, query):
+        raise ValueError("Không tìm được ảnh mới, thử từ khóa khác hoặc chọn thêm engine")
+    return load_job(job_id)
+
+
+def _crawl_album_locked(job, query):
+    with _EDIT_LOCK:
+        fresh = load_job(job["id"])
+        added = _crawl_album(fresh, query)
+        _save_job(fresh)
+        return added
+
+
+def upload_album_images(job_id, uploads):
+    """Thêm ảnh người dùng tự up vào album. Ảnh up được dùng làm ảnh gốc để tính độ giống cho các lần crawl sau."""
+    from io import BytesIO
+    import hashlib
+    from PIL import Image
+
+    with _EDIT_LOCK:
+        job = load_job(job_id)
+        if job is None:
+            raise LookupError("Không tìm thấy yêu cầu")
+        job.setdefault("album", [])
+        folder = album_dir(job_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        added = 0
+        for filename, data in uploads:
+            try:
+                image = Image.open(BytesIO(data))
+                image.load()
+            except Exception:  # noqa: BLE001 - file không phải ảnh thì bỏ qua
+                continue
+            ext = images.FORMAT_EXT.get(image.format)
+            digest = hashlib.sha1(data).hexdigest()[:16]
+            if not ext or any(a.get("hash") == digest for a in job["album"]):
+                continue
+            (folder / f"{digest}{ext}").write_bytes(data)
+            job["album"].insert(0, {
+                "file": f"{digest}{ext}", "image_url": "", "page_url": "", "title": Path(filename).name[:160],
+                "engine": "upload", "query": "", "width": image.width, "height": image.height, "hash": digest, "match": None,
+            })
+            added += 1
+        if not added:
+            raise ValueError("Không có ảnh hợp lệ (nhận .jpg, .png, .webp, .gif)")
+        _log(job, f"Album: bạn đã up thêm {added} ảnh")
+        _save_job(job)
+        return job
+
+
+def remove_album_image(job_id, name):
+    with _EDIT_LOCK:
+        job = load_job(job_id)
+        if job is None:
+            raise LookupError("Không tìm thấy yêu cầu")
+        entry = next((a for a in job.get("album", []) if a["file"] == name), None)
+        if entry is None:
+            raise LookupError("Không có ảnh này trong album")
+        job["album"].remove(entry)
+        (album_dir(job_id) / name).unlink(missing_ok=True)
+        _save_job(job)
+        return job
 
 
 # ---------------------------------------------------------------- sửa trực tiếp trong bảng

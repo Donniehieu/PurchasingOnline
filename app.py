@@ -121,6 +121,7 @@ def create_job():
         "seed_urls": _lines(request.form.get("seed_urls")),
         "topics": request.form.getlist("topics"),
         "extra_keywords": (request.form.get("extra_keywords") or "").strip(),
+        "crawl_images": request.form.get("crawl_images") == "on",
     }
     uploads = []
     for file in request.files.getlist("images"):
@@ -163,6 +164,57 @@ def download_file(job_id):
     if job is None or not job.get("file"):
         return jsonify(error="Chưa có file báo giá"), 404
     return send_from_directory(pipeline.JOBS_DIR / job_id, job["file"], as_attachment=True)
+
+
+@app.get("/api/jobs/<job_id>/album/<name>")
+def album_image(job_id, name):
+    job = pipeline.load_job(job_id)
+    if job is None or not any(a["file"] == name for a in job.get("album", [])):
+        return jsonify(error="Không có ảnh này"), 404
+    return send_from_directory(pipeline.album_dir(job_id), name)
+
+
+@app.get("/api/jobs/<job_id>/images/<name>")
+def uploaded_image(job_id, name):
+    job = pipeline.load_job(job_id)
+    if job is None or name not in job["images"]:
+        return jsonify(error="Không có ảnh này"), 404
+    return send_from_directory(pipeline.JOBS_DIR / job_id / "images", name)
+
+
+@app.post("/api/jobs/<job_id>/album")
+def crawl_more_images(job_id):
+    """Crawl thêm ảnh vào album theo từ khóa người dùng nhập (để trống: dùng từ khóa của yêu cầu)."""
+    body = request.get_json(silent=True) or {}
+    try:
+        job = pipeline.add_album_images(job_id, body.get("query"))
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(job)
+
+
+@app.post("/api/jobs/<job_id>/album/upload")
+def upload_to_album(job_id):
+    uploads = [(f.filename, f.read()) for f in request.files.getlist("images")
+               if os.path.splitext(f.filename or "")[1].lower() in ALLOWED_IMAGE_EXT]
+    try:
+        job = pipeline.upload_album_images(job_id, uploads)
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(job)
+
+
+@app.delete("/api/jobs/<job_id>/album/<name>")
+def delete_album_image(job_id, name):
+    try:
+        job = pipeline.remove_album_image(job_id, name)
+    except LookupError as exc:
+        return jsonify(error=str(exc)), 404
+    return jsonify(job)
 
 
 @app.get("/api/jobs/<job_id>/links.xlsx")
