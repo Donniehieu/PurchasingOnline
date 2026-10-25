@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../docs/js/core.js";
 import * as knowledge from "../docs/js/knowledge.js";
+import * as net from "../docs/js/net.js";
 
 const sup = (name, price, mah = null, months = null, vat = null) => ({ name, price, mah, warranty_months: months, vat, vat_included: false, relevance: 1, url: "https://" + name, title: name, contacts: {} });
 
@@ -108,6 +109,29 @@ test("tư vấn theo ngân sách và nhu cầu từ dữ liệu crawl", () => {
   assert.equal(adv.sections.length, 6); const text = JSON.stringify(adv);
   assert.match(text, /Trong ngân sách/); assert.match(text, /Vượt/); assert.match(text, /Mặt bằng giá/); assert.match(text, /Yamako/i);
   assert.ok(adv.sections[4].picks.length >= 2);
+});
+test("giải link bọc chuyển hướng của Google, DuckDuckGo, Bing", async () => {
+  assert.equal(await net.resolveUrl("https://www.google.com/url?q=https%3A%2F%2Fshop.vn%2Fp&sa=U"), "https://shop.vn/p");
+  assert.equal(await net.resolveUrl("https://duckduckgo.com/l/?uddg=https%3A%2F%2Fa.vn%2Fx&rut=1"), "https://a.vn/x");
+  const b64 = Buffer.from("https://b.vn/y").toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  assert.equal(await net.resolveUrl(`https://www.bing.com/ck/a?!&&p=1&u=a1${b64}&ntb=1`), "https://b.vn/y");
+  assert.equal(await net.resolveUrl("https://shop.vn/direct"), "https://shop.vn/direct");
+  assert.equal(await net.resolveUrl("https://www.google.com/search?q=x"), "");
+});
+test("cột NCC mới: tên sản phẩm, số lượng, thông tin sản phẩm có thể sửa", () => {
+  assert.equal(core.parseField("quantity", "12"), 12); assert.throws(() => core.parseField("quantity", "0"), /khoảng/);
+  assert.equal(core.parseField("product_name", "  Áo điều hòa X  "), "Áo điều hòa X");
+  assert.equal(core.supplierInfo({ mah: 20000, volt: 18, warranty_months: 12 }), "Pin 20.000 mAh · 18V · Bảo hành 12 tháng");
+  assert.equal(core.supplierInfo({}), "Bảo hành chưa rõ");
+  const s = core.parsePage("<html><head><title>Áo điều hòa Yamako F20 - Shop A</title></head><body>Áo điều hòa giá 1.190.000đ</body></html>", "https://a.vn", core.queryKeywords("áo điều hòa"));
+  assert.equal(s.product_name, "Áo điều hòa Yamako F20");
+});
+test("ngân sách đã nhập ở tab Tư vấn thành lựa chọn đầu tiên của card ngân sách", () => {
+  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
+  const budget = core.buildCards({ query: "áo điều hòa", quantity: 2, advice_budget: 1450000 }, null, "", d).find((c) => c.id === "budget");
+  assert.equal(budget.default, "1450000"); assert.match(budget.options[0].label, /tab Tư vấn/);
+  const noWeb = core.buildCards({ query: "áo điều hòa", quantity: 2, advice_budget: 1450000 }, null, "", null);
+  assert.ok(!noWeb.some((c) => c.id === "budget")); // không có dữ liệu web thì không tạo card ngân sách
 });
 test("từ khóa không lặp thông số đã có", () => {
   assert.equal(core.searchKeywords({ query: "áo điều hòa pin 20000mAh", spec: { mah: "20000", volt: "18" } }), "áo điều hòa pin 20000mAh 18V");

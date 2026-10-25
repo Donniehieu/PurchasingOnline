@@ -12,8 +12,8 @@
 <header><div class="bar">
   <span class="brand">Mua hàng tự động</span>
   <nav>
-    <button data-tab="new" class="active">Yêu cầu mới</button>
-    <button data-tab="advice">Tư vấn</button>
+    <button data-tab="advice" class="active">Tư vấn</button>
+    <button data-tab="new">Yêu cầu mới</button>
     <button data-tab="history">Lịch sử tìm kiếm</button>
     <button data-tab="edits">Lịch sử điều chỉnh</button>
     <button data-tab="settings">Cài đặt</button>
@@ -23,8 +23,34 @@
 </div></header>
 
 <main>
+<!-- ============ TƯ VẤN ============ -->
+<div id="tab-advice">
+  <section class="card">
+    <h3 class="first">Tư vấn chọn sản phẩm</h3>
+    <p class="muted">Chưa biết nên mua loại nào? Nhập một trong các thông tin dưới đây. App crawl các engine đã tick ở tab "Yêu cầu mới" (tối đa 10 trang mỗi engine), rồi tổng hợp mặt bằng giá, loại và công nghệ, hãng, lưu ý khi mua. Đây là tổng hợp từ web theo quy tắc, không phải tư vấn của chuyên gia.</p>
+    <form id="advice-form">
+      <div class="row">
+        <div><label for="adv-query">Tên sản phẩm (tùy chọn)</label><input type="text" id="adv-query" placeholder="VD: máy hút bụi cầm tay"></div>
+        <div><label for="adv-budget">Ngân sách tối đa mỗi cái (đồng, tùy chọn)</label><input type="text" id="adv-budget" inputmode="numeric" placeholder="VD: 1500000"></div>
+      </div>
+      <label for="adv-need">Nhu cầu sử dụng</label>
+      <textarea id="adv-need" rows="2" placeholder="VD: dọn nhà 60m2, có thú cưng, dùng hằng ngày"></textarea>
+      <label for="adv-images">Ảnh sản phẩm (tùy chọn, đọc tên từ ảnh cần khóa Anthropic)</label>
+      <input type="file" id="adv-images" accept="image/*" multiple>
+      <label>Engine tìm kiếm (dùng chung với tab Yêu cầu mới)</label>
+      <div class="engines" id="engines-advice">Đang tải...</div>
+      <label for="adv-serp-pages">Số trang kết quả mỗi engine</label>
+      <select id="adv-serp-pages" style="max-width:260px"><option value="1">1 trang</option><option value="2">2 trang</option><option value="3">3 trang</option><option value="5">5 trang</option><option value="10">10 trang (đầy đủ)</option></select>
+      <p class="muted">"Trang" là trang kết quả của engine (trang 1, 2, 3... như thanh phân trang cuối kết quả), không phải số link. Engine hết kết quả sớm thì dừng ở trang cuối. Nhiều trang thì chính xác hơn nhưng lâu hơn.</p>
+      <div class="actions"><button type="submit" id="adv-btn">Tư vấn cho tôi</button><span class="muted" id="adv-state"></span></div>
+    </form>
+    <div class="progress" id="adv-progress" hidden></div>
+  </section>
+  <section class="card" id="adv-result" hidden></section>
+</div>
+
 <!-- ============ YÊU CẦU MỚI ============ -->
-<div id="tab-new">
+<div id="tab-new" hidden>
   <section class="card">
     <form id="request-form">
       <div class="row">
@@ -41,7 +67,9 @@
       <input type="text" id="extra-keywords" placeholder="VD: chính hãng, xuất hóa đơn VAT, giao hàng toàn quốc">
       <label>Engine tìm kiếm</label>
       <div class="engines" id="engines">Đang tải...</div>
-      <p class="muted">Engine mờ là chưa có khóa: vào tab <a href="#" data-goto="settings">Cài đặt</a> để nhập. Không dùng engine thì nhập link NCC bên dưới hoặc thêm NCC thủ công trong bảng.</p>
+      <label for="serp-pages">Số trang kết quả mỗi engine</label>
+      <select id="serp-pages" style="max-width:260px"><option value="1">1 trang</option><option value="2">2 trang</option><option value="3">3 trang</option><option value="5">5 trang</option><option value="10">10 trang (đầy đủ)</option></select>
+      <p class="muted">Engine mờ là chưa dùng được: vào tab <a href="#" data-goto="settings">Cài đặt</a> để nhập. Không dùng engine thì nhập link NCC bên dưới hoặc thêm NCC thủ công trong bảng.</p>
       <label class="chip" style="margin-top:10px;width:fit-content"><input type="checkbox" id="crawl-images" checked> Crawl ảnh từ web về album để đối chiếu</label>
       <label for="seed-urls">Link NCC / website (tùy chọn, mỗi dòng một link)</label>
       <textarea id="seed-urls" rows="3" placeholder="https://..."></textarea>
@@ -49,6 +77,11 @@
         <label class="button secondary">Nhập link từ Excel/CSV<input type="file" id="link-file" accept=".xlsx,.csv,.txt" hidden></label>
         <span class="muted" id="link-status"></span>
       </div>
+      <div class="actions">
+        <label class="button secondary">Nạp dữ liệu tư vấn (.json)<input type="file" id="advice-file" accept=".json,application/json" hidden></label>
+        <button type="button" class="secondary" id="advice-last">Nạp tư vấn gần nhất</button>
+      </div>
+      <div class="notice" id="advice-loaded" hidden></div>
       <div class="actions"><button type="submit" id="submit-btn">Tạo yêu cầu và xác nhận thông tin</button></div>
     </form>
   </section>
@@ -113,26 +146,6 @@
   </section>
 </div>
 
-<!-- ============ TƯ VẤN ============ -->
-<div id="tab-advice" hidden>
-  <section class="card">
-    <h3 class="first">Tư vấn chọn sản phẩm</h3>
-    <p class="muted">Chưa biết nên mua loại nào? Nhập một trong các thông tin dưới đây. App crawl các engine đã tick ở tab "Yêu cầu mới" (tối đa 10 trang mỗi engine), rồi tổng hợp mặt bằng giá, loại và công nghệ, hãng, lưu ý khi mua. Đây là tổng hợp từ web theo quy tắc, không phải tư vấn của chuyên gia.</p>
-    <form id="advice-form">
-      <div class="row">
-        <div><label for="adv-query">Tên sản phẩm (tùy chọn)</label><input type="text" id="adv-query" placeholder="VD: máy hút bụi cầm tay"></div>
-        <div><label for="adv-budget">Ngân sách tối đa mỗi cái (đồng, tùy chọn)</label><input type="text" id="adv-budget" inputmode="numeric" placeholder="VD: 1500000"></div>
-      </div>
-      <label for="adv-need">Nhu cầu sử dụng</label>
-      <textarea id="adv-need" rows="2" placeholder="VD: dọn nhà 60m2, có thú cưng, dùng hằng ngày"></textarea>
-      <label for="adv-images">Ảnh sản phẩm (tùy chọn, đọc tên từ ảnh cần khóa Anthropic)</label>
-      <input type="file" id="adv-images" accept="image/*" multiple>
-      <div class="actions"><button type="submit" id="adv-btn">Tư vấn cho tôi</button><span class="muted" id="adv-state"></span></div>
-    </form>
-  </section>
-  <section class="card" id="adv-result" hidden></section>
-</div>
-
 <!-- ============ LỊCH SỬ TÌM KIẾM ============ -->
 <div id="tab-history" hidden>
   <section class="card">
@@ -167,6 +180,8 @@
     <h3>Tìm kiếm không cần khóa (tiện ích Cốc Cốc/Chrome)</h3>
     <p class="muted">Khi cài làm tiện ích, app dùng Cốc Cốc và DuckDuckGo mà không cần khóa API, đọc được cả trang cần JavaScript (Shopee, TikTok Shop) bằng cách mở tab nền, và không bị chặn CORS nên không cần proxy. Cốc Cốc mở một tab nền như bạn tự tìm, mỗi lượt vài giây.</p>
     <div class="actions"><button type="button" class="secondary" data-test="googleweb">Thử Google</button><span class="muted" data-result="googleweb"></span>
+      <button type="button" class="secondary" data-test="bing">Thử Bing</button><span class="muted" data-result="bing"></span>
+      <button type="button" class="secondary" data-test="bravesearch">Thử Brave Search</button><span class="muted" data-result="bravesearch"></span>
       <button type="button" class="secondary" data-test="coccoc">Thử Cốc Cốc</button><span class="muted" data-result="coccoc"></span>
       <button type="button" class="secondary" data-test="duckduckgo">Thử DuckDuckGo</button><span class="muted" data-result="duckduckgo"></span></div>
 

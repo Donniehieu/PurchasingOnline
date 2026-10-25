@@ -1,21 +1,24 @@
 // Service worker của tiện ích: mở giao diện và "đọc trang bằng trình duyệt thật" cho những trang
-// không đọc được bằng fetch (Cốc Cốc chặn bot bằng JavaScript, Shopee/TikTok Shop vẽ giá bằng JavaScript).
+// không đọc được bằng fetch (Google/Cốc Cốc/Bing/Brave Search chặn bot hoặc vẽ kết quả bằng JavaScript,
+// Shopee/TikTok Shop vẽ giá bằng JavaScript).
 // Cách làm: mở một tab nền như người dùng, đợi trang tự chạy xong, đọc nội dung rồi đóng tab.
+// Dùng được trên mọi trình duyệt Chromium (Chrome, Cốc Cốc, Brave, Edge, Opera, Vivaldi). Safari cần chuyển đổi (xem README).
 
-const APP_URL = chrome.runtime.getURL("index.html");
+const api = globalThis.chrome || globalThis.browser;
+const APP_URL = api.runtime.getURL("index.html");
 const RENDER_TIMEOUT_MS = 30000;
 
-chrome.action.onClicked.addListener(async () => {
-  const [existing] = await chrome.tabs.query({ url: APP_URL });
+api.action.onClicked.addListener(async () => {
+  const [existing] = await api.tabs.query({ url: APP_URL });
   if (existing) {
-    await chrome.tabs.update(existing.id, { active: true });
-    await chrome.windows.update(existing.windowId, { focused: true });
+    await api.tabs.update(existing.id, { active: true });
+    await api.windows.update(existing.windowId, { focused: true });
   } else {
-    await chrome.tabs.create({ url: APP_URL });
+    await api.tabs.create({ url: APP_URL });
   }
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.type !== "render") return false;
   renderPage(msg.url, msg.mode || "html")
     .then((data) => sendResponse({ ok: true, data }))
@@ -25,8 +28,49 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Chạy trong trang được mở. Phải tự đủ, không dùng biến ngoài. */
+/** Chạy trong trang được mở. Phải tự đủ, không dùng biến ngoài. mode: html | links | serp | images */
 function readPage(mode) {
+  const text = (e) => (e.innerText || "").replace(/\s+/g, " ").trim();
+  if (mode === "serp") {
+    // Trang kết quả tìm kiếm: mỗi kết quả là một link ra ngoài (hoặc link bọc chuyển hướng) kèm tiêu đề và đoạn mô tả.
+    const nav = /(^|\.)(gstatic\.com|googleusercontent\.com|youtube\.com|facebook\.com|accounts\.google\.com|support\.google\.com|policies\.google\.com|maps\.google\.com)$/i;
+    const own = location.hostname.replace(/^www\./, "");
+    const out = [], seen = new Set();
+    for (const a of document.querySelectorAll("a[href]")) {
+      let u; try { u = new URL(a.href); } catch { continue; }
+      if (!/^https?:$/.test(u.protocol) || nav.test(u.hostname)) continue;
+      const wrapped = /\/composer\/goto|\/url$|\/ck\/a|\/l\/$|\/aclk/.test(u.pathname);
+      const external = u.hostname.replace(/^www\./, "") !== own && !/(^|\.)(google|coccoc|bing|duckduckgo|brave)\.[a-z.]+$/i.test(u.hostname);
+      if (!external && !wrapped) continue;
+      const heading = a.querySelector("h1,h2,h3,h4");
+      const title = heading ? text(heading) : text(a);
+      if (title.length < 6 || seen.has(a.href)) continue;
+      seen.add(a.href);
+      let block = a, snippet = "";
+      for (let i = 0; i < 5 && block.parentElement; i++) { block = block.parentElement; if (text(block).length > title.length + 60) break; }
+      snippet = text(block).replace(title, "").trim().slice(0, 320);
+      out.push({ url: a.href, title: title.slice(0, 160), snippet });
+    }
+    return { title: document.title, results: out, bodyLen: document.body ? document.body.innerText.length : 0 };
+  }
+  if (mode === "images") {
+    // Trang kết quả hình ảnh (Google/Bing): ưu tiên link ảnh gốc trong imgres/murl, không có thì lấy ảnh thu nhỏ.
+    const out = [], seen = new Set();
+    for (const img of document.querySelectorAll("img")) {
+      const src = img.currentSrc || img.src || "";
+      if (!src || (img.naturalWidth || img.width) < 90 || seen.has(src)) continue;
+      const link = img.closest("a");
+      let full = "", page = "";
+      if (link && link.href) {
+        try { const u = new URL(link.href); if (u.searchParams.get("imgurl")) { full = u.searchParams.get("imgurl"); page = u.searchParams.get("imgrefurl") || ""; } } catch { /* bỏ qua */ }
+      }
+      const m = link && link.getAttribute("m"); // Bing: thuộc tính m là JSON có murl (ảnh gốc), purl (trang)
+      if (m) { try { const j = JSON.parse(m); full = j.murl || full; page = j.purl || page; } catch { /* bỏ qua */ } }
+      seen.add(src);
+      out.push({ thumb: src.startsWith("data:") && src.length > 400000 ? "" : src, full, page, title: (img.alt || "").slice(0, 160), width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+    }
+    return { title: document.title, images: out };
+  }
   if (mode === "links") {
     const skip = /(^|\.)(coccoc\.com|google\.[a-z.]+|gstatic\.com|googleusercontent\.com|facebook\.com|youtube\.com)$/i;
     const seen = new Set(), out = [];
@@ -46,26 +90,31 @@ function readPage(mode) {
 
 async function renderPage(url, mode) {
   if (!/^https?:\/\//i.test(url)) throw new Error("Chỉ mở được link http/https");
-  const tab = await chrome.tabs.create({ url, active: false });
+  const tab = await api.tabs.create({ url, active: false });
   const started = Date.now();
   try {
     let last = null;
     while (Date.now() - started < RENDER_TIMEOUT_MS) {
-      await sleep(1500);
-      const current = await chrome.tabs.get(tab.id);
+      await sleep(mode === "images" ? 2500 : 1500);
+      const current = await api.tabs.get(tab.id);
       if (current.status !== "complete") continue;
+      if (mode === "images") { // trang ảnh tải thêm khi cuộn
+        try { await api.scripting.executeScript({ target: { tabId: tab.id }, func: () => window.scrollTo(0, document.body.scrollHeight) }); } catch { /* bỏ qua */ }
+        await sleep(1200);
+      }
       let result;
       try {
-        [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: readPage, args: [mode] });
+        [{ result }] = await api.scripting.executeScript({ target: { tabId: tab.id }, func: readPage, args: [mode] });
       } catch (err) { throw new Error(`Không đọc được trang: ${err.message}`); }
       // Trang chuyển hướng của Cốc Cốc tự chạy JavaScript rồi mới sang trang kết quả: đợi tới khi nội dung ổn định.
-      const size = result.html ? result.html.length : result.links.length;
+      const size = result.html ? result.html.length : (result.links || result.results || result.images).length;
       const redirecting = /^redirecting/i.test(result.title || "");
-      if (!redirecting && (mode === "links" ? size > 0 : size > 1500) && last === size) return result;
+      const ready = mode === "html" ? size > 1500 : size > 0 || (result.bodyLen > 500 && last === size);
+      if (!redirecting && ready && last === size) return result;
       last = redirecting ? null : size;
     }
     throw new Error("Hết thời gian chờ trang");
   } finally {
-    try { await chrome.tabs.remove(tab.id); } catch { /* tab đã đóng */ }
+    try { await api.tabs.remove(tab.id); } catch { /* tab đã đóng */ }
   }
 }

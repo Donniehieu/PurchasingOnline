@@ -128,7 +128,7 @@ export function parsePage(html, url, tokens, productCode = "") {
   if (/hóa\s*đơn\s*(vat|gtgt)|xuất\s*hóa\s*đơn|có\s*hóa\s*đơn/i.test(text)) vat = true;
   const domain = domainOf(url);
   return {
-    name: domain, title: (title || domain).slice(0, 120), url, description: metaContent(tags, "og:description", "description").slice(0, 240),
+    name: domain, title: (title || domain).slice(0, 120), product_name: cleanTitle(title || domain), url, description: metaContent(tags, "og:description", "description").slice(0, 240),
     date: pageDate(html, tags, text), price: prices.length ? Math.min(...prices) : null, vat,
     vat_included: /đã\s*(bao\s*gồm\s*|gồm\s*)?vat/i.test(text), mah: mah[0] ?? null, volt: volt ? +volt[1] : null,
     warranty_months: war ? +war[1] * (war[2].toLowerCase() === "năm" ? 12 : 1) : null,
@@ -176,6 +176,14 @@ export function scoreSuppliers(items, requireVat = true, budget = null) {
   if (eligible.length) { const b = eligible.reduce((a, c) => (c.score > a.score ? c : a)); b.recommended = true; b.reason = "Khuyến nghị: điểm cao nhất"; }
   scored.forEach((r) => { r.recommended = !!r.recommended; });
   return scored.sort((a, b) => (a.eligible === b.eligible ? (b.score || 0) - (a.score || 0) : a.eligible ? -1 : 1));
+}
+/** Thông tin sản phẩm của một NCC dạng chữ ngắn: pin, điện áp, bảo hành. Ghi chú để riêng. */
+export function supplierInfo(s) {
+  const p = [];
+  if (s.mah) p.push(`Pin ${Number(s.mah).toLocaleString("vi-VN")} mAh`);
+  if (s.volt) p.push(`${s.volt}V`);
+  p.push(s.warranty_months ? `Bảo hành ${s.warranty_months} tháng` : "Bảo hành chưa rõ");
+  return p.join(" · ");
 }
 export function priceStats(suppliers) {
   const p = suppliers.filter((s) => s.price).map((s) => s.price); if (!p.length) return null;
@@ -384,7 +392,7 @@ export function buildDiscovery(pages, queryTokens, subject = "") {
   return {
     subject, category: detectCategory(subject || queryTokens.join(" ")),
     read: pages.filter((p) => p && p.html).length, total: used.length,
-    pages: items.map(({ url, domain, title }) => ({ url, domain, title })), items,
+    pages: items.slice(0, 40).map(({ url, domain, title }) => ({ url, domain, title })), items: items.slice(0, 150),
     names, models: models.slice(0, 4), brands: brands.slice(0, 6), mah: mah.slice(0, 4), volt: volt.slice(0, 4), purposes: purposes.slice(0, 3),
     warranty: warranty.slice(0, 3), specs, materials,
     price: prices.length ? { min: Math.min(...prices), max: Math.max(...prices), median: medianOf(prices), count: prices.length, sorted: [...prices].sort((a, b) => a - b) } : null,
@@ -445,10 +453,15 @@ export function buildCards(req, suggestedName = null, ocrText = "", discovery = 
     for (const s of d.specs) specCard(`spec_${s.id}`, "spec", s.label, `${s.label} cần là bao nhiêu (${s.unit})?`, s.values, (v) => `${v} ${s.unit}`, s.values[0].count >= 2 ? s.values[0].value : "", { spec: { id: s.id, label: s.label, unit: s.unit } });
     if (d.materials.length >= 1) extras.push({ score: d.materials[0].count * 8, card: { id: "material", kind: "material", title: "Chất liệu", question: "Bạn muốn chất liệu nào?", options: uniq([...web(d.materials), none("Không quan trọng"), custom]), default: "", evidence: evidence(d.materials) } });
     if (d.brands.length >= 1 && d.brands[0].count >= 2) extras.push({ score: d.brands[0].count * 9, card: { id: "brand", kind: "brand", title: "Hãng / thương hiệu", question: "Có hãng nào bạn muốn ưu tiên không?", options: uniq([...web(d.brands.filter((b) => b.count >= 2)), none("Không ưu tiên hãng"), custom]), default: "", evidence: evidence(d.brands) } });
-    if (d.price && d.price.count >= 3) {
-      const s = d.price.sorted, at = (q) => s[Math.min(s.length - 1, Math.floor(q * (s.length - 1)))];
-      const levels = [[at(0.25), "rẻ"], [at(0.5), "trung bình"], [at(0.75), "cao"], [s[s.length - 1], "cao nhất"]].map(([v, t]) => ({ value: String(Math.round(v)), label: `Tối đa ${vnd(v)} (mức ${t} trên web)` }));
-      extras.push({ score: 40, card: { id: "budget", kind: "budget", title: "Ngân sách mỗi sản phẩm", question: `Giá trên web từ ${vnd(d.price.min)} đến ${vnd(d.price.max)}. Bạn chấp nhận tối đa bao nhiêu mỗi cái?`, options: uniq([...levels, none("Không giới hạn"), custom]), default: "", evidence: `Dựa trên ${d.price.count} mức giá đọc từ ${total} trang web.` } });
+    const preBudget = req.advice_budget ? Math.round(+req.advice_budget) : null;
+    if ((d.price && d.price.count >= 3) || preBudget) {
+      let levels = [];
+      if (d.price && d.price.count >= 3) {
+        const sp = d.price.sorted, at = (q) => sp[Math.min(sp.length - 1, Math.floor(q * (sp.length - 1)))];
+        levels = [[at(0.25), "rẻ"], [at(0.5), "trung bình"], [at(0.75), "cao"], [sp[sp.length - 1], "cao nhất"]].map(([v, t]) => ({ value: String(Math.round(v)), label: `Tối đa ${vnd(v)} (mức ${t} trên web)` }));
+      }
+      if (preBudget) levels.unshift({ value: String(preBudget), label: `Tối đa ${vnd(preBudget)} (ngân sách bạn đã nhập ở tab Tư vấn)` });
+      extras.push({ score: preBudget ? 90 : 40, card: { id: "budget", kind: "budget", title: "Ngân sách mỗi sản phẩm", question: d.price ? `Giá trên web từ ${vnd(d.price.min)} đến ${vnd(d.price.max)}. Bạn chấp nhận tối đa bao nhiêu mỗi cái?` : "Bạn chấp nhận tối đa bao nhiêu mỗi cái?", options: uniq([...levels, none("Không giới hạn"), custom]), default: preBudget ? String(preBudget) : "", evidence: d.price ? `Dựa trên ${d.price.count} mức giá đọc từ ${total} nguồn web.` : "" } });
     }
     if (d.warranty.length) extras.push({ score: d.warranty[0].count * 7, card: { id: "warranty", kind: "warranty", title: "Bảo hành tối thiểu", question: "Bạn cần bảo hành tối thiểu bao lâu?", options: uniq([...web(d.warranty, (v) => `Từ ${v} tháng`), none("Không yêu cầu"), custom]), default: "", evidence: evidence(d.warranty) } });
   }
@@ -506,11 +519,12 @@ export function searchKeywords(job) {
 }
 
 /* ------------------------------------------------------------------ sửa ô bảng */
-export const EDIT_LABELS = { name: "NCC", price: "Đơn giá", warranty_months: "Bảo hành (tháng)", vat: "Hóa đơn VAT", mah: "Dung lượng pin (mAh)", volt: "Điện áp (V)", date: "Ngày cập nhật web", note: "Ghi chú" };
+export const EDIT_LABELS = { name: "NCC", product_name: "Tên sản phẩm", quantity: "Số lượng", price: "Đơn giá", warranty_months: "Bảo hành (tháng)", vat: "Hóa đơn VAT", mah: "Dung lượng pin (mAh)", volt: "Điện áp (V)", date: "Ngày cập nhật web", note: "Ghi chú" };
 export function parseField(field, value) {
   const text = value == null ? "" : String(value).trim();
   if (!(field in EDIT_LABELS)) throw new Error("Trường không được phép sửa");
   if (field === "name") { if (!text) throw new Error("Tên NCC không được để trống"); return text.slice(0, 120); }
+  if (field === "product_name") return text.slice(0, 160);
   if (field === "note") return text.slice(0, 500);
   if (field === "vat") {
     const l = text.toLowerCase();
@@ -529,7 +543,7 @@ export function parseField(field, value) {
   }
   const digits = text.replace(/[.,\s]/g, ""); if (!digits) return null;
   if (!/^\d+$/.test(digits)) throw new Error(`${EDIT_LABELS[field]} chỉ nhập số`);
-  const n = +digits, lim = { price: [1, 1e9], warranty_months: [0, 240], mah: [1, 1e6], volt: [1, 1000] }[field];
+  const n = +digits, lim = { quantity: [1, 1e6], price: [1, 1e9], warranty_months: [0, 240], mah: [1, 1e6], volt: [1, 1000] }[field];
   if (n < lim[0] || n > lim[1]) throw new Error(`${EDIT_LABELS[field]} phải trong khoảng ${lim[0]} đến ${lim[1]}`);
   return n;
 }

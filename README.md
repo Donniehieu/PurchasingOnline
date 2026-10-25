@@ -4,9 +4,11 @@
 
 Cách này không cần Python hay Flask. App chạy ngay trong trình duyệt của bạn nên: tìm được bằng **Cốc Cốc** và **DuckDuckGo** không cần khóa, đọc được cả trang cần JavaScript (Shopee, TikTok Shop), không bị chặn CORS, và crawl ảnh về album.
 
-Dùng được trên **Google Chrome** (từ bản 110), **Cốc Cốc**, Microsoft Edge và Brave (cùng nền Chromium, cùng một mã). Engine "Cốc Cốc" vẫn dùng được khi bạn cài tiện ích trên Chrome: tiện ích chỉ mở trang `coccoc.com` trong một tab nền, không cần cài trình duyệt Cốc Cốc.
+Dùng được trên **Google Chrome** (từ bản 110), **Cốc Cốc**, **Brave**, Microsoft Edge, Opera, Vivaldi (cùng nền Chromium, cùng một mã, cài bằng cùng cách; Brave vào `brave://extensions`). **Safari** không cài thẳng được: trên macOS cần chuyển bằng Xcode (`xcrun safari-web-extension-converter docs/`) rồi bật trong Safari, tôi chưa thử vì đang dùng Windows. Safari cũng không phải là một engine tìm kiếm riêng (nó dùng Google, Bing, DuckDuckGo...), nên các engine ở trên vẫn là nguồn dữ liệu. Engine "Cốc Cốc" vẫn dùng được khi bạn cài tiện ích trên Chrome: tiện ích chỉ mở trang `coccoc.com` trong một tab nền, không cần cài trình duyệt Cốc Cốc.
 
-**Engine tìm kiếm** (thứ tự ưu tiên, tick sẵn): Google qua Chrome, Cốc Cốc, DuckDuckGo, rồi Brave API và Google API nếu bạn nhập khóa. Mỗi engine lấy tối đa **10 trang đầu** của kết quả (không đủ 10 thì lấy hết những gì có), tối đa 30 trang mỗi lượt. Nếu Google hiện trang xác minh (CAPTCHA), app báo lỗi để bạn tự mở google.com xác minh rồi thử lại, app không vượt qua bước đó.
+**Engine tìm kiếm** (thứ tự ưu tiên, ba engine đầu tick sẵn): Google qua trình duyệt, Cốc Cốc, DuckDuckGo, rồi Bing và Brave Search qua trình duyệt (không cần khóa), Brave API và Google API nếu bạn nhập khóa. Chọn engine ở tab Tư vấn hoặc Yêu cầu mới, lựa chọn dùng chung.
+
+**"10 trang" là 10 trang kết quả của engine** (trang 1, 2, 3... như thanh phân trang cuối kết quả), không phải 10 link. Mỗi engine được crawl từ trang 1 đến trang bạn chọn (tối đa 10, có ô chọn 1/2/3/5/10); engine hết kết quả sớm thì dừng ở trang cuối. Mọi kết quả (tiêu đề, mô tả, link) được thu thập; tối đa 30 link tốt nhất (mỗi website một link) được mở ra đọc đầy đủ, các kết quả còn lại vẫn góp tiêu đề và mô tả vào phân tích. Engine API (Google, Brave) chỉ lấy tối đa 3 trang để tiết kiệm hạn mức. Mỗi trang kết quả mở trong một tab nền vài giây nên 10 trang × 3 engine mất vài phút, tiến trình hiện từng bước. Nếu engine hiện trang xác minh (CAPTCHA), app báo lỗi để bạn tự mở engine đó xác minh rồi thử lại, app không vượt qua bước đó.
 
 **Quy trình:**
 1. Nhập yêu cầu (tên/mã, số lượng, mục đích, ảnh).
@@ -14,9 +16,13 @@ Dùng được trên **Google Chrome** (từ bản 110), **Cốc Cốc**, Micros
 3. Hiện **5 đến 10 question card** dựng từ chính dữ liệu đó, kèm "thấy ở n/N trang" và danh sách trang đã dùng. Luôn có: mã sản phẩm/model, số lượng, mục đích sử dụng. Các card còn lại (thông số, hãng, ngân sách, bảo hành, chất liệu, VAT, ưu tiên...) được chọn theo mức bằng chứng.
 4. Sau khi bạn xác nhận, app tìm NCC, chấm điểm, điền form, và **tìm hiểu sản phẩm theo ngành hàng**: giá cả, hãng sản xuất, ưu nhược điểm của hãng và sản phẩm, lưu ý khi mua, công nghệ sử dụng, phân loại, ưu nhược điểm từng công nghệ, thay thế và rủi ro, cộng các câu hỏi riêng của ngành (gia dụng: công suất, an toàn, bảo trì; máy móc: thông số, tiêu chuẩn, phụ tùng, chi phí vận hành; tiêu dùng: chất liệu, hàng giả, đổi trả, đối tượng). Câu trả lời là câu trích nguyên văn từ trang web kèm link nguồn, không phải AI viết lại.
 
-**Tab Tư vấn:** nhập tên sản phẩm và/hoặc ảnh, ngân sách, nhu cầu. App crawl rồi tổng hợp: mặt bằng giá và vị trí ngân sách của bạn, loại/công nghệ nên cân nhắc, hãng, các trang đúng sản phẩm gần ngân sách, lưu ý khi mua, và nút điền sẵn yêu cầu mua.
+**Tab Tư vấn** (đứng đầu, mở sẵn): nhập tên sản phẩm và/hoặc ảnh, ngân sách, nhu cầu. App crawl rồi tổng hợp: mặt bằng giá và vị trí ngân sách của bạn, loại/công nghệ nên cân nhắc, hãng, các trang đúng sản phẩm gần ngân sách, lưu ý khi mua, và nút điền sẵn yêu cầu mua. Có thanh tiến trình từng bước (chuẩn bị, đọc ảnh, crawl từng engine, đọc trang, phân tích, tìm hiểu theo ngành, tổng hợp, lưu). Dữ liệu tư vấn tự lưu trong trình duyệt và tải về được thành file `.json`; ở tab **Yêu cầu mới**, nút "Nạp dữ liệu tư vấn (.json)" hoặc "Nạp tư vấn gần nhất" điền sẵn tên, nhu cầu, link gợi ý và dùng dữ liệu đó để dựng question card (kể cả ngân sách), không crawl lại.
 
-**Điện thoại:** giao diện co giãn theo màn hình (bảng NCC thành thẻ xếp dọc, tab vuốt ngang). Lưu ý: Chrome trên điện thoại không cài được tiện ích, nên trên điện thoại bạn chỉ dùng được giao diện (xem lại lịch sử, sửa bảng, xuất file) khi mở bản chạy trên máy tính, hoặc bản trang web (GitHub Pages) với các engine có khóa; tính năng crawl bằng trình duyệt cần máy tính.
+**Điện thoại:** giao diện co giãn theo màn hình (bảng NCC thành thẻ xếp dọc, tab vuốt ngang)
+
+**Ảnh:** crawl từ trang Hình ảnh của các engine bạn đang chọn (Google Hình ảnh trong Chrome/Cốc Cốc, Bing, Brave, DuckDuckGo), mặc định Google; ảnh lưu thu nhỏ trong trình duyệt.
+
+**Form duyệt báo giá** (bảng trên màn hình và file Excel) có các cột: NCC, Tên sản phẩm, Số lượng, Đơn giá, VAT, Thông tin sản phẩm (pin, điện áp, bảo hành, ghi chú; bấm "Sửa thông tin"), Ngày cập nhật, Liên hệ, Điểm, Trạng thái.. Lưu ý: Chrome trên điện thoại không cài được tiện ích, nên trên điện thoại bạn chỉ dùng được giao diện (xem lại lịch sử, sửa bảng, xuất file) khi mở bản chạy trên máy tính, hoặc bản trang web (GitHub Pages) với các engine có khóa; tính năng crawl bằng trình duyệt cần máy tính.
 
 1. Mở `chrome://extensions` (Chrome) hoặc `coccoc://extensions` (Cốc Cốc) hoặc `edge://extensions` (Edge).
 2. Bật **Chế độ nhà phát triển** (Developer mode) ở góc trên.

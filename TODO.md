@@ -122,6 +122,18 @@
 - [ ] Tab Tư vấn đọc tên từ ảnh cần khóa Anthropic; chưa có đối chiếu ảnh với sản phẩm gợi ý
 - [ ] Chrome trên điện thoại không cài được tiện ích nên crawl bằng trình duyệt chỉ chạy trên máy tính
 
+## Đợt cập nhật: crawl theo trang kết quả, form mới, tư vấn có tiến trình và lưu JSON
+- [x] Hiểu lại "10 trang" là 10 trang kết quả của engine (phân trang 1..10), dừng sớm khi hết kết quả; chọn 1/2/3/5/10 trang; tối đa 30 link đọc sâu, các kết quả còn lại góp tiêu đề và mô tả
+- [x] Thêm engine Bing và Brave Search qua trình duyệt (không cần khóa); thứ tự ưu tiên Google, Cốc Cốc, DuckDuckGo; giải link bọc chuyển hướng (Google, DuckDuckGo, Bing, Cốc Cốc)
+- [x] Ảnh crawl từ trang Hình ảnh của engine đang chọn (Google trong trình duyệt là mặc định), có ảnh gốc hoặc ảnh thu nhỏ
+- [x] Form NCC và file Excel: NCC, Tên sản phẩm, Số lượng, Đơn giá, VAT, Thông tin sản phẩm, Ngày cập nhật, Liên hệ, Điểm, Trạng thái; sửa được tên sản phẩm, số lượng, thông tin sản phẩm
+- [x] Tab Tư vấn đứng đầu, mở sẵn, có tiến trình 8 bước (thanh phần trăm chỉ tăng) và chi tiết crawl từng engine
+- [x] Lưu dữ liệu tư vấn ra file .json và tự lưu trong trình duyệt; "Nạp dữ liệu tư vấn" ở Yêu cầu mới điền sẵn form, dùng dữ liệu để dựng card (ngân sách thành lựa chọn đầu tiên), không crawl lại
+- [x] Test: 19 test JS (thêm giải link bọc, cột mới, ngân sách từ tư vấn), thử giao diện bằng engine giả: phân trang 4 lần gọi dừng ở trang rỗng, tiến trình, lưu/nạp JSON, bảng và Excel đúng thứ tự cột
+- [ ] **Chưa chạy thử trên Google, Cốc Cốc, Bing, Brave Search thật**: cách đọc kết quả (tiêu đề, mô tả, link) và phân trang `&start=`, `&page=`, `&first=`, `&offset=` chỉ dựa trên khảo sát Cốc Cốc (đã kiểm `&page=2`) và hiểu biết về các engine còn lại; engine đổi giao diện thì cần sửa `readPage` trong `background.js`
+- [ ] Safari: chưa thử (cần macOS và Xcode để chuyển tiện ích)
+- [ ] 10 trang × nhiều engine mất vài phút vì mở tab thật; có thể giảm bằng ô "Số trang kết quả mỗi engine"
+
 ## Chưa làm / cần bạn quyết định
 - [ ] Card dựng theo quy tắc, chưa dùng AI. Có thể soạn card bằng Claude khi có ANTHROPIC_API_KEY để gợi ý sát sản phẩm hơn
 - [ ] Tìm kiếm ảnh ngược (reverse image search). Hiện ảnh chỉ được mô tả bằng Claude khi có ANTHROPIC_API_KEY

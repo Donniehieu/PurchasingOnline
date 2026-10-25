@@ -1,5 +1,5 @@
 // Xuất file .xlsx ngay trên trình duyệt bằng ExcelJS (vendor/exceljs.min.js, biến toàn cục ExcelJS).
-import { buildInsights, money, parseUrls, priceComparison, specText } from "./core.js";
+import { buildInsights, money, parseUrls, priceComparison, specText, supplierInfo } from "./core.js";
 
 const BLUE = "FF003399", GREEN = "FF92D050";
 const thin = { style: "thin", color: { argb: "FF999999" } };
@@ -35,32 +35,55 @@ function headerRow(ws, values, fill = BLUE) {
 function widths(ws, list) { list.forEach((w, i) => { ws.getColumn(i + 1).width = w; }); }
 const lineCount = (t) => String(t || "").split("\n").reduce((a, x) => a + Math.max(1, Math.floor(x.length / 60) + 1), 0);
 
-/** Form duyệt báo giá: cột A-H đúng mẫu, cột I thêm ngày cập nhật web. */
+/** Thông tin sản phẩm của một NCC: pin, điện áp, bảo hành, mô tả, ghi chú người mua. */
+function productInfo(s) {
+  const l = [supplierInfo(s)];
+  if (s.vat_included) l.push("Giá trên web đã gồm VAT, đơn giá đã chia 1.1");
+  if (s.description) l.push(`Mô tả: ${s.description.slice(0, 160)}`);
+  if (s.note) l.push(`Ghi chú người mua: ${s.note}`);
+  return l.join("\n");
+}
+function contactText(s) {
+  const c = s.contacts || [], l = [];
+  if ((c.phones || []).length) l.push(`ĐT: ${c.phones.join(", ")}`);
+  if ((c.zalo || []).length) l.push(`Zalo: ${c.zalo[0]}${c.zalo_guess ? " (theo số ĐT, chưa xác nhận)" : ""}`);
+  if ((c.emails || []).length) l.push(`Email: ${c.emails.join(", ")}`);
+  if (s.url) l.push(`Nguồn: ${s.url}`);
+  return l.join("\n");
+}
+function statusText(s) {
+  const l = [s.recommended ? `★ KHUYẾN NGHỊ ƯU TIÊN` : s.eligible ? "Đủ điều kiện" : `Loại: ${s.reason}`];
+  if (s.over_budget) l.push("Vượt ngân sách");
+  l.push("Cần xác minh trước khi đặt hàng");
+  return l.join("\n");
+}
+
+/** Form duyệt báo giá. Cột: NCC, Tên sản phẩm, Số lượng, Đơn giá, VAT, Thông tin sản phẩm, Ngày cập nhật, Liên hệ, Điểm, Trạng thái. */
 export function buildJobWorkbook(job) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Thông báo duyệt giá");
-  ws.addRow(["YCMS"]); ws.mergeCells("A1:I1");
-  headerRow(ws, ["TT", "Tên hàng hóa", "Số lượng ", "NCC", null, "Thông số kỹ thuật", "Đơn giá chưa VAT", "Ghi Chú", "Ngày cập nhật trên web"]);
-  widths(ws, [6, 34, 16, 26, 10, 44, 22, 52, 20]);
+  const COLS = ["NCC", "Tên sản phẩm", "Số lượng", "Đơn giá chưa VAT (đ)", "VAT", "Thông tin sản phẩm", "Ngày cập nhật", "Liên hệ", "Điểm", "Trạng thái"];
+  ws.addRow([`BẢNG DUYỆT BÁO GIÁ: ${job.query}`]).font = { bold: true, size: 14 }; ws.mergeCells(1, 1, 1, COLS.length);
+  headerRow(ws, COLS);
+  widths(ws, [24, 36, 10, 20, 12, 46, 16, 34, 8, 24]);
   const list = job.suppliers;
-  list.forEach((s, i) => {
+  list.forEach((s) => {
     const price = s.price && s.vat_included ? Math.round(s.price / 1.1) : s.price;
-    const row = ws.addRow([i + 1, null, null, s.name, null, spec(s), price, notes(s), toDate(s.date)]);
-    row.height = Math.max(30, 15 * lineCount(notes(s)));
-    for (let c = 1; c <= 9; c++) {
+    const info = productInfo(s), contact = contactText(s);
+    const row = ws.addRow([s.name, s.product_name || s.title || job.query, s.quantity ?? job.quantity, price, yesNo(s.vat), info, toDate(s.date), contact, s.score ?? "", statusText(s)]);
+    row.height = Math.max(32, 15 * Math.max(lineCount(info), lineCount(contact)));
+    for (let c = 1; c <= COLS.length; c++) {
       const cell = row.getCell(c); cell.border = BORDER; cell.alignment = WRAP;
       if (s.recommended) { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GREEN } }; cell.font = { bold: true }; }
     }
-    row.getCell(7).numFmt = "#,##0"; row.getCell(9).numFmt = "dd/mm/yyyy";
+    row.getCell(4).numFmt = "#,##0"; row.getCell(7).numFmt = "dd/mm/yyyy";
   });
-  if (list.length) {
-    ws.getCell("B3").value = job.query; ws.getCell("C3").value = job.quantity;
-    if (list.length > 1) { ws.mergeCells(3, 2, 2 + list.length, 2); ws.mergeCells(3, 3, 2 + list.length, 3); }
-    for (const a of ["B3", "C3"]) { ws.getCell(a).alignment = { vertical: "middle", horizontal: "center", wrapText: true }; ws.getCell(a).border = BORDER; }
-  }
-  const after = 2 + Math.max(list.length, 1) + 2;
-  ws.getCell(`B${after}`).value = "Mục đích sử dụng:"; ws.getCell(`B${after}`).font = { bold: true };
-  ws.getCell(`C${after}`).value = job.purpose || "Chưa nhập";
+  const after = 3 + Math.max(list.length, 1) + 1;
+  ws.getCell(`A${after}`).value = "Mục đích sử dụng:"; ws.getCell(`A${after}`).font = { bold: true };
+  ws.getCell(`B${after}`).value = job.purpose || "Chưa nhập";
+  ws.getCell(`A${after + 1}`).value = "Thông số đã xác nhận:"; ws.getCell(`A${after + 1}`).font = { bold: true };
+  ws.getCell(`B${after + 1}`).value = specText(job.spec);
+  ws.views = [{ state: "frozen", ySplit: 2, xSplit: 1 }];
 
   const info = wb.addWorksheet("Thông tin yêu cầu");
   [["Tên sản phẩm", job.query], ["Mã / model", job.product_code || "Không nhập"], ["Số lượng", job.quantity], ["Mục đích sử dụng", job.purpose || "Chưa nhập"],

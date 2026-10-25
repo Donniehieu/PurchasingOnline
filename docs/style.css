@@ -148,3 +148,20 @@ td[data-col="note"] { min-width:260px; } td[data-col="name"] { min-width:190px; 
   #edits-table table { min-width:640px; } #edits-table { overflow-x:auto; }
 }
 @media (prefers-reduced-motion:reduce) { * { transition:none !important; } button:hover, a.button:hover { transform:none; } }
+
+/* tiến trình chạy */
+.progress { margin-top:16px; }
+.progress-bar { height:10px; background:var(--accent-soft); border-radius:999px; overflow:hidden; }
+.progress-bar i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .4s ease; }
+.steps { list-style:none; padding:0; margin:12px 0 0; }
+.steps li { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:flex-start; padding:6px 0; font-size:14px; }
+.steps li.pending { color:var(--muted); }
+.steps .dot { width:14px; height:14px; flex:0 0 14px; margin-top:3px; border-radius:50%; border:2px solid var(--line); }
+.steps li.active .dot { border-color:var(--accent); background:var(--accent-soft); animation:pulse 1.1s ease-in-out infinite; }
+.steps li.active .s-label { font-weight:700; color:var(--accent); }
+.steps li.done .dot { background:#16a34a; border-color:#16a34a; }
+.steps li.skipped .dot { background:var(--line); }
+.steps li.error .dot { background:var(--danger); border-color:var(--danger); } .steps li.error .s-label { color:var(--danger); font-weight:700; }
+.steps .s-detail { flex:1 1 100%; padding-left:24px; word-break:break-word; }
+@keyframes pulse { 50% { box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 22%,transparent); } }
+.info-line { font-weight:600; }

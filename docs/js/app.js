@@ -69,48 +69,100 @@ function filterDomains(urls, max) {
   }
   return out;
 }
-const SEARCHERS = {
-  async google(q, n) {
-    const r = await fetch(`https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(settings.google_key)}&cx=${encodeURIComponent(settings.google_cx)}&q=${encodeURIComponent(q)}&num=${Math.min(n, 10)}&gl=vn&lr=lang_vi`, { signal: withTimeout() });
+/* ------------------------------------------------------------------ tìm kiếm: crawl N TRANG KẾT QUẢ mỗi engine */
+// "Trang" ở đây là trang kết quả của engine (1, 2, 3... như thanh phân trang), tối đa 10 trang mỗi engine; engine hết kết quả sớm thì dừng ở trang cuối.
+// Kết quả của mọi trang (tiêu đề, đoạn mô tả, link) được thu thập; chỉ một phần link tốt nhất (MAX_DEEP) được mở ra đọc đầy đủ.
+const PAGES_DEFAULT = 10, API_PAGE_CAP = 3, MAX_DEEP = 30;
+const pagesPerEngine = () => Math.min(10, Math.max(1, parseInt(settings.serp_pages, 10) || PAGES_DEFAULT));
+const ENGINE_NAMES = { googleweb: "Google", coccoc: "Cốc Cốc", duckduckgo: "DuckDuckGo", bing: "Bing", bravesearch: "Brave Search", google: "Google API", brave: "Brave API" };
+const PAGE_FETCHERS = {
+  googleweb: (q, p) => net.serpPage("googleweb", q, p),
+  coccoc: (q, p) => net.serpPage("coccoc", q, p),
+  bing: (q, p) => net.serpPage("bing", q, p),
+  bravesearch: (q, p) => net.serpPage("bravesearch", q, p),
+  duckduckgo: (q, p) => net.duckduckgoPage(q, p),
+  async google(q, p) {
+    const r = await fetch(`https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(settings.google_key)}&cx=${encodeURIComponent(settings.google_cx)}&q=${encodeURIComponent(q)}&num=10&start=${(p - 1) * 10 + 1}&gl=vn&lr=lang_vi`, { signal: withTimeout() });
     if (!r.ok) throw new Error(httpHint(r.status));
-    return filterDomains(((await r.json()).items || []).map((i) => i.link), n);
+    const items = (await r.json()).items || [];
+    return { results: items.map((i) => ({ url: i.link, title: i.title || "", snippet: i.snippet || "" })), raw: items.length };
   },
-  async googleweb(q, n) { return filterDomains(await net.googleWeb(q, n), n); },
-  async coccoc(q, n) { return filterDomains(await net.coccocWeb(q, n), n); },
-  async duckduckgo(q, n) { return filterDomains(await net.duckduckgoWeb(q, n), n); },
-  async brave(q, n) {
-    const target = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=${Math.min(n * 2, 20)}&country=vn&search_lang=vi`;
+  async brave(q, p) {
+    const target = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=20&offset=${p - 1}&country=vn&search_lang=vi`;
     const r = await fetch(net.isExt ? target : proxied(target), { headers: { "X-Subscription-Token": settings.brave_key, Accept: "application/json" }, signal: withTimeout(25000) });
     if (!r.ok) throw new Error(httpHint(r.status));
-    return filterDomains(((await r.json()).web?.results || []).map((i) => i.url), n);
+    const items = (await r.json()).web?.results || [];
+    return { results: items.map((i) => ({ url: i.url, title: i.title || "", snippet: i.description || "" })), raw: items.length };
   },
 };
 function httpHint(status) {
   return `HTTP ${status}: ` + ({ 400: "yêu cầu không hợp lệ, kiểm tra khóa và ID", 401: "khóa không đúng", 403: "khóa chưa được cấp quyền hoặc hết hạn mức", 422: "khóa sai định dạng", 429: "hết hạn mức tạm thời" }[status] || "lỗi từ nhà cung cấp");
 }
 function engineStatus() {
-  // Thứ tự = thứ tự ưu tiên: các engine chạy bằng trình duyệt (không cần khóa) đứng trước, tick sẵn.
+  const ext = "Chỉ chạy khi cài làm tiện ích trình duyệt (Chrome, Cốc Cốc, Brave, Edge...)";
+  // Thứ tự = thứ tự ưu tiên: engine chạy bằng trình duyệt (không cần khóa) đứng trước. Ba engine đầu tick sẵn.
   return [
-    { id: "googleweb", label: "Google qua Chrome (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Chrome/Cốc Cốc", recommended: true },
-    { id: "coccoc", label: "Cốc Cốc (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Chrome/Cốc Cốc", recommended: true },
-    { id: "duckduckgo", label: "DuckDuckGo (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Chrome/Cốc Cốc", recommended: true },
+    { id: "googleweb", label: "Google qua trình duyệt (không cần khóa)", available: net.isExt, reason: ext, recommended: true },
+    { id: "coccoc", label: "Cốc Cốc (không cần khóa)", available: net.isExt, reason: ext, recommended: true },
+    { id: "duckduckgo", label: "DuckDuckGo (không cần khóa)", available: net.isExt, reason: ext, recommended: true },
+    { id: "bing", label: "Bing qua trình duyệt (không cần khóa)", available: net.isExt, reason: ext },
+    { id: "bravesearch", label: "Brave Search qua trình duyệt (không cần khóa)", available: net.isExt, reason: ext },
     { id: "google", label: "Google (Custom Search API)", available: !!(settings.google_key && settings.google_cx), reason: "Chưa nhập Google API key và Search engine ID (tab Cài đặt)" },
     { id: "brave", label: net.isExt ? "Brave Search API" : "Brave Search API (qua proxy)", available: !!(settings.brave_key && (net.isExt || proxyReady())), reason: "Cần Brave API key (và proxy nếu không chạy dạng tiện ích)" },
   ];
 }
-const PAGES_PER_ENGINE = 10, MAX_PAGES = 30;
-/** Mỗi engine lấy tối đa `per` trang đầu (không đủ thì lấy hết những gì có). Kết quả xen kẽ theo thứ tự engine, bỏ link trùng. */
-async function searchEngines(engines, query, per = PAGES_PER_ENGINE) {
-  const lists = [], errors = {}, counts = {};
-  for (const e of engines) { try { const l = (await SEARCHERS[e](query, per)).slice(0, per); lists.push(l); counts[e] = l.length; } catch (err) { errors[e] = err.message; lists.push([]); counts[e] = 0; } }
-  const merged = [], seen = new Set();
-  for (let i = 0; i < Math.max(0, ...lists.map((l) => l.length)); i++) for (const l of lists) if (l[i] && !seen.has(l[i])) { seen.add(l[i]); merged.push(l[i]); }
-  return { urls: merged, errors, counts };
+/** Engine đang chọn (lưu trong trình duyệt, dùng chung cho tab Tư vấn và Yêu cầu mới). Mặc định: các engine ưu tiên không cần khóa. */
+function selectedEngines() {
+  const saved = ui.engines;
+  return engineStatus().filter((e) => e.available && (saved ? saved.includes(e.id) : e.recommended || !net.isExt)).map((e) => e.id);
 }
-const countsText = (counts) => Object.entries(counts).map(([e, n]) => `${e}: ${n}`).join(", ");
-async function pool(items, worker, size = 4) {
-  const out = new Array(items.length); let next = 0;
-  await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => { while (next < items.length) { const i = next++; out[i] = await worker(items[i]); } }));
+
+/**
+ * Crawl `pages` trang kết quả của từng engine (chạy song song giữa các engine). Dừng sớm khi một trang không còn kết quả mới.
+ * Engine API (Google, Brave) chỉ lấy tối đa API_PAGE_CAP trang để tiết kiệm hạn mức.
+ * onProgress({ engine, page, pages, results, state: "start" | "done" | "end" | "error", message }).
+ * Trả về { items: [{url,title,snippet,engine,page}], urls (link nên đọc sâu), errors, counts: {engine: {pages, results}} }.
+ */
+async function searchEngines(engines, query, pages = pagesPerEngine(), onProgress = null) {
+  const items = [], errors = {}, counts = {};
+  await Promise.all(engines.map(async (e) => {
+    const cap = e === "google" || e === "brave" ? Math.min(pages, API_PAGE_CAP) : pages, seen = new Set();
+    let read = 0, got = 0;
+    for (let p = 1; p <= cap; p++) {
+      onProgress && onProgress({ engine: e, page: p, pages: cap, results: got, state: "start" });
+      let res;
+      try { res = await PAGE_FETCHERS[e](query, p); } catch (err) { errors[e] = `trang ${p}: ${err.message}`; onProgress && onProgress({ engine: e, page: p, pages: cap, results: got, state: "error", message: err.message }); break; }
+      const fresh = res.results.filter((r) => r.url && !seen.has(r.url));
+      if (fresh.length) read++;
+      for (const r of fresh) { seen.add(r.url); items.push({ ...r, engine: e, page: p }); got++; }
+      onProgress && onProgress({ engine: e, page: p, pages: cap, results: got, state: fresh.length ? "done" : "end" });
+      if (!fresh.length) break; // hết trang kết quả
+    }
+    counts[e] = { pages: read, results: got };
+  }));
+  return { items, urls: deepUrls(items, engines), errors, counts };
+}
+/** Chọn tối đa `max` link để đọc đầy đủ: xen kẽ theo engine, mỗi website một link, bỏ website không phải NCC. */
+function deepUrls(items, engines, max = MAX_DEEP) {
+  const lists = engines.map((e) => items.filter((i) => i.engine === e)), domains = new Set(), out = [];
+  for (let i = 0; i < Math.max(0, ...lists.map((l) => l.length)) && out.length < max; i++) for (const l of lists) {
+    const it = l[i]; if (!it || out.length >= max) continue;
+    const d = core.domainOf(it.url);
+    if (!d || SKIP_DOMAINS.some((s) => d.includes(s)) || domains.has(d)) continue;
+    domains.add(d); out.push(it.url);
+  }
+  return out;
+}
+const escHtml = (t) => String(t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+/** Các kết quả không được đọc sâu vẫn dùng được: tiêu đề + đoạn mô tả của trang kết quả (có thể chứa giá, thông số). */
+function serpPseudoPages(items, skip = new Set()) {
+  return items.filter((i) => !skip.has(i.url)).map((i) => ({ url: i.url, pseudo: true, html: `<html><head><title>${escHtml(i.title)}</title></head><body><p>${escHtml(i.title)}. ${escHtml(i.snippet)}</p></body></html>` }));
+}
+const countsText = (counts) => Object.entries(counts).map(([e, c]) => `${ENGINE_NAMES[e] || e}: ${c.pages} trang, ${c.results} kết quả`).join("; ");
+const progressText = (ev) => `${ENGINE_NAMES[ev.engine] || ev.engine}: ${ev.state === "start" ? `đang mở trang ${ev.page}/${ev.pages}` : ev.state === "end" ? `hết kết quả sau ${ev.page - 1} trang` : ev.state === "error" ? `lỗi (${ev.message})` : `xong trang ${ev.page}/${ev.pages}, ${ev.results} kết quả`}`;
+async function pool(items, worker, size = 4, onTick = null) {
+  const out = new Array(items.length); let next = 0, done = 0;
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => { while (next < items.length) { const i = next++; out[i] = await worker(items[i]); onTick && onTick(++done, items.length); } }));
   return out;
 }
 async function analyzeImages(images) {
@@ -139,7 +191,7 @@ function log(job, msg) { job.log.push(`${new Date().toLocaleTimeString("vi-VN")}
 async function createJob(form, images) {
   const job = {
     id: uid(), status: "awaiting_confirmation", created: nowIso(), query: form.query, product_code: form.product_code, quantity: form.quantity,
-    purpose: form.purpose, engines: form.engines, seed_urls: form.seed_urls, topics: [], research_on: form.research_on, extra_keywords: form.extra_keywords, crawl_images: form.crawl_images,
+    purpose: form.purpose, engines: form.engines, seed_urls: form.seed_urls, topics: [], research_on: form.research_on, advice: form.advice, advice_budget: form.advice ? form.advice.input?.budget || null : null, extra_keywords: form.extra_keywords, crawl_images: form.crawl_images,
     images: images.map((i) => i.name), suggested_name: null, ocr_text: "", questions: [], answers: {}, spec: {}, keywords: null, errors: {}, log: [],
     suppliers: [], research: {}, sites_searched: [], edits: [], price_stats: null, analysis: { negotiation: [], persuasion: { title: "", sections: [], points: [], closing: "" } }, error: null,
   };
@@ -156,26 +208,34 @@ async function createJob(form, images) {
   return job;
 }
 
-/** Tìm hiểu sản phẩm trên web trước khi hỏi: tìm, đọc vài trang, rút tên/model/thông số/mục đích, rồi mới dựng question card. */
+const jobProgress = (job) => (ev) => { if (ev.state !== "start") log(job, progressText(ev)); };
+
+/** Tìm hiểu sản phẩm trên web trước khi hỏi: crawl các trang kết quả, đọc các trang tốt nhất, rút tên/model/thông số/mục đích,
+ *  rồi mới dựng question card. Nếu đã nạp dữ liệu từ tab Tư vấn (file .json) thì dùng luôn, không crawl lại. */
 async function prepareCards(job) {
   const subject = job.query || job.suggested_name || job.product_code;
   const engines = job.engines.filter((e) => engineStatus().find((s) => s.id === e)?.available);
-  if (subject && (engines.length || job.seed_urls.length)) {
+  if (job.advice && job.advice.discovery) {
+    job.discovery = job.advice.discovery; job.research = job.advice.research || {};
+    job.advice = { created: job.advice.created, query: job.advice.input?.query }; // giữ dấu vết, bỏ bản sao dữ liệu lớn
+    const d = job.discovery;
+    log(job, `Dùng dữ liệu từ tab Tư vấn (${d.total} trang đúng sản phẩm, nhóm ngành ${core.CATEGORIES[d.category]?.label || ""}), không crawl lại`);
+  } else if (subject && (engines.length || job.seed_urls.length)) {
     try {
-      log(job, `Đang tìm hiểu "${subject}" trên web để đưa ra lựa chọn phù hợp...`);
-      let urls = [...job.seed_urls];
+      const pages = pagesPerEngine();
+      log(job, `Đang tìm hiểu "${subject}" trên web: crawl tối đa ${pages} trang kết quả mỗi engine...`);
+      let urls = [...job.seed_urls], items = [];
       if (engines.length) {
-        const res = await searchEngines(engines, `${subject} ${job.product_code}`.trim());
-        urls = [...new Set([...urls, ...res.urls])];
-        log(job, `Số trang lấy được theo engine (tối đa ${PAGES_PER_ENGINE} mỗi engine): ${countsText(res.counts)}`);
-        for (const [e, m] of Object.entries(res.errors)) log(job, `Engine ${e} lỗi: ${m}`);
+        const res = await searchEngines(engines, `${subject} ${job.product_code}`.trim(), pages, jobProgress(job));
+        items = res.items; urls = [...new Set([...urls, ...res.urls])];
+        log(job, `Tổng kết crawl: ${countsText(res.counts)}`);
+        for (const [e, m] of Object.entries(res.errors)) log(job, `Engine ${ENGINE_NAMES[e] || e} lỗi: ${m}`);
       }
-      urls = urls.slice(0, MAX_PAGES);
-      log(job, `Đang đọc ${urls.length} trang...`);
-      const pages = await pool(urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } });
-      job.discovery = core.buildDiscovery(pages, core.queryKeywords(subject), subject);
+      log(job, `Đang đọc đầy đủ ${urls.length} trang web, dùng thêm tiêu đề và mô tả của ${items.filter((i) => !urls.includes(i.url)).length} kết quả còn lại...`);
+      const read = await pool(urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } });
+      job.discovery = core.buildDiscovery([...read, ...serpPseudoPages(items, new Set(urls.filter((_, i) => read[i])))], core.queryKeywords(subject), subject);
       const d = job.discovery;
-      log(job, `Đọc được ${d.read}/${urls.length} trang, ${d.total} trang đúng sản phẩm, nhóm ngành: ${core.CATEGORIES[d.category].label}` + (d.price ? `, giá thấy trên web ${money(d.price.min)} đến ${money(d.price.max)}` : ""));
+      log(job, `Đọc được ${read.filter(Boolean).length}/${urls.length} trang, ${d.total} nguồn đúng sản phẩm, nhóm ngành: ${core.CATEGORIES[d.category].label}` + (d.price ? `, giá thấy trên web ${money(d.price.min)} đến ${money(d.price.max)}` : ""));
     } catch (e) { log(job, `Không tìm hiểu được trên web: ${e.message}`); }
   } else log(job, "Chưa có engine hoặc link NCC nên không tìm hiểu trước trên web, dùng gợi ý chung");
   job.questions = core.buildCards(job, job.suggested_name, job.ocr_text, job.discovery);
@@ -190,32 +250,34 @@ async function runJob(job) {
     const engines = job.engines.filter((e) => engineStatus().find((s) => s.id === e)?.available);
     let searched = [];
     if (engines.length) {
-      log(job, `Tìm trên engine: ${engines.join(", ")}`);
-      const res = await searchEngines(engines, `${job.keywords} giá mua`);
-      searched = res.urls.slice(0, MAX_PAGES); job.errors = res.errors;
-      log(job, `Số trang lấy được theo engine: ${countsText(res.counts)}`);
-      for (const [e, m] of Object.entries(res.errors)) log(job, `Engine ${e} lỗi: ${m}`);
-    } else if (job.engines.length) log(job, "Engine đã chọn chưa cấu hình khóa, chỉ dùng link nhập tay");
+      const pages = Math.min(pagesPerEngine(), 3); // bước tìm NCC chỉ cần vài trang đầu, phần tìm hiểu rộng đã crawl đủ trang ở trên
+      log(job, `Tìm NCC trên ${engines.map((e) => ENGINE_NAMES[e] || e).join(", ")}: ${pages} trang kết quả mỗi engine`);
+      const res = await searchEngines(engines, `${job.keywords} giá mua`, pages, jobProgress(job));
+      searched = res.urls; job.errors = res.errors;
+      log(job, `Tổng kết crawl: ${countsText(res.counts)}`);
+      for (const [e, m] of Object.entries(res.errors)) log(job, `Engine ${ENGINE_NAMES[e] || e} lỗi: ${m}`);
+    } else if (job.engines.length) log(job, "Engine đã chọn chưa dùng được, chỉ dùng link nhập tay");
     const seeds = job.seed_urls, urls = [...new Set([...seeds, ...searched])];
     job.sites_searched = urls;
     let unreadable = 0;
+    log(job, `Đang đọc ${urls.length} trang NCC...`);
     const results = await pool(urls, async (url) => {
       try { return { url, supplier: core.parsePage(await fetchHtml(url), url, tokens, job.product_code) }; }
       catch (e) { return { url, error: e.message }; }
     });
     const found = [];
     for (const r of results) {
-      if (r.supplier && (r.supplier.relevance >= 0.5 || seeds.includes(r.url))) found.push({ id: uid(), ...r.supplier });
-      else if (r.error && seeds.includes(r.url)) { unreadable++; found.push(placeholder(r.url, r.error)); }
+      if (r.supplier && (r.supplier.relevance >= 0.5 || seeds.includes(r.url))) found.push({ id: uid(), quantity: job.quantity, ...r.supplier });
+      else if (r.error && seeds.includes(r.url)) { unreadable++; found.push({ ...placeholder(r.url, r.error), quantity: job.quantity }); }
     }
     log(job, `Đã thử ${urls.length} trang, đọc được ${found.filter((s) => !s.unreadable).length} trang, ${unreadable} trang cần nhập tay`);
     job.suppliers = found;
     if (job.crawl_images !== false && net.isExt) {
       log(job, "Đang crawl ảnh về album...");
-      const res = await album.crawlAlbum(job.id, job.keywords);
-      log(job, res.error ? `Album: ${res.error}` : `Album: thêm ${res.added.length} ảnh (đã thử ${res.tried} link ảnh)`);
+      const res = await album.crawlAlbum(job.id, job.keywords, 12, engines, (src, n, err) => log(job, err ? `Ảnh ${src}: lỗi ${err}` : `Ảnh ${src}: lấy được ${n} ảnh`));
+      log(job, res.error ? `Album: ${res.error}` : `Album: thêm ${res.added.length} ảnh (đã thử ${res.tried} ảnh)`);
     }
-    if (job.research_on !== false) {
+    if (job.research_on !== false && !Object.keys(job.research || {}).length) {
       log(job, "Đang tìm hiểu sản phẩm theo nhóm ngành hàng (giá, hãng, ưu nhược điểm, công nghệ, lưu ý khi mua)...");
       try { await researchJob(job, engines, urls); } catch (e) { log(job, `Không tìm hiểu được thêm: ${e.message}`); }
     }
@@ -229,22 +291,27 @@ function placeholder(url, reason) {
   return { id: uid(), name: core.domainOf(url) || "NCC", title: url, url, description: "", date: null, price: null, vat: null, vat_included: false, mah: null, volt: null,
     warranty_months: null, relevance: 1, contacts: {}, note: `Không đọc tự động được (${reason}). Hãy mở link và nhập tay.`, unreadable: true };
 }
-/** Tìm hiểu sản phẩm theo nhóm ngành: tìm thêm 3 lượt (giá/hãng, ưu nhược điểm/công nghệ, lưu ý khi mua), đọc các trang rồi
- *  trả lời bộ câu hỏi của ngành bằng câu trích từ trang (kèm nguồn). Dùng lại các trang đã tải ở bước tìm NCC. */
-async function researchProduct(subject, engines, knownUrls = [], seeds = []) {
+/** Tìm hiểu sản phẩm theo nhóm ngành: tìm thêm 3 lượt (giá/hãng, ưu nhược điểm/công nghệ, lưu ý khi mua), mỗi lượt 2 trang kết quả,
+ *  đọc các trang tốt nhất rồi trả lời bộ câu hỏi của ngành bằng câu trích từ trang (kèm nguồn). Dùng lại trang đã tải ở bước trước.
+ *  onStage(text, fraction) báo tiến trình cho giao diện. */
+async function researchProduct(subject, engines, knownUrls = [], seeds = [], onProgress = null, onStage = null, knownItems = []) {
   const plan = knowledge.planKnowledge(subject, core.detectCategory(subject));
-  let urls = [...knownUrls, ...seeds];
-  for (const q of plan.queries) {
-    if (!engines.length) break;
-    const res = await searchEngines(engines, q.query, 6);
-    urls.push(...res.urls);
+  let urls = [...knownUrls, ...seeds], items = [...knownItems];
+  if (engines.length) {
+    for (const [i, q] of plan.queries.entries()) {
+      onStage && onStage(`Tìm bổ sung ${i + 1}/${plan.queries.length}: ${q.query}`, i / plan.queries.length);
+      const res = await searchEngines(engines, q.query, 2, onProgress);
+      urls.push(...res.urls.slice(0, 10)); items.push(...res.items);
+    }
   }
-  urls = [...new Set(urls)].slice(0, MAX_PAGES + 18);
-  const pages = await pool(urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } });
-  return { plan, research: knowledge.answerKnowledge(plan, pages, core.queryKeywords(subject)), pages, read: pages.filter(Boolean).length, total: urls.length };
+  urls = [...new Set(urls)].slice(0, 60);
+  const pages = await pool(urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } }, 4, (done, total) => onStage && onStage(`Đọc trang ${done}/${total}`, done / total));
+  const pseudo = serpPseudoPages(items, new Set(urls.filter((_, i) => pages[i])));
+  onStage && onStage("Trả lời bộ câu hỏi theo ngành hàng", 1);
+  return { plan, research: knowledge.answerKnowledge(plan, [...pages, ...pseudo], core.queryKeywords(subject)), pages, read: pages.filter(Boolean).length, total: urls.length };
 }
 async function researchJob(job, engines, knownUrls) {
-  const r = await researchProduct(job.query, engines, knownUrls, job.seed_urls);
+  const r = await researchProduct(job.query, engines, knownUrls, job.seed_urls, jobProgress(job));
   job.research = r.research; job.knowledge_plan = { category: r.plan.category, label: r.plan.categoryLabel };
   const answered = Object.values(r.research).filter((x) => x.snippets.length || x.brands?.length).length;
   log(job, `Nhóm ngành ${r.plan.categoryLabel}: đọc ${r.read}/${r.total} trang, trả lời được ${answered}/${Object.keys(r.research).length} câu hỏi tìm hiểu`);
@@ -278,7 +345,7 @@ function removeSupplier(job, id) {
 }
 
 /* ------------------------------------------------------------------ giao diện: tab, giao diện sáng/tối */
-const TABS = ["new", "advice", "history", "edits", "settings"];
+const TABS = ["advice", "new", "history", "edits", "settings"];
 function showTab(name) {
   TABS.forEach((t) => ($("tab-" + t).hidden = t !== name));
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
@@ -292,9 +359,25 @@ if (ui.theme === "dark") document.body.classList.add("dark");
 $("theme-btn").addEventListener("click", () => { document.body.classList.toggle("dark"); ui.theme = document.body.classList.contains("dark") ? "dark" : "light"; save(KEY_UI, ui); });
 
 /* ------------------------------------------------------------------ form yêu cầu */
+/** Hai nơi chọn engine (tab Tư vấn và Yêu cầu mới) dùng chung một lựa chọn, lưu trong trình duyệt. */
 function renderEngines() {
-  $("engines").innerHTML = engineStatus().map((e) => `<label class="chip ${e.available ? "" : "off"}" title="${esc(e.available ? "" : e.reason)}">
-    <input type="checkbox" name="engines" value="${e.id}" ${e.available ? (e.recommended || !net.isExt ? "checked" : "") : "disabled"}> ${esc(e.label)}${e.available ? "" : e.recommended ? " (cần cài tiện ích)" : " (chưa cấu hình)"}</label>`).join("");
+  const chosen = new Set(selectedEngines());
+  const html = engineStatus().map((e) => `<label class="chip ${e.available ? "" : "off"}" title="${esc(e.available ? "" : e.reason)}">
+    <input type="checkbox" data-engine="${e.id}" ${chosen.has(e.id) ? "checked" : ""} ${e.available ? "" : "disabled"}> ${esc(e.label)}${e.available ? "" : e.recommended || e.reason.startsWith("Chỉ chạy") ? " (cần cài tiện ích)" : " (chưa cấu hình)"}</label>`).join("");
+  for (const id of ["engines", "engines-advice"]) {
+    const box = $(id); if (!box) continue;
+    box.innerHTML = html;
+    box.querySelectorAll("[data-engine]").forEach((cb) => cb.addEventListener("change", () => {
+      ui.engines = [...box.querySelectorAll("[data-engine]:checked")].map((c) => c.dataset.engine); save(KEY_UI, ui); renderEngines();
+    }));
+  }
+}
+function renderPagesSelect() {
+  for (const id of ["serp-pages", "adv-serp-pages"]) {
+    const el = $(id); if (!el) continue;
+    el.value = String(pagesPerEngine());
+    el.onchange = () => { settings.serp_pages = +el.value; save(KEY_SET, settings); renderPagesSelect(); };
+  }
 }
 $("link-file").addEventListener("change", async (e) => {
   const file = e.target.files[0]; if (!file) return;
@@ -314,13 +397,14 @@ $("request-form").addEventListener("submit", async (e) => {
   $("submit-btn").disabled = true; $("result-card").hidden = true; $("status-card").hidden = true;
   const form = {
     query, product_code: code, quantity, purpose: $("purpose").value.trim(), extra_keywords: $("extra-keywords").value.trim(),
-    engines: [...document.querySelectorAll('input[name="engines"]:checked')].map((c) => c.value), seed_urls: core.parseUrls($("seed-urls").value),
-    research_on: $("research-on").checked,
+    engines: selectedEngines(), seed_urls: core.parseUrls($("seed-urls").value),
+    research_on: $("research-on").checked, advice: pendingAdvice,
     crawl_images: $("crawl-images").checked,
   };
   try {
     const images = await Promise.all(files.map(fileToImage));
     const job = await createJob(form, images);
+    pendingAdvice = null; $("advice-loaded").hidden = true;
     if (files.length) await album.addUploads(job.id, files);
     currentJobId = job.id; currentJob = job; $("status-card").hidden = false;
     await prepareCards(job); persist(); renderStatus(job); showCards(job);
@@ -403,9 +487,9 @@ $("album-upload").addEventListener("change", async (e) => {
 });
 
 const COLUMNS = [
-  { key: "name", label: "NCC" }, { key: "price", label: "Đơn giá" }, { key: "mah", label: "Pin (mAh)" }, { key: "volt", label: "Điện áp (V)" },
-  { key: "warranty_months", label: "Bảo hành (tháng)" }, { key: "vat", label: "VAT" }, { key: "date", label: "Ngày cập nhật web" },
-  { key: "note", label: "Ghi chú" }, { key: "contact", label: "Liên hệ" }, { key: "score", label: "Điểm" }, { key: "status", label: "Trạng thái" }, { key: "del", label: "" },
+  { key: "name", label: "NCC" }, { key: "product", label: "Tên sản phẩm" }, { key: "qty", label: "Số lượng" }, { key: "price", label: "Đơn giá" },
+  { key: "vat", label: "VAT" }, { key: "info", label: "Thông tin sản phẩm" }, { key: "date", label: "Ngày cập nhật" },
+  { key: "contact", label: "Liên hệ" }, { key: "score", label: "Điểm" }, { key: "status", label: "Trạng thái" }, { key: "del", label: "" },
 ];
 let hiddenCols = new Set(ui.hiddenCols || []);
 function buildColMenu() {
@@ -437,10 +521,12 @@ function renderTable(job) {
     const status = (s.recommended ? "★ Khuyến nghị" : s.eligible ? "Đủ điều kiện" : esc(s.reason)) + (s.over_budget ? " · vượt ngân sách" : "");
     return `<tr class="${cls}" data-id="${esc(s.id)}">
       <td data-col="name">${safeUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" title="Mở website">↗</a> ` : ""}${editable(s, "name", s.name)}</td>
+      <td data-col="product">${editable(s, "product_name", s.product_name || s.title || job.query)}</td>
+      <td data-col="qty">${editable(s, "quantity", String(s.quantity ?? job.quantity))}</td>
       <td data-col="price">${editable(s, "price", s.price ? String(s.price) : "")}${s.vat_included ? '<div class="muted">(đã gồm VAT)</div>' : ""}</td>
-      <td data-col="mah">${editable(s, "mah", s.mah ? String(s.mah) : "")}</td><td data-col="volt">${editable(s, "volt", s.volt ? String(s.volt) : "")}</td>
-      <td data-col="warranty_months">${editable(s, "warranty_months", s.warranty_months != null ? String(s.warranty_months) : "")}</td>
-      <td data-col="vat">${vatSel}</td><td data-col="date">${editable(s, "date", shortDate(s.date))}</td><td data-col="note">${editable(s, "note", s.note || "")}</td>
+      <td data-col="vat">${vatSel}</td>
+      <td data-col="info"><div class="info-line">${esc(core.supplierInfo(s))}</div>${s.note ? `<div class="muted">${esc(s.note)}</div>` : ""}<button type="button" class="secondary small" data-info="${esc(s.id)}">Sửa thông tin</button></td>
+      <td data-col="date">${editable(s, "date", shortDate(s.date))}</td>
       <td data-col="contact"><button type="button" class="secondary small" data-contact="${esc(s.id)}">Liên hệ NCC</button></td>
       <td data-col="score">${s.score ?? "-"}</td><td data-col="status">${status}</td>
       <td data-col="del"><button type="button" class="secondary small danger" data-del="${esc(s.id)}" title="Xóa NCC này">✕</button></td></tr>`;
@@ -448,6 +534,7 @@ function renderTable(job) {
   $("result-table").innerHTML = `<table><thead><tr>${COLUMNS.map((c) => `<th data-col="${c.key}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
   document.querySelectorAll("#result-table td[data-col]").forEach((td) => { td.dataset.label = COLUMNS.find((c) => c.key === td.dataset.col)?.label || ""; }); // nhãn cho giao diện điện thoại
   document.querySelectorAll("[data-contact]").forEach((b) => b.addEventListener("click", () => openContact(b.dataset.contact)));
+  document.querySelectorAll("[data-info]").forEach((b) => b.addEventListener("click", () => openInfoEditor(b.dataset.info)));
   document.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
     const s = job.suppliers.find((x) => x.id === b.dataset.del); if (!s || !confirm(`Xóa NCC "${s.name}" khỏi bảng?`)) return;
     removeSupplier(job, s.id); renderResult(job); $("save-state").textContent = "Đã tự lưu " + new Date().toLocaleTimeString("vi-VN");
@@ -507,6 +594,27 @@ $("print-btn").addEventListener("click", () => window.print());
 $("copy-persuasion").addEventListener("click", () => { const t = core.persuasionText(currentJob?.analysis.persuasion); if (t) navigator.clipboard.writeText(t).then(() => toast("Đã sao chép")); });
 
 /* ------------------------------------------------------------------ liên hệ NCC */
+/** Sửa "Thông tin sản phẩm" của một NCC: pin, điện áp, bảo hành, ghi chú. Mỗi thay đổi được ghi vào lịch sử điều chỉnh. */
+function openInfoEditor(id) {
+  const job = currentJob, s = job.suppliers.find((x) => x.id === id);
+  const field = (key, label, val, hint) => `<label>${label}</label><input type="text" data-f="${key}" value="${esc(val ?? "")}" placeholder="${esc(hint)}">`;
+  $("contact-body").innerHTML = `<h3 class="first">Thông tin sản phẩm: ${esc(s.name)}</h3>
+    ${field("mah", "Dung lượng pin (mAh)", s.mah, "VD 20000, để trống nếu không có")}${field("volt", "Điện áp (V)", s.volt, "VD 18")}${field("warranty_months", "Bảo hành (tháng)", s.warranty_months, "VD 12")}
+    <label>Ghi chú</label><textarea data-f="note" rows="3" placeholder="Thông tin thêm về sản phẩm của NCC này">${esc(s.note || "")}</textarea>
+    <div class="error" id="info-error"></div>
+    <div class="actions"><button type="button" id="info-save">Lưu</button><button type="button" class="secondary" id="info-cancel">Đóng</button></div>`;
+  $("info-cancel").onclick = () => $("contact-modal").classList.remove("show");
+  $("info-save").onclick = () => {
+    try {
+      for (const input of $("contact-body").querySelectorAll("[data-f]")) {
+        const key = input.dataset.f, cur = s[key] == null ? "" : String(s[key]);
+        if (input.value.trim() !== cur) updateSupplier(job, id, key, input.value);
+      }
+    } catch (err) { $("info-error").textContent = err.message; return; }
+    $("contact-modal").classList.remove("show"); renderResult(job); $("save-state").textContent = "Đã tự lưu " + new Date().toLocaleTimeString("vi-VN");
+  };
+  $("contact-modal").classList.add("show");
+}
 function openContact(id) {
   const job = currentJob, s = job.suppliers.find((x) => x.id === id), c = s.contacts || {}, tiles = [];
   const tile = (title, links) => { if (links.length) tiles.push(`<div class="contact-tile"><div class="t">${title}</div>${links.join("")}</div>`); };
@@ -528,45 +636,132 @@ function openContact(id) {
 }
 $("contact-modal").addEventListener("click", (e) => { if (e.target.id === "contact-modal") $("contact-modal").classList.remove("show"); });
 
+/* ------------------------------------------------------------------ tiến trình chạy (hiện từng bước đang làm gì) */
+function makeProgress(el, steps) {
+  el.hidden = false;
+  el.innerHTML = `<div class="progress-bar"><i></i></div><ol class="steps">${steps.map((s) => `<li data-step="${s.id}" class="pending"><span class="dot"></span><span class="s-label">${esc(s.label)}</span><span class="s-detail muted"></span></li>`).join("")}</ol>`;
+  const bar = el.querySelector(".progress-bar i"), li = (id) => el.querySelector(`[data-step="${id}"]`);
+  let finished = 0;
+  let top = 0; // thanh chỉ tiến, không lùi khi phần trăm của bước con thay đổi
+  const paint = (frac = 0) => { top = Math.max(top, Math.min(100, Math.round(((finished + Math.min(frac, 0.99)) / steps.length) * 100))); bar.style.width = `${top}%`; };
+  const setDetail = (id, t) => { if (t !== undefined) li(id).querySelector(".s-detail").textContent = t; };
+  const close = (id, cls, t) => { const n = li(id); if (n.className === "pending" || n.className === "active") finished++; n.className = cls; setDetail(id, t); paint(0); };
+  paint(0);
+  return {
+    start(id, t) { li(id).className = "active"; setDetail(id, t); paint(0); li(id).scrollIntoView({ block: "nearest" }); },
+    detail(id, t, frac = 0) { setDetail(id, t); paint(frac); },
+    done(id, t) { close(id, "done", t); },
+    skip(id, t) { close(id, "skipped", t); },
+    fail(id, t) { close(id, "error", t); },
+    finish() { bar.style.width = "100%"; },
+  };
+}
+/** Báo tiến trình crawl từng engine: "Google 3/10 · Cốc Cốc 2/10 (hết)" và phần trăm theo tổng số trang đã xong. */
+function crawlReporter(prog, stepId) {
+  const per = {};
+  return (ev) => {
+    per[ev.engine] = { page: ev.state === "start" ? ev.page - 1 : ev.page, pages: ev.pages, ended: ev.state === "end" || ev.state === "error", results: ev.results, err: ev.state === "error" };
+    const done = Object.values(per).reduce((n, x) => n + (x.ended ? x.pages : x.page), 0), total = Object.values(per).reduce((n, x) => n + x.pages, 0);
+    prog.detail(stepId, Object.entries(per).map(([e, x]) => `${ENGINE_NAMES[e] || e} ${x.err ? "lỗi" : `${x.page}/${x.pages}${x.ended ? " (hết)" : ""}`} · ${x.results} kết quả`).join("  |  "), total ? done / total : 0);
+  };
+}
+
 /* ------------------------------------------------------------------ tư vấn: tên sản phẩm / ảnh, ngân sách, nhu cầu */
-function renderAdvice(adv) {
+const KEY_ADVICE = "po_last_advice";
+let lastAdvice = load(KEY_ADVICE, null), pendingAdvice = null;
+
+function adviceExport(adv, discovery, research, engines) {
+  const d = { ...discovery, items: discovery.items.slice(0, 150) }; delete d.pages;
+  return { type: "purchasing-advice", version: 1, created: nowIso(), input: { query: adv.query, need: adv.need, budget: adv.budget }, engines, serp_pages: pagesPerEngine(), category: discovery.category,
+    discovery: d, research, advice: { sections: adv.sections, category: adv.category, domains: adv.domains } };
+}
+function adviceFromData(data) {
+  if (!data || data.type !== "purchasing-advice" || !data.discovery) throw new Error("File không phải dữ liệu tư vấn của app này");
+  const d = data.discovery; d.pages = (d.items || []).slice(0, 40).map(({ url, domain, title }) => ({ url, domain, title }));
+  return data;
+}
+function downloadAdvice(data) {
+  const slug = core.stripAccents(data.input.query || "tu-van").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "tu-van";
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" })), download: `tu_van_${slug}_${data.created.slice(0, 10)}.json` });
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
+/** Nạp dữ liệu tư vấn vào form Yêu cầu mới: điền tên, nhu cầu, thêm link gợi ý, và giữ dữ liệu crawl để dựng card mà không crawl lại. */
+function applyAdviceToForm(data) {
+  pendingAdvice = adviceFromData(data);
+  const inp = data.input || {}, picks = ((data.advice.sections || []).find((s) => s.picks) || {}).picks || [];
+  $("query").value = inp.query || $("query").value; if (inp.need && !$("purpose").value) $("purpose").value = inp.need;
+  const links = picks.slice(0, 5).map((p) => p.url).filter(Boolean);
+  $("seed-urls").value = [...new Set([...core.parseUrls($("seed-urls").value), ...links])].join("\n");
+  $("advice-loaded").hidden = false;
+  $("advice-loaded").innerHTML = `Đã nạp dữ liệu tư vấn "${esc(inp.query)}" (${esc(dateTime(data.created))}): ${data.discovery.total} nguồn, nhóm ngành ${esc(core.CATEGORIES[data.discovery.category]?.label || "")}${inp.budget ? `, ngân sách ${esc(money(inp.budget))}` : ""}. Question card sẽ dùng dữ liệu này, không crawl lại. <a href="#" id="advice-unload">Bỏ</a>`;
+  $("advice-unload").addEventListener("click", (e) => { e.preventDefault(); pendingAdvice = null; $("advice-loaded").hidden = true; });
+  toast("Đã nạp dữ liệu tư vấn vào yêu cầu mới");
+}
+$("advice-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  try { applyAdviceToForm(JSON.parse(await file.text())); } catch (err) { toast(err.message); }
+  e.target.value = "";
+});
+$("advice-last").addEventListener("click", () => { if (!lastAdvice) { toast("Chưa có lần tư vấn nào được lưu"); return; } try { applyAdviceToForm(lastAdvice); } catch (err) { toast(err.message); } });
+
+function renderAdvice(adv, data) {
   const point = (p) => `<li>${esc(p.text)}${p.url ? ` <a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">[nguồn]</a>` : ""}</li>`;
   const picks = (list) => (list && list.length ? `<div class="picks">${list.map((i) => `<a class="pick" href="${esc(safeUrl(i.url))}" target="_blank" rel="noopener"><b>${esc(money(i.price))}</b>${i.fit ? `<span class="badge ${i.fit === "Trong ngân sách" ? "high" : ""}">${esc(i.fit)}</span>` : ""}<span class="t">${esc(i.title || i.domain)}</span><span class="muted">${esc(i.domain)}</span></a>`).join("")}</div>` : "");
   $("adv-result").hidden = false;
   $("adv-result").innerHTML = `<h3 class="first">Tư vấn: ${esc(adv.query)}</h3>
     ${adv.sections.map((s) => `<div class="block"><h4>${esc(s.heading)}</h4>${s.points.length ? `<ul class="points">${s.points.map(point).join("")}</ul>` : ""}${picks(s.picks)}</div>`).join("")}
-    <div class="actions"><button type="button" id="adv-to-request">Tạo yêu cầu mua từ tư vấn này</button></div>
-    <p class="muted">Tổng hợp tự động từ ${adv.domains.length} website. Hãy mở nguồn để kiểm tra và xin báo giá chính thức từ NCC.</p>`;
-  $("adv-to-request").addEventListener("click", () => {
-    $("query").value = adv.query; $("purpose").value = adv.need || ""; showTab("new"); $("query").focus(); toast("Đã điền sẵn vào yêu cầu mới, kiểm tra rồi bấm Tạo yêu cầu");
-  });
+    <div class="actions"><button type="button" id="adv-to-request">Tạo yêu cầu mua từ tư vấn này</button><button type="button" class="secondary" id="adv-save">Tải file tư vấn (.json)</button></div>
+    <p class="muted">Tổng hợp tự động từ ${adv.domains.length} website. Dữ liệu tư vấn đã được lưu trong trình duyệt và có thể tải về file .json để nạp vào "Yêu cầu mới" (nút "Nạp dữ liệu tư vấn"). Hãy mở nguồn để kiểm tra và xin báo giá chính thức từ NCC.</p>`;
+  $("adv-to-request").addEventListener("click", () => { applyAdviceToForm(data); showTab("new"); $("query").focus(); });
+  $("adv-save").addEventListener("click", () => downloadAdvice(data));
 }
 $("advice-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const query = $("adv-query").value.trim(), need = $("adv-need").value.trim(), files = [...$("adv-images").files];
   const budget = parseInt($("adv-budget").value.replace(/\D/g, ""), 10) || null, state = $("adv-state");
-  const engines = [...document.querySelectorAll('input[name="engines"]:checked')].map((c) => c.value).filter((id) => engineStatus().find((s) => s.id === id)?.available);
+  const engines = selectedEngines();
+  state.textContent = "";
   if (!query && !need && !files.length) { state.textContent = "Nhập tên sản phẩm, nhu cầu hoặc chọn ảnh"; return; }
-  if (!engines.length) { state.textContent = "Chưa có engine nào dùng được: cài làm tiện ích Chrome/Cốc Cốc hoặc nhập khóa ở tab Cài đặt"; return; }
+  if (!engines.length) { state.textContent = "Chưa chọn engine nào dùng được: cài làm tiện ích trình duyệt hoặc nhập khóa ở tab Cài đặt"; return; }
   $("adv-btn").disabled = true; $("adv-result").hidden = true;
+  const prog = makeProgress($("adv-progress"), [
+    { id: "prep", label: "Chuẩn bị yêu cầu" }, { id: "image", label: "Đọc ảnh" }, { id: "crawl", label: `Crawl kết quả tìm kiếm (tối đa ${pagesPerEngine()} trang mỗi engine)` },
+    { id: "read", label: "Đọc các trang web" }, { id: "analyze", label: "Phân tích dữ liệu, nhận diện ngành hàng" }, { id: "research", label: "Tìm hiểu theo ngành hàng" },
+    { id: "compose", label: "Tổng hợp tư vấn" }, { id: "save", label: "Lưu dữ liệu tư vấn" },
+  ]);
+  let step = "prep";
   try {
-    let subject = query;
+    prog.start("prep"); prog.done("prep", `Engine: ${engines.map((x) => ENGINE_NAMES[x] || x).join(", ")}`);
+    let subject = query; step = "image";
     if (!subject && files.length) {
-      state.textContent = "Đang đọc ảnh...";
-      try { subject = (await analyzeImages(await Promise.all(files.map(fileToImage)))).keyword; } catch (err) { state.textContent = `Không đọc được ảnh: ${err.message}`; }
-      if (!subject && !need) { state.textContent = "Chưa đọc được tên sản phẩm từ ảnh (cần khóa Anthropic ở tab Cài đặt). Hãy nhập tên sản phẩm hoặc nhu cầu."; return; }
-    }
+      prog.start("image", "Đang nhờ Claude đọc ảnh...");
+      try { subject = (await analyzeImages(await Promise.all(files.map(fileToImage)))).keyword; } catch (err) { prog.fail("image", err.message); }
+      if (subject) prog.done("image", `Nhận diện: ${subject}`);
+      else if (!need) { state.textContent = "Chưa đọc được tên sản phẩm từ ảnh (cần khóa Anthropic ở tab Cài đặt). Hãy nhập tên sản phẩm hoặc nhu cầu."; prog.fail("image", "Không đọc được ảnh"); return; }
+    } else prog.skip("image", files.length ? "Đã có tên sản phẩm" : "Không có ảnh");
     subject = subject || need;
-    state.textContent = `Đang crawl tối đa ${PAGES_PER_ENGINE} trang mỗi engine cho "${subject}"...`;
-    const res = await searchEngines(engines, subject);
-    const urls = res.urls.slice(0, MAX_PAGES);
-    const pages = await pool(urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } });
-    const discovery = core.buildDiscovery(pages, core.queryKeywords(subject), subject);
-    state.textContent = `Đọc ${discovery.read}/${urls.length} trang, đang tìm hiểu thêm về ngành hàng...`;
-    const r = await researchProduct(subject, engines, urls);
-    renderAdvice(knowledge.buildAdvice({ query: subject, need, budget }, discovery, r.research));
-    state.textContent = Object.keys(res.errors).length ? `Một số engine lỗi: ${Object.entries(res.errors).map(([k, v]) => `${k} (${v})`).join("; ")}` : "";
-  } catch (err) { state.textContent = `Lỗi: ${err.message}`; }
+    step = "crawl"; prog.start("crawl", "Đang mở trang kết quả...");
+    const res = await searchEngines(engines, subject, pagesPerEngine(), crawlReporter(prog, "crawl"));
+    prog.done("crawl", countsText(res.counts));
+    if (!res.items.length) throw new Error(Object.keys(res.errors).length ? `Không engine nào trả kết quả: ${Object.entries(res.errors).map(([k, v]) => `${ENGINE_NAMES[k] || k} (${v})`).join("; ")}` : "Không có kết quả tìm kiếm");
+    step = "read"; prog.start("read", `0/${res.urls.length} trang`);
+    const pages = await pool(res.urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } }, 4, (d, t) => prog.detail("read", `${d}/${t} trang`, d / t));
+    prog.done("read", `Đọc được ${pages.filter(Boolean).length}/${res.urls.length} trang, thêm ${res.items.filter((i) => !res.urls.includes(i.url)).length} kết quả chỉ dùng tiêu đề và mô tả`);
+    step = "analyze"; prog.start("analyze");
+    const discovery = core.buildDiscovery([...pages, ...serpPseudoPages(res.items, new Set(res.urls.filter((_, i) => pages[i])))], core.queryKeywords(subject), subject);
+    prog.done("analyze", `${discovery.total} nguồn đúng sản phẩm, nhóm ngành: ${core.CATEGORIES[discovery.category].label}`);
+    step = "research"; prog.start("research", "Chuẩn bị...");
+    const r = await researchProduct(subject, engines, res.urls, [], crawlReporter(prog, "research"), (t, f) => prog.detail("research", t, f), res.items);
+    prog.done("research", `Đọc ${r.read}/${r.total} trang, trả lời ${Object.values(r.research).filter((x) => x.snippets.length || x.brands?.length).length}/${Object.keys(r.research).length} câu hỏi`);
+    step = "compose"; prog.start("compose");
+    const adv = knowledge.buildAdvice({ query: subject, need, budget }, discovery, r.research);
+    prog.done("compose", `${adv.sections.length} phần`);
+    step = "save"; prog.start("save");
+    const data = adviceExport(adv, discovery, r.research, engines); lastAdvice = data;
+    prog.done("save", save(KEY_ADVICE, data) ? "Đã lưu trong trình duyệt (có thể tải file .json)" : "Không lưu được trong trình duyệt, hãy tải file .json");
+    prog.finish(); renderAdvice(adv, data);
+    state.textContent = Object.keys(res.errors).length ? `Một số engine lỗi: ${Object.entries(res.errors).map(([k, v]) => `${ENGINE_NAMES[k] || k} (${v})`).join("; ")}` : "";
+  } catch (err) { prog.fail(step, err.message); state.textContent = `Lỗi: ${err.message}`; }
   $("adv-btn").disabled = false;
 });
 
@@ -658,7 +853,7 @@ $("save-settings").addEventListener("click", () => {
   }
   settings.proxy_ok = $("set-proxy-ok").checked;
   if (settings.proxy && !settings.proxy.includes("{url}")) { $("settings-status").textContent = "Địa chỉ proxy phải chứa {url}"; return; }
-  save(KEY_SET, settings); $("settings-status").textContent = "Đã lưu"; toast("Đã lưu cài đặt"); loadSettingsForm(); renderEngines();
+  save(KEY_SET, settings); $("settings-status").textContent = "Đã lưu"; toast("Đã lưu cài đặt"); loadSettingsForm(); renderEngines(); renderPagesSelect();
 });
 $("test-proxy").addEventListener("click", async () => {
   $("proxy-result").textContent = "Đang thử...";
@@ -670,11 +865,13 @@ document.querySelectorAll("[data-test]").forEach((btn) => btn.addEventListener("
   const service = btn.dataset.test, out = document.querySelector(`[data-result="${service}"]`);
   out.textContent = "Đang thử..."; btn.disabled = true;
   try {
-    if (service === "google") { if (!(settings.google_key && settings.google_cx)) throw new Error("Cần lưu cả Google API key và Search engine ID trước"); await SEARCHERS.google("quạt", 1); }
-    else if (service === "googleweb") { const urls = await net.googleWeb("quạt mini", 5); if (!urls.length) throw new Error("Mở được Google nhưng không đọc được link nào"); }
-    else if (service === "coccoc") { const urls = await net.coccocWeb("quạt mini", 5); if (!urls.length) throw new Error("Mở được Cốc Cốc nhưng không đọc được link nào"); }
-    else if (service === "duckduckgo") { const urls = await net.duckduckgoWeb("quạt mini", 5); if (!urls.length) throw new Error("DuckDuckGo không trả link nào"); }
-    else if (service === "brave") { if (!settings.brave_key) throw new Error("Chưa lưu Brave API key"); if (!net.isExt && !proxyReady()) throw new Error("Brave chặn gọi trực tiếp từ trình duyệt, cần cấu hình proxy trước"); await SEARCHERS.brave("quạt", 1); }
+    if (service === "google") { if (!(settings.google_key && settings.google_cx)) throw new Error("Cần lưu cả Google API key và Search engine ID trước"); await PAGE_FETCHERS.google("quạt", 1); }
+    else if (service === "googleweb") { const urls = await net.googleWeb("quạt mini"); if (!urls.length) throw new Error("Mở được Google nhưng không đọc được link nào"); }
+    else if (service === "coccoc") { const urls = await net.coccocWeb("quạt mini"); if (!urls.length) throw new Error("Mở được Cốc Cốc nhưng không đọc được link nào"); }
+    else if (service === "bing") { const urls = await net.bingWeb("quạt mini"); if (!urls.length) throw new Error("Mở được Bing nhưng không đọc được link nào"); }
+    else if (service === "bravesearch") { const urls = await net.braveWeb("quạt mini"); if (!urls.length) throw new Error("Mở được Brave Search nhưng không đọc được link nào"); }
+    else if (service === "duckduckgo") { const urls = await net.duckduckgoWeb("quạt mini"); if (!urls.length) throw new Error("DuckDuckGo không trả link nào"); }
+    else if (service === "brave") { if (!settings.brave_key) throw new Error("Chưa lưu Brave API key"); if (!net.isExt && !proxyReady()) throw new Error("Brave chặn gọi trực tiếp từ trình duyệt, cần cấu hình proxy trước"); await PAGE_FETCHERS.brave("quạt", 1); }
     else { if (!settings.anthropic_key) throw new Error("Chưa lưu Anthropic API key"); const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": settings.anthropic_key, "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify({ model: "claude-haiku-5-5", max_tokens: 5, messages: [{ role: "user", content: "ping" }] }) }); if (!r.ok) throw new Error(httpHint(r.status)); }
     out.textContent = "OK: kết nối thành công";
   } catch (e) { out.textContent = `Lỗi: ${e.message}`; }
@@ -694,7 +891,9 @@ $("restore").addEventListener("change", async (e) => {
 });
 $("wipe").addEventListener("click", () => { if (confirm("Xóa toàn bộ lịch sử trong trình duyệt này? Không thể hoàn tác.")) { jobs = []; persist(); album.clearAll().catch(() => {}); currentJob = null; $("result-card").hidden = true; toast("Đã xóa lịch sử"); } });
 
-buildColMenu(); renderEngines();
+buildColMenu(); renderEngines(); renderPagesSelect();
 // Yêu cầu bị dở dang khi tải lại trang (đang chạy) được đánh dấu lỗi để người dùng tạo lại.
 jobs.forEach((j) => { if (["running", "queued", "researching"].includes(j.status)) { j.status = "error"; j.error = "Bị gián đoạn khi tải lại trang"; } });
 persist();
+// Chỉ phục vụ kiểm thử: mở trang với ?debug để thay các engine bằng engine giả.
+if (new URLSearchParams(location.search).has("debug")) window.__po = { PAGE_FETCHERS, searchEngines, deepUrls, serpPseudoPages, engineStatus, selectedEngines, pagesPerEngine, settings };
