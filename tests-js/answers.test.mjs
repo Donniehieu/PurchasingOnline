@@ -99,11 +99,11 @@ test("bài không mở được thì bỏ qua ngay (không chờ, không thử l
   const s2 = new AnswerStore({ product: PRODUCT, queryTokens: TOKENS, topicIds: ["pros"] });
   await flow.findAnswers(s2, s2.get("pros"), c2, { product: PRODUCT, maxPages: 2 });
   assert.ok(Date.now() - t1 < 600, `chờ ${Date.now() - t1}ms dù mọi bài đều lỗi`); assert.equal(c2.fetched, 0);
-  // trang 1 đủ đáp án thì không tải trang 2: chủ đề "công nghệ" có 3 bài tốt ngay ở trang 1
+  // trang 1 đủ đáp án thì không tải trang 2: chủ đề "công nghệ" có bài tốt ngay ở trang 1; đủ khi đã có đáp án từ 2 bài thì dừng
   SERP[`công nghệ ${PRODUCT}`] = { 1: [URL_(3), URL_(4), URL_(1)], 2: [URL_(2)] };
   const serp3 = [], c3 = fakeCrawler({ serpCalls: serp3 }), s3 = new AnswerStore({ product: PRODUCT, queryTokens: TOKENS, topicIds: ["using"] });
   await flow.findAnswers(s3, s3.get("using"), c3, { product: PRODUCT, maxPages: 2 });
-  assert.ok(s3.enough(s3.get("using"))); assert.deepEqual(serp3, [`công nghệ ${PRODUCT}|1`], "đã đủ mà vẫn tải trang 2"); assert.equal(c3.fetched, 3);
+  assert.ok(s3.enough(s3.get("using"))); assert.deepEqual(serp3, [`công nghệ ${PRODUCT}|1`], "đã đủ mà vẫn tải trang 2"); assert.equal(c3.fetched, 2);
 });
 
 test("hỏi thêm: chấm lại kho trước, chỉ tìm bài mới khi chưa đủ; bổ sung cả các block khác, đáp án cũ giữ nguyên", async () => {
@@ -181,4 +181,13 @@ test("chữ lặp ở nhiều bài (chân trang) không thành đáp án; lưu v
   assert.ok(s.get("pros").items.length >= 3);
   const back = AnswerStore.fromJSON(JSON.parse(JSON.stringify(s.toJSON())), { product: AIRFRYER, code: "SHD4080", queryTokens: FTOKENS, topicIds: ["pros"] });
   assert.deepEqual(back.topicsOut(docs), s.topicsOut(docs)); assert.ok(back.get("pros").items.every((i) => i.tier === "model"));
+});
+
+test("đủ đáp án khi đã được trả lời từ 2 bài khác nhau đúng sản phẩm; 1 bài thì chưa đủ", () => {
+  const store = new AnswerStore({ product: PRODUCT, queryTokens: TOKENS, topicIds: ["pros"] }), e = store.get("pros");
+  store.ingest({ url: URL_(1), html: PAGES[URL_(1)] });
+  const one = store.pages(e); assert.equal(store.enough(e), one >= 2);
+  store.ingest({ url: URL_(3), html: PAGES[URL_(3)] });
+  assert.equal(store.enough(e), store.pages(e) >= 2);
+  assert.ok(store.summary(e).length <= 3 && new Set(store.summary(e).map((s) => s.url)).size === store.summary(e).length, "tóm tắt mỗi bài một ý");
 });

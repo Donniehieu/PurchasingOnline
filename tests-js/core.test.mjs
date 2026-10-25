@@ -127,9 +127,9 @@ test("lịch sử gộp theo tên sản phẩm bỏ dấu, không phân biệt h
   const g = groups.find((x) => x.searches === 2);
   assert.equal(g.avg_price, 200); assert.equal(g.price_change_pct, 200); assert.deepEqual(g.sites.map((s) => s.domain).sort(), ["a.vn", "b.vn"]);
 });
-test("thuyết phục theo quy trình mua hàng", () => {
-  const s = core.scoreSuppliers([sup("a.vn", 100000, 20000, 12, true), sup("b.vn", 300000, 20000, 6, true)]);
-  const r = core.buildInsights(s, 10, { product: "quạt", spec: "20.000 mAh", purpose: "ngoài trời", research: {} });
-  assert.ok(r.persuasion.sections[0].heading.startsWith("1. Nhu cầu")); assert.ok(r.negotiation[0].steps.length === 6);
-  assert.ok(core.persuasionText(r.persuasion).includes("a.vn"));
+test("VAT của NCC: nhận diện có/không xuất hóa đơn kèm câu trích", () => {
+  assert.equal(core.detectVat("Không xuất hóa đơn").vat, false);
+  const y = core.detectVat("Giá chưa gồm gì. Có xuất hóa đơn VAT đầy đủ cho doanh nghiệp.");
+  assert.equal(y.vat, true); assert.ok(y.evidence.includes("hóa đơn"));
+  assert.equal(core.detectVat("Giao hàng toàn quốc").vat, null);
 });

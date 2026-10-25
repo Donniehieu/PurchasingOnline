@@ -122,20 +122,12 @@
     </div>
     <div class="album" id="album"></div>
 
-    <h3>Kịch bản đàm phán với NCC</h3><div id="negotiation"></div>
-    <h3>Luận điểm thuyết phục sếp</h3><div id="persuasion"></div>
-    <div class="actions"><button type="button" class="secondary" id="copy-persuasion">Sao chép luận điểm</button>
-      <button type="button" class="secondary" id="print-btn">In trang</button></div>
-
-    <h3>Xuất file và gửi sếp</h3>
+    <h3>Xuất Excel</h3>
     <div class="actions">
       <button type="button" id="download">Xuất bảng so sánh (.xlsx)</button>
       <button type="button" class="secondary" id="export-links">Xuất link NCC (.xlsx)</button>
+      <button type="button" class="secondary" id="print-btn">In trang</button>
     </div>
-    <div class="row"><div><label for="boss-email">Email sếp (tùy chọn)</label>
-      <input type="email" id="boss-email" placeholder="Để trống: chỉ xuất file xlsx"></div></div>
-    <div class="actions"><button type="button" id="send-btn" class="secondary">Soạn email cho sếp</button></div>
-    <p class="muted" id="send-status">Trang web không tự gửi email. Nút này tải file xlsx và mở email nháp để bạn tự đính kèm file.</p>
   </section>
 </div>
 
@@ -175,8 +167,6 @@
     <div class="row"><div><label>Anthropic API key</label><input type="password" id="set-anthropic-key" autocomplete="off"></div></div>
     <div class="actions"><button type="button" class="secondary" data-test="anthropic">Thử kết nối Anthropic</button><span class="muted" data-result="anthropic"></span></div>
 
-    <h3>Email sếp mặc định</h3>
-    <div class="row"><div><label>Email sếp</label><input type="text" id="set-boss"></div></div>
     <div class="actions"><button type="button" id="save-settings">Lưu cài đặt</button><span class="muted" id="settings-status"></span></div>
 
     <h3>Sao lưu dữ liệu</h3>

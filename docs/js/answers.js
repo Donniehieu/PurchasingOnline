@@ -10,7 +10,8 @@ import { asDoc } from "./corpus.js";
 import * as knowledge from "./knowledge.js";
 
 export const CAP_PER_QUESTION = 12; // số đáp án tối đa mỗi câu hỏi (mỗi nhóm)
-export const MIN_ANSWERS = 3;       // đủ đáp án = ít nhất 3 câu từ 2 bài khác nhau (hoặc từ 5 câu), khi đó không cần tìm thêm
+export const MIN_PAGES = 2;         // đủ đáp án = đã được trả lời từ ít nhất 2 bài (trang web) khác nhau đúng sản phẩm/model, khi đó không tìm thêm
+const SUMMARY_MAX = 3;              // bản tóm tắt: tối đa 3 ý, mỗi ý từ một bài khác nhau
 const PER_DOC = 2;                  // mỗi bài đóng góp tối đa 2 câu cho một câu hỏi
 const REPEAT_LIMIT = 3;             // câu xuất hiện ở từ 3 bài trở lên coi là chữ lặp của website (menu, chân trang)
 
@@ -78,8 +79,14 @@ export class AnswerStore {
   /** Đáp án chỉ nói về loại sản phẩm nói chung (bài không nhắc đúng model). */
   general(e) { return e.items.filter((i) => i.tier === "type"); }
   pages(e) { return new Set(this.main(e).map((i) => i.url)).size; }
-  /** Đủ đáp án ĐÚNG MODEL để không cần tìm thêm bài (đáp án chung không tính). */
-  enough(e) { const n = this.main(e).length; return n >= 5 || (n >= MIN_ANSWERS && this.pages(e) >= 2); }
+  /** Đủ đáp án ĐÚNG MODEL để không cần tìm thêm bài: đã có từ MIN_PAGES bài khác nhau (đáp án chung không tính). */
+  enough(e) { return this.pages(e) >= MIN_PAGES; }
+  /** Tóm tắt: đáp án điểm cao nhất của mỗi bài (mỗi bài một ý, tối đa 3 ý), kèm nguồn. */
+  summary(e) {
+    const seen = new Set(), out = [];
+    for (const s of this.snippets(e)) { if (seen.has(s.url)) continue; seen.add(s.url); out.push(s); if (out.length >= SUMMARY_MAX) break; }
+    return out;
+  }
   /** Đáp án đúng model, điểm cao trước; bài cũ vẫn giữ nguyên. */
   snippets(e) { return [...this.main(e)].sort((a, b) => b.score - a.score || a.seq - b.seq).map(({ text, url }) => ({ text, url })); }
   generalSnippets(e) { return [...this.general(e)].sort((a, b) => b.score - a.score || a.seq - b.seq).slice(0, 6).map(({ text, url }) => ({ text, url })); }
@@ -88,7 +95,7 @@ export class AnswerStore {
   topicsOut(docs = []) {
     const out = {};
     for (const e of this.list().filter((x) => x.kind === "topic")) {
-      const entry = { label: e.label, group: e.bank.group, group_label: knowledge.GROUPS[e.bank.group], query: e.bank.ask(this.product), snippets: this.snippets(e), general: this.generalSnippets(e), pages: this.pages(e) };
+      const entry = { label: e.label, group: e.bank.group, group_label: knowledge.GROUPS[e.bank.group], query: e.bank.ask(this.product), summary: this.summary(e), snippets: this.snippets(e), general: this.generalSnippets(e), pages: this.pages(e) };
       if (e.bank.kind === "price") {
         const ps = priceSummary(docs.map(asDoc).filter(Boolean)), v = [...ps.values].sort((a, b) => a - b);
         if (v.length) entry.price = { min: v[0], max: v.at(-1), median: v[Math.floor((v.length - 1) / 2)], count: v.length, confident: ps.sure };
@@ -97,7 +104,7 @@ export class AnswerStore {
     }
     return out;
   }
-  customOut() { return this.list().filter((x) => x.kind === "custom").map((e) => ({ question: e.question, snippets: this.snippets(e), general: this.generalSnippets(e), pages: this.pages(e) })); }
+  customOut() { return this.list().filter((x) => x.kind === "custom").map((e) => ({ question: e.question, summary: this.summary(e), snippets: this.snippets(e), general: this.generalSnippets(e), pages: this.pages(e) })); }
 
   toJSON() { return { v: 2, seq: this.seq, scanned: [...this.scanned], entries: this.list().map((e) => ({ kind: e.kind, id: e.id, question: e.question, items: e.items })) }; }
   static fromJSON(o, opts) {

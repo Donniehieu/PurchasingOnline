@@ -49,6 +49,15 @@
 - [ ] Nhận diện "model" dựa trên token dạng mã (chữ in hoa + số); model viết toàn chữ thường hoặc không có số (VD "Hero Light") chưa lọc được theo model
 - [ ] Bài cũ đã lưu trong kho trước bản này vẫn chứa menu; hãy chạy lại yêu cầu để kho sạch
 
+### Bỏ phần thuyết phục sếp; đúng 7 câu hỏi; đủ 2 trang thì dừng
+- [x] Bỏ kịch bản đàm phán, luận điểm thuyết phục sếp, xuất file gửi sếp, soạn email (giao diện, Excel, mã, cài đặt email sếp, nút sao chép email hỏi giá). Giữ nút xuất Excel bảng so sánh
+- [x] 7 câu hỏi: (1) tên sản phẩm, model + giá, (3) NCC + mã sản phẩm, (6) liên hệ NCC, (7) VAT của NCC đó nằm trong bảng, mỗi ô có link nguồn (VAT kèm câu trích); (2) ưu nhược điểm, (4) phân loại, công nghệ, (5) lưu ý khi mua là các chủ đề, có "Tóm tắt" 3 ý từ 3 bài khác nhau kèm nguồn rồi mới đến toàn bộ đáp án
+- [x] Đủ đáp án = đã được trả lời từ 2 bài khác nhau đúng model thì không tìm câu đó ở trang khác (trước đây cần 3 câu từ 2 bài)
+- [x] Liên hệ và VAT: trang sản phẩm đã có số điện thoại/email và VAT thì không mở trang Liên hệ; chỉ NCC còn thiếu mới thử /lien-he, /contact..., dừng ngay khi đủ; VAT còn thiếu thì đọc thêm từ trang Liên hệ
+- [x] Sửa nhận diện VAT: "Không xuất hóa đơn" trước đây bị nhận thành "có" vì cụm "xuất hóa đơn"
+- [x] Test: 44 test JS đạt (thêm test đủ 2 bài, tóm tắt, VAT, bỏ qua trang Liên hệ khi đã đủ)
+- [ ] Chưa chạy với Google thật; VAT chỉ đọc được khi trang có chữ về hóa đơn
+
 ### Chưa chắc / còn lại
 - [ ] **Chưa chạy thử với Google thật trong trình duyệt**: mở tab nền, đọc kết quả, phân trang, Google Hình ảnh; chỉ thử với dữ liệu mẫu. Google có thể chặn (403, xác minh), app không vượt qua
 - [ ] Trang bán hàng không có dữ liệu sản phẩm có cấu trúc (JSON-LD, thẻ giá) và không có nút mua sẽ bị loại khỏi bảng; Shopee, TikTok Shop vẽ giá bằng JavaScript nên dễ không đọc được giá

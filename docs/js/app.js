@@ -133,7 +133,7 @@ $("request-form").addEventListener("submit", async (e) => {
   const job = {
     id: uid(), status: "researching", created: nowIso(), query, product_code: code, quantity, purpose: $("purpose").value.trim(), search_text: searchText, cfg,
     images: files.map((f) => f.name), engines: ["google"], seed_urls: [], keywords: null, questions: [], answers: {}, spec: {}, discovery: null, log: [],
-    suppliers: [], others: [], research: {}, custom_answers: [], refs: [], sites_searched: [], price_stats: null, analysis: { negotiation: [], persuasion: { title: "", sections: [], points: [], closing: "" } }, error: null,
+    suppliers: [], others: [], research: {}, custom_answers: [], refs: [], sites_searched: [], price_stats: null, error: null,
   };
   jobs.unshift(job); persist(); currentJob = job;
   $("result-card").hidden = true; $("wizard-card").hidden = true; $("log").textContent = "";
@@ -226,7 +226,7 @@ function renderResult(job) {
     : `Chưa đề xuất được: ${job.suppliers.length ? "chưa NCC nào có giá đọc chính xác từ trang sản phẩm, hãy mở link để xem giá hoặc nhập tay vào bảng." : "chưa tìm được trang bán đúng sản phẩm. Thử thêm model, tăng số trang Google hoặc thêm NCC thủ công."}`;
   const unpriced = job.suppliers.filter((s) => !s.price).length;
   $("manual-notice").hidden = !unpriced; $("manual-notice").textContent = `${unpriced} NCC chưa có giá chính xác (trang không công bố giá có cấu trúc). Hãy bấm tên sản phẩm để xem giá trên trang rồi nhập vào bảng.`;
-  renderTable(job); renderOthers(job); renderPrice(job); renderResearch(job); renderCustom(job); renderRefs(job); renderAlbum(job); renderAnalysis(job);
+  renderTable(job); renderOthers(job); renderPrice(job); renderResearch(job); renderCustom(job); renderRefs(job); renderAlbum(job);
   $("download").onclick = () => downloadJob(job); $("export-links").onclick = () => downloadLinks(job);
   $("result-card").scrollIntoView({ behavior: "smooth" });
 }
@@ -246,12 +246,12 @@ function renderTable(job) {
       : `<div class="muted warn">Chưa có giá chính xác</div>${editable(s, "price", "")}<div class="muted">nhập tay nếu đã xem giá trên trang</div>`;
     return `<tr class="${s.recommended ? "recommended" : ""}" data-id="${esc(s.id)}">
       <td data-col="name">${s.recommended ? "★ " : ""}${editable(s, "name", s.name)}${safeUrl(s.site_url) ? ` <a class="mini" href="${esc(s.site_url)}" target="_blank" rel="noopener" title="Website của NCC">↗</a>` : ""}</td>
-      <td data-col="product">${safeUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" title="Mở đúng trang bán sản phẩm này">${esc(prodName)}</a>` : esc(prodName)}${job.product_code ? `<div class="muted">Model: ${esc(job.product_code)}</div>` : ""}</td>
+      <td data-col="product">${safeUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" title="Mở đúng trang bán sản phẩm này">${esc(prodName)}</a>` : esc(prodName)}${s.model_code || job.product_code ? `<div class="muted">Mã sản phẩm: ${esc(s.model_code || job.product_code)}</div>` : ""}</td>
       <td data-col="qty">${editable(s, "quantity", String(s.quantity ?? job.quantity))}</td>
       <td data-col="price">${priceCell}</td>
-      <td data-col="vat">${vatSel}</td>
+      <td data-col="vat">${vatSel}${s.vat_source && safeUrl(s.vat_source) ? `<div class="muted clip" title="${esc(s.vat_evidence || "")}">${esc(s.vat_evidence || "")} <a href="${esc(s.vat_source)}" target="_blank" rel="noopener">[nguồn]</a></div>` : ""}</td>
       <td data-col="info"><div class="info-line">${esc(core.supplierInfo(s))}</div>${s.description ? `<div class="muted clip">${esc(s.description)}</div>` : ""}${s.note ? `<div class="muted">${esc(s.note)}</div>` : ""}<button type="button" class="secondary small" data-info="${esc(s.id)}">Sửa thông tin</button></td>
-      <td data-col="contact"><button type="button" class="secondary small" data-contact="${esc(s.id)}">Liên hệ NCC</button></td>
+      <td data-col="contact">${(s.contacts?.phones || []).slice(0, 2).map((p) => `<div><a href="tel:${esc(p)}">${esc(p)}</a></div>`).join("")}${(s.contacts?.emails || [])[0] ? `<div class="muted clip">${esc(s.contacts.emails[0])}</div>` : ""}${s.contact_source && safeUrl(s.contact_source) ? `<div><a href="${esc(s.contact_source)}" target="_blank" rel="noopener">[nguồn]</a></div>` : ""}<button type="button" class="secondary small" data-contact="${esc(s.id)}">Liên hệ NCC</button></td>
       <td data-col="del"><button type="button" class="secondary small danger" data-del="${esc(s.id)}" title="Xóa NCC này">✕</button></td></tr>`;
   }).join("");
   $("result-table").innerHTML = `<table><thead><tr>${COLUMNS.map((c) => `<th data-col="${c.key}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
@@ -316,14 +316,12 @@ function openContact(id) {
   tile("Zalo" + (c.zalo_guess ? " (theo số ĐT, chưa xác nhận)" : ""), (c.zalo || []).filter(safeUrl).map((u) => ext(u, "Mở Zalo")));
   tile("Messenger", (c.messenger || []).filter(safeUrl).map((u) => ext(u, "Nhắn Messenger")));
   tile("Facebook", (c.facebook || []).filter(safeUrl).map((u) => ext(u, "Trang Facebook")));
-  const subject = encodeURIComponent("Đề nghị báo giá: " + job.query), body = encodeURIComponent(core.rfqText(job, s));
-  tile("Email", (c.emails || []).map((m) => `<a href="mailto:${esc(m)}?subject=${subject}&body=${body}">${esc(m)}</a>`));
+  tile("Email", (c.emails || []).map((m) => `<a href="mailto:${esc(m)}">${esc(m)}</a>`));
   tile("Skype", (c.skype || []).map((k) => `<a href="skype:${esc(k)}?chat">${esc(k)}</a>`));
   tile("Website", safeUrl(c.website || s.site_url) ? [ext(c.website || s.site_url, "Mở website NCC"), ...(safeUrl(s.url) ? [ext(s.url, "Trang sản phẩm")] : [])] : []);
   $("contact-body").innerHTML = `<h3 class="first">Liên hệ ${esc(s.name)}</h3>${tiles.length ? `<div class="contact-grid">${tiles.join("")}</div>` : '<p class="muted">Không tìm thấy thông tin liên hệ trên trang sản phẩm và trang Liên hệ. Hãy mở website và tìm mục Liên hệ.</p>'}
     <p class="muted">Liên hệ lấy từ nội dung trang web, hãy kiểm tra lại trước khi dùng.</p>
-    <div class="actions"><button type="button" id="copy-rfq">Sao chép email hỏi giá</button><button type="button" class="secondary" id="close-contact">Đóng</button></div>`;
-  $("copy-rfq").onclick = () => navigator.clipboard.writeText(core.rfqText(job, s)).then(() => toast("Đã sao chép nội dung hỏi giá"));
+    <div class="actions"><button type="button" id="close-contact">Đóng</button></div>`;
   $("close-contact").onclick = () => $("contact-modal").classList.remove("show");
   $("contact-modal").classList.add("show");
 }
@@ -345,9 +343,10 @@ function renderPrice(job) {
 const txt = (x) => esc(core.decodeEntities(x)); // hiển thị: giải mã ký tự HTML còn sót trong dữ liệu đã lưu từ bản cũ
 const snippetItem = (s) => `<li>${txt(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`;
 /** Đáp án đúng model/sản phẩm (hiện 5 câu đầu, còn lại thu gọn) và đáp án chung về loại sản phẩm (thu gọn, ghi rõ không nêu đúng model). */
-function snippetList(snippets, general = [], job = {}) {
+function snippetList(snippets, general = [], job = {}, summary = []) {
   const code = job.product_code ? ` ${job.product_code}` : "";
-  const main = snippets.length ? `<div class="muted">${snippets.length} đáp án từ ${new Set(snippets.map((s) => s.url)).size} bài</div><ul class="points">${snippets.slice(0, 5).map(snippetItem).join("")}</ul>${snippets.length > 5 ? `<details><summary>Xem thêm ${snippets.length - 5} đáp án từ các bài khác</summary><ul class="points">${snippets.slice(5).map(snippetItem).join("")}</ul></details>` : ""}`
+  const sum = summary.length ? summary : snippets.slice(0, 3);
+  const main = snippets.length ? `<div class="muted">Tóm tắt (${snippets.length} đáp án từ ${new Set(snippets.map((s) => s.url)).size} bài)</div><ul class="points">${sum.map((s) => `<li>${txt(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[${esc(core.domainOf(s.url))}]</a></li>`).join("")}</ul>${snippets.length > sum.length ? `<details><summary>Xem toàn bộ ${snippets.length} đáp án kèm nguồn</summary><ul class="points">${snippets.map(snippetItem).join("")}</ul></details>` : ""}`
     : `<p class="muted">${job.product_code ? `Chưa có bài nêu đúng model${code} trả lời câu này.` : "Chưa tìm được câu trả lời rõ ràng trong các bài đã đọc."}</p>`;
   const gen = general.length ? `<details class="general"><summary>Tham khảo chung về loại sản phẩm, KHÔNG nêu đúng model${code} (${general.length})</summary><ul class="points">${general.map(snippetItem).join("")}</ul></details>` : "";
   return main + gen;
@@ -357,12 +356,12 @@ function renderResearch(job) {
   $("research").innerHTML = defs.map((t) => {
     const r = job.research[t.id];
     const price = r.price ? `<div class="chips"><span class="chip static">Thấp nhất ${esc(money(r.price.min))}</span><span class="chip static">Trung vị ${esc(money(r.price.median))}</span><span class="chip static">Cao nhất ${esc(money(r.price.max))}</span></div>` : "";
-    return `<div class="block"><h4>${esc(t.label)}</h4><div class="muted">${esc(r.query)}${r.pages_read != null ? ` · đã đọc ${r.pages_read} bài` : ""}</div>${price}${snippetList(r.snippets, r.general || [], job)}</div>`;
+    return `<div class="block"><h4>${esc(t.label)}</h4><div class="muted">${esc(r.query)}${r.pages_read != null ? ` · đã đọc ${r.pages_read} bài` : ""}</div>${price}${snippetList(r.snippets, r.general || [], job, r.summary)}</div>`;
   }).join("");
 }
 function renderCustom(job) {
   const list = job.custom_answers || []; $("custom-wrap").hidden = false; // luôn hiện để có ô hỏi thêm từ kho dữ liệu
-  $("custom-answers").innerHTML = list.map((a) => `<div class="block"><h4>${esc(a.question)}</h4><div class="muted">đã tìm trong ${a.pages_read ?? 0} bài đã đọc</div>${snippetList(a.snippets, a.general || [], job)}</div>`).join("");
+  $("custom-answers").innerHTML = list.map((a) => `<div class="block"><h4>${esc(a.question)}</h4><div class="muted">đã tìm trong ${a.pages_read ?? 0} bài đã đọc</div>${snippetList(a.snippets, a.general || [], job, a.summary)}</div>`).join("");
 }
 function renderRefs(job) {
   const list = job.refs || []; $("refs-wrap").hidden = !list.length;
@@ -373,16 +372,6 @@ function renderRefs(job) {
     ${a.headings.length ? `<details><summary>Các đề mục của bài (${a.headings.length})</summary><ul class="points">${a.headings.map((h) => `<li>${txt(h)}</li>`).join("")}</ul></details>` : ""}
     ${a.qa.length ? `<h5>Câu hỏi liên quan và câu trả lời trong bài</h5>${a.qa.map((q) => `<div class="qa"><b>${esc(q.label)}</b><ul class="points">${q.snippets.map((s) => `<li>${esc(s.text)}</li>`).join("")}</ul></div>`).join("")}<a href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener">[nguồn: mở bài viết]</a>` : ""}</div>`).join("");
 }
-const list = (title, items) => (items && items.length ? `<h4>${title}</h4><ul class="points">${items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
-function renderAnalysis(job) {
-  const neg = job.analysis.negotiation || [];
-  $("negotiation").innerHTML = neg.length ? neg.map((n) => `<div class="block"><b>${esc(n.ncc)}</b> · Giá hiện tại ${money(n.current_price)} · Dự phòng: ${esc(n.backup)}<p class="muted">${esc(n.target_note)}</p>
-    ${list("Điểm mạnh thương lượng (từ dữ liệu thu thập)", n.leverage)}${list("Câu hỏi cần làm rõ với NCC", n.questions)}${list("Chiến lược thuyết phục NCC", n.strategies)}${list("Các bước đàm phán theo quy trình mua hàng", n.steps)}
-    ${n.references.length ? `<h4>Căn cứ tham khảo trên web</h4><ul class="points">${n.references.map((r) => `<li>[${esc(r.topic)}] ${esc(r.text)} <a href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`).join("")}</ul>` : ""}</div>`).join("") : '<p class="muted">Chưa có NCC khuyến nghị.</p>';
-  const p = job.analysis.persuasion || {};
-  $("persuasion").innerHTML = p.title ? `<p><b>${esc(p.title)}</b></p>${p.sections.map((s) => `<div class="block">${list(esc(s.heading), s.points)}</div>`).join("")}<div class="closing">${esc(p.closing)}</div>` : '<p class="muted">Chưa có luận điểm.</p>';
-}
-$("copy-persuasion").addEventListener("click", () => { const t = core.persuasionText(currentJob?.analysis.persuasion); if (t) navigator.clipboard.writeText(t).then(() => toast("Đã sao chép")); });
 $("print-btn").addEventListener("click", () => window.print());
 
 /* ------------------------------------------------------------------ hỏi thêm từ kho dữ liệu đã đọc */
@@ -439,18 +428,6 @@ $("album-upload").addEventListener("change", async (e) => {
   renderAlbum(currentJob);
 });
 
-/* ------------------------------------------------------------------ xuất file, soạn email */
-$("send-btn").addEventListener("click", async () => {
-  if (!currentJob) return;
-  const to = $("boss-email").value.trim() || settings.boss_email || "";
-  await downloadJob(currentJob);
-  if (!to) { $("send-status").textContent = "Chưa có email sếp nên chỉ tải file xlsx để bạn gửi thủ công."; return; }
-  const text = core.persuasionText(currentJob.analysis.persuasion);
-  const body = `Kính gửi anh/chị,\n\nĐính kèm bảng so sánh giá: ${currentJob.keywords || currentJob.query} (số lượng ${currentJob.quantity}). Em đính kèm file xlsx vừa tải về.\n\n${text}\n\nTrân trọng.`;
-  $("send-status").textContent = `Đã tải file xlsx. Đang mở email nháp tới ${to}: hãy đính kèm file vừa tải và bấm gửi.`;
-  location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent("Duyệt báo giá: " + (currentJob.keywords || currentJob.query))}&body=${encodeURIComponent(body.slice(0, 1800))}`;
-});
-
 /* ------------------------------------------------------------------ lịch sử tìm kiếm: bảng STT, Tiêu đề, Số lượng, Từ khóa, Các trang đã tìm */
 const jobLabel = { done: "Hoàn tất", error: "Lỗi", stopped: "Đã dừng", awaiting_confirmation: "Chờ xác nhận", researching: "Đang tìm hiểu", running: "Đang chạy", queued: "Đang chờ" };
 const chips = (items, fmt) => (items.length ? `<div class="chips">${items.map((i) => `<span class="chip static">${fmt(i)}</span>`).join("")}</div>` : '<span class="muted">Chưa có</span>');
@@ -491,7 +468,7 @@ $("export-history").addEventListener("click", () => downloadHistory(core.groupHi
 const mask = (v) => (v.length <= 8 ? "*".repeat(v.length) : v.slice(0, 3) + "******" + v.slice(-3));
 function loadSettingsForm() {
   const c = flow.defaultConfig(settings);
-  $("set-pages").value = c.pages; $("set-album").value = c.album_n; $("set-delay").value = c.delay; $("set-boss").value = settings.boss_email || "";
+  $("set-pages").value = c.pages; $("set-album").value = c.album_n; $("set-delay").value = c.delay;
   const k = settings.anthropic_key || "";
   $("set-anthropic-key").value = ""; $("set-anthropic-key").placeholder = k ? `Đã có: ${mask(k)} (để trống = giữ nguyên, nhập - để xóa)` : "";
 }
@@ -499,7 +476,6 @@ $("save-settings").addEventListener("click", () => {
   const num = (id, lo, hi) => Math.min(hi, Math.max(lo, parseInt($(id).value, 10) || lo));
   settings.pages = num("set-pages", 1, 5); settings.album_n = num("set-album", 1, 20); settings.delay = num("set-delay", 1, 15);
   const k = $("set-anthropic-key").value.trim(); if (k === "-") delete settings.anthropic_key; else if (k) settings.anthropic_key = k;
-  const boss = $("set-boss").value.trim(); if (boss) settings.boss_email = boss; else delete settings.boss_email;
   save(KEY_SET, settings); $("settings-status").textContent = "Đã lưu"; toast("Đã lưu cài đặt"); loadSettingsForm(); applyDefaults();
 });
 document.querySelectorAll("[data-test]").forEach((btn) => btn.addEventListener("click", async () => {

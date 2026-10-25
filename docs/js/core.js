@@ -1,5 +1,5 @@
 // Lõi xử lý thuần JavaScript (không dùng DOM) để chạy được cả trên trình duyệt lẫn Node (test).
-// Gồm: trích xuất thông tin trang NCC, chấm điểm, đàm phán, thuyết phục, question card, lịch sử, sửa ô.
+// Gồm: trích xuất thông tin trang NCC (giá, VAT, liên hệ), chấm điểm, question card, lịch sử, sửa ô.
 
 export const CUSTOM = "__custom__";
 export const STALE_MONTHS = 6;
@@ -246,6 +246,17 @@ export function isProductPage(html, text, tags, price) {
   return !!(price && price.source === "label" && /thêm vào giỏ|mua ngay|add to cart|đặt hàng ngay|chọn mua/i.test(text));
 }
 
+/** VAT của NCC đọc từ văn bản trang: { vat: true | false | null, evidence: câu nhắc tới hóa đơn/VAT (để trích nguồn) }. */
+export function detectVat(text) {
+  const no = /không\s*(xuất\s*)?hóa\s*đơn/i, yes = /hóa\s*đơn\s*(vat|gtgt)|(?<!không\s*)xuất\s*hóa\s*đơn|(?<!không\s*)có\s*hóa\s*đơn|đã\s*(bao\s*gồm\s*|gồm\s*)?vat|giá\s*chưa\s*(bao\s*gồm\s*)?vat/i;
+  let vat = null;
+  if (no.test(text)) vat = false;
+  if (yes.test(text)) vat = true;
+  const re = vat === false ? no : yes, m = vat === null ? null : re.exec(text);
+  const evidence = m ? text.slice(Math.max(0, m.index - 60), m.index + m[0].length + 60).replace(/\s+/g, " ").trim() : "";
+  return { vat, evidence };
+}
+
 /** Đọc HTML một trang NCC. Trả về null nếu không đúng sản phẩm. */
 export function parsePage(html, url, tokens, productCode = "") {
   const tags = metaTags(html);
@@ -261,14 +272,12 @@ export function parsePage(html, url, tokens, productCode = "") {
   const mah = [...text.matchAll(/(\d{1,3}(?:[.,]\d{3})+|\d{4,6})\s*m\s?ah/gi)].map((m) => toInt(m[1]));
   const volt = /\b(\d{1,2})\s*V(?:DC)?\b/.exec(text);
   const war = /bảo\s*hành[^.\n]{0,25}?(\d{1,2})\s*(tháng|năm)/i.exec(text);
-  let vat = null;
-  if (/không\s*(xuất\s*)?hóa\s*đơn/i.test(text)) vat = false;
-  if (/hóa\s*đơn\s*(vat|gtgt)|xuất\s*hóa\s*đơn|có\s*hóa\s*đơn/i.test(text)) vat = true;
+  const { vat, evidence: vat_evidence } = detectVat(text);
   const domain = domainOf(url);
   return {
     name: siteNameOf(html, url, tags), site_url: (() => { try { return new URL(url).origin; } catch { return ""; } })(), model_ok: modelOk, is_product: isProductPage(html, text, tags, found),
     title: (title || domain).slice(0, 120), product_name: cleanTitle(title || domain), url, description: metaContent(tags, "og:description", "description").slice(0, 240),
-    date: pageDate(html, tags, text), price: found.value, price_source: found.source, vat,
+    date: pageDate(html, tags, text), price: found.value, price_source: found.source, vat, vat_evidence,
     vat_included: /đã\s*(bao\s*gồm\s*|gồm\s*)?vat/i.test(text), mah: mah[0] ?? null, volt: volt ? +volt[1] : null,
     warranty_months: war ? +war[1] * (war[2].toLowerCase() === "năm" ? 12 : 1) : null,
     specs: SPEC_DEFS.map((d) => { const m = new RegExp(d.re.source, d.re.flags).exec(text); return m ? `${d.label}: ${numStr(m[1])} ${d.unit}` : null; }).filter(Boolean).slice(0, 4),
@@ -331,120 +340,6 @@ export function priceStats(suppliers) {
   return { count: p.length, mean: Math.round(mean(p)), median: Math.round(median(p)), min: Math.min(...p), max: Math.max(...p) };
 }
 
-/* ------------------------------------------------------------------ đàm phán + thuyết phục */
-export function buildInsights(suppliers, quantity, ctx = {}) {
-  const eligible = suppliers.filter((s) => s.eligible && s.price);
-  const rec = suppliers.find((s) => s.recommended);
-  return { negotiation: negotiation(eligible, rec, quantity, ctx), persuasion: persuasion(suppliers, eligible, rec, quantity, ctx) };
-}
-function refs(ctx) {
-  const out = [];
-  for (const [id, label] of [["price", "Giá thị trường"], ["tech", "Công nghệ, ưu nhược điểm"], ["using", "Công nghệ sử dụng"]])
-    for (const s of ((ctx.research || {})[id]?.snippets || []).slice(0, 2)) out.push({ topic: label, text: s.text, url: s.url });
-  return out;
-}
-function negotiation(eligible, rec, quantity, ctx) {
-  if (!rec || !rec.price) return [];
-  const price = rec.price;
-  const others = eligible.filter((s) => s.name !== rec.name).sort((a, b) => a.price - b.price);
-  const med = median(eligible.map((s) => s.price));
-  let target = null, targetNote = "Giá đang ở mức thấp nhất hoặc gần thấp nhất, tập trung đàm phán chiết khấu số lượng và điều kiện đi kèm.";
-  const cheaper = others.filter((s) => s.price < price);
-  if (cheaper.length) {
-    target = cheaper[0].price;
-    targetNote = `Mục tiêu về ${money(target)}: bằng giá của ${cheaper[0].name}, thấp hơn giá hiện tại ${money(price - target)} (${Math.round((price - target) / price * 100)}%).`;
-  } else if (med && price > med) { target = Math.round(med); targetNote = `Mục tiêu về ${money(target)}: mức trung vị của các NCC đủ điều kiện.`; }
-  const leverage = cheaper.slice(0, 2).map((s) => `${s.name} có giá ${money(s.price)}, thấp hơn ${Math.round((price - s.price) / price * 100)}% so với báo giá hiện tại.`);
-  const own = rec.warranty_months || 0;
-  const better = others.filter((s) => (s.warranty_months || 0) > own);
-  if (better.length) { const b = better.reduce((a, c) => (c.warranty_months > a.warranty_months ? c : a)); leverage.push(`${b.name} bảo hành ${b.warranty_months} tháng; đề nghị bảo hành tương đương hoặc dài hơn.`); }
-  const age = ageMonths(rec.date);
-  if (age !== null && age >= STALE_MONTHS) leverage.push(`Thông tin giá trên web cập nhật cách đây khoảng ${age} tháng, đề nghị NCC xác nhận lại báo giá hiện hành.`);
-  if (!leverage.length) leverage.push("Chưa có NCC nào rẻ hơn hoặc bảo hành tốt hơn trong dữ liệu thu thập, nên chuẩn bị thêm báo giá từ NCC khác để có thêm căn cứ.");
-  leverage.push(`Số lượng ${quantity} cái: đề nghị bảng giá theo bậc số lượng và chiết khấu cho đơn này.`);
-
-  const q = [];
-  if (rec.vat !== true) q.push("Đơn giá đã bao gồm VAT chưa? Xuất được hóa đơn VAT đúng tên công ty không?");
-  if (!rec.warranty_months) q.push("Thời gian bảo hành pin và quạt là bao lâu? Có đổi mới nếu lỗi do nhà sản xuất không?");
-  if (!rec.mah) q.push("Dung lượng pin và điện áp thực tế của model này là bao nhiêu? Có tem hoặc chứng nhận CO/CQ không?");
-  if (ctx.spec && ctx.spec !== "Không yêu cầu") q.push(`Sản phẩm có đáp ứng đúng thông số yêu cầu (${ctx.spec}) không? Xin gửi thông số kỹ thuật chính thức.`);
-  if (ctx.purpose) q.push(`Sản phẩm dùng cho "${ctx.purpose}": NCC có khuyến nghị model phù hợp và độ bền thực tế không?`);
-  q.push("Thời gian giao hàng sau khi xác nhận đơn là bao lâu? Phí vận chuyển đã tính chưa?",
-    "Báo giá này có hiệu lực đến khi nào? Giá có thay đổi theo số lượng đặt không?",
-    "Chính sách đổi trả, hỗ trợ kỹ thuật và địa điểm bảo hành là gì?",
-    "Có thể cho mượn hoặc bán mẫu thử trước khi đặt toàn bộ số lượng không?");
-  const strategies = [
-    `Đàm phán theo gói: gộp số lượng ${quantity} cái, xin chiết khấu và miễn phí giao hàng.`,
-    "Thương lượng quyền lợi thay vì chỉ giảm giá: kéo dài bảo hành pin, tặng phụ kiện, đổi mới trong 30 ngày đầu.",
-    "Đề nghị giữ giá ổn định trong thời hạn hiệu lực báo giá, ghi rõ trong báo giá hoặc hợp đồng.",
-    "Điều kiện thanh toán: đề xuất thanh toán theo đợt (đặt cọc, phần còn lại khi nhận hàng đạt yêu cầu).",
-  ];
-  if (others.length) strategies.push(`Giữ ${others.length} NCC khác làm phương án dự phòng, nói rõ công ty đang so sánh nhiều báo giá.`);
-  return [{
-    ncc: rec.name, current_price: price, target_price: target, target_note: targetNote,
-    backup: others.length ? `${others[0].name} (${money(others[0].price)})` : "Chưa có NCC dự phòng",
-    leverage, questions: q, strategies, references: refs(ctx),
-    steps: [
-      "Bước 1 - Chuẩn bị: chốt thông số cần mua, số lượng, hạn giao hàng và mức giá tối đa chấp nhận được trước khi liên hệ.",
-      "Bước 2 - Hỏi giá (RFQ): gửi cùng một yêu cầu cho ít nhất 3 NCC để so sánh trên cùng điều kiện.",
-      "Bước 3 - Đàm phán vòng 1: giá và chiết khấu số lượng, dùng các căn cứ ở mục Điểm mạnh thương lượng.",
-      "Bước 4 - Đàm phán vòng 2: bảo hành, giao hàng, thanh toán, hóa đơn VAT, hiệu lực báo giá.",
-      "Bước 5 - Xác nhận bằng văn bản: báo giá chính thức có dấu hoặc email xác nhận, ghi rõ model, đơn giá, bảo hành.",
-      "Bước 6 - Mua thử mẫu (nếu đơn lớn): kiểm tra thực tế trước khi đặt toàn bộ số lượng.",
-    ],
-  }];
-}
-function persuasion(suppliers, eligible, rec, quantity, ctx) {
-  if (!rec || !rec.price) return { title: "", sections: [], points: [], closing: "" };
-  const price = rec.price, prices = eligible.map((s) => s.price), med = median(prices);
-  const others = eligible.filter((s) => s.name !== rec.name);
-  const product = ctx.product || "sản phẩm";
-  const sections = [];
-  const need = [`Nhu cầu: mua ${quantity} ${product}.`];
-  if (ctx.purpose) need.push(`Mục đích sử dụng: ${ctx.purpose}.`);
-  if (ctx.spec && ctx.spec !== "Không yêu cầu") need.push(`Thông số yêu cầu đã xác nhận: ${ctx.spec}.`);
-  sections.push({ heading: "1. Nhu cầu và yêu cầu", points: need });
-
-  const survey = [`Đã khảo sát ${new Set(suppliers.map((s) => s.url)).size} trang web NCC, trong đó ${eligible.length} NCC đủ điều kiện (có thể xuất hóa đơn VAT hoặc chưa có thông tin loại trừ).`];
-  if (prices.length >= 2) survey.push(`Giá thu thập được từ ${money(Math.min(...prices))} đến ${money(Math.max(...prices))}, trung vị ${money(med)}, trung bình ${money(mean(prices))}.`);
-  for (const s of ((ctx.research || {}).price?.snippets || []).slice(0, 1)) survey.push(`Tham khảo mặt bằng giá trên web: "${s.text}" (nguồn: ${s.url}).`);
-  for (const s of ((ctx.research || {}).tech?.snippets || []).slice(0, 1)) survey.push(`Tham khảo về công nghệ: "${s.text}" (nguồn: ${s.url}).`);
-  sections.push({ heading: "2. Khảo sát thị trường", points: survey });
-
-  const why = [`${rec.name} đạt điểm đánh giá cao nhất (${rec.score}) theo các tiêu chí giá, bảo hành, hóa đơn VAT và độ phù hợp.`,
-    `Đơn giá tham khảo ${money(price)}, tổng giá trị dự kiến khoảng ${money(price * quantity)} cho ${quantity} cái.`];
-  if (med && price < med) why.push(`Thấp hơn mức trung vị ${money(med)}, có thể tiết kiệm khoảng ${money((med - price) * quantity)} cho cả đơn.`);
-  if (rec.warranty_months) {
-    const ow = others.map((s) => s.warranty_months).filter(Boolean);
-    const avg = ow.length ? mean(ow) : null;
-    why.push(`Bảo hành ${rec.warranty_months} tháng${avg !== null && rec.warranty_months > avg ? `, cao hơn mức trung bình ${Math.round(avg)} tháng của NCC khác` : ""}.`);
-  }
-  if (rec.vat === true) why.push("Có hóa đơn VAT, thuận tiện cho kế toán.");
-  if (others.length) why.push(`Phương án dự phòng: ${others[0].name} (${money(others[0].price)}).`);
-  sections.push({ heading: "3. Vì sao đề xuất NCC này", points: why });
-
-  const filled = [price, rec.mah, rec.warranty_months, rec.vat === true, rec.date].filter(Boolean).length;
-  const risks = [`Dữ liệu lấy từ website công khai hoặc do người mua nhập, hiện có ${filled}/5 thông tin đầy đủ (giá, dung lượng, bảo hành, VAT, ngày cập nhật). Giá chưa phải báo giá chính thức.`];
-  const age = ageMonths(rec.date);
-  if (age !== null && age >= STALE_MONTHS) risks.push(`Thông tin giá trên trang đã cũ khoảng ${age} tháng, cần xác nhận lại.`);
-  risks.push("Cách kiểm soát: xin báo giá chính thức bằng văn bản, đàm phán điều kiện bảo hành và giao hàng, mua thử mẫu trước khi đặt cả đơn.");
-  sections.push({ heading: "4. Rủi ro và cách kiểm soát", points: risks });
-  sections.push({ heading: "5. Đề xuất bước tiếp theo", points: [
-    "Cho phép liên hệ NCC được đề xuất và 2 NCC dự phòng để lấy báo giá chính thức.",
-    "Đàm phán giá và điều kiện, sau đó trình lại kết quả cuối để duyệt đặt hàng." ] });
-  return {
-    title: `Đề xuất mua ${quantity} ${product} từ ${rec.name}`, sections, points: sections.flatMap((s) => s.points),
-    closing: "Kính trình anh/chị xem xét. Em rất mong nhận được góp ý và sự đồng ý của anh/chị để em tiếp tục xác nhận báo giá chính thức và đàm phán thêm trước khi đặt hàng. Em xin cảm ơn anh/chị.",
-  };
-}
-export function persuasionText(p) {
-  if (!p || !p.title) return "";
-  return [p.title, "", ...p.sections.flatMap((s) => [s.heading, ...s.points.map((x) => `- ${x}`), ""]), p.closing].join("\n");
-}
-export function rfqText(job, s) {
-  const spec = [job.spec?.mah ? `pin ${job.spec.mah} mAh` : "", job.spec?.volt ? `${job.spec.volt}V` : ""].filter(Boolean).join(", ");
-  return `Kính gửi ${s.name},\n\nCông ty chúng tôi cần mua: ${job.query}${spec ? ` (${spec})` : ""}, số lượng ${job.quantity}.\nMục đích sử dụng: ${job.purpose || "chưa nêu"}.\n\nXin anh/chị vui lòng gửi báo giá gồm:\n- Đơn giá chưa VAT và đã VAT\n- Thông số kỹ thuật, model, xuất xứ\n- Thời gian bảo hành, chính sách đổi trả\n- Thời gian giao hàng, phí vận chuyển\n- Chiết khấu theo số lượng\n- Hiệu lực báo giá\n\nXin cảm ơn và mong sớm nhận phản hồi.`;
-}
 
 /* ------------------------------------------------------------------ nhóm ngành hàng */
 export const CATEGORIES = {

@@ -1,5 +1,5 @@
 // Xuất file .xlsx ngay trên trình duyệt bằng ExcelJS (vendor/exceljs.min.js, biến toàn cục ExcelJS).
-import { buildInsights, money, parseUrls, priceComparison, specText, supplierInfo } from "./core.js";
+import { money, parseUrls, priceComparison, specText, supplierInfo } from "./core.js";
 
 const BLUE = "FF003399", GREEN = "FF92D050";
 const thin = { style: "thin", color: { argb: "FF999999" } };
@@ -48,9 +48,10 @@ function contactText(s) {
   if ((c.phones || []).length) l.push(`ĐT: ${c.phones.join(", ")}`);
   if ((c.zalo || []).length) l.push(`Zalo: ${c.zalo[0]}${c.zalo_guess ? " (theo số ĐT, chưa xác nhận)" : ""}`);
   if ((c.emails || []).length) l.push(`Email: ${c.emails.join(", ")}`);
-  if (s.url) l.push(`Nguồn: ${s.url}`);
+  if (s.contact_source || s.url) l.push(`Nguồn: ${s.contact_source || s.url}`);
   return l.join("\n");
 }
+const vatText = (s) => [yesNo(s.vat), s.vat_evidence ? `"${s.vat_evidence}"` : "", s.vat_source ? `Nguồn: ${s.vat_source}` : ""].filter(Boolean).join("\n");
 function statusText(s) {
   const l = [s.recommended ? `★ KHUYẾN NGHỊ ƯU TIÊN` : s.eligible ? "Đủ điều kiện" : `Loại: ${s.reason}`];
   if (s.over_budget) l.push("Vượt ngân sách");
@@ -62,23 +63,23 @@ function statusText(s) {
 export function buildJobWorkbook(job) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Bảng so sánh giá");
-  const COLS = ["Tên NCC", "Tên sản phẩm / model", "Số lượng", "Đơn giá chưa VAT (đ)", "VAT", "Thông tin sản phẩm", "Liên hệ"];
+  const COLS = ["Tên NCC", "Tên sản phẩm", "Mã sản phẩm", "Số lượng", "Đơn giá chưa VAT (đ)", "VAT", "Thông tin sản phẩm", "Liên hệ"];
   ws.addRow([`BẢNG SO SÁNH GIÁ: ${[job.query, job.product_code].filter(Boolean).join(" ")}`]).font = { bold: true, size: 14 }; ws.mergeCells(1, 1, 1, COLS.length);
   headerRow(ws, COLS);
-  widths(ws, [24, 44, 10, 20, 12, 52, 38]);
+  widths(ws, [24, 44, 16, 10, 20, 30, 52, 38]);
   const list = job.suppliers;
   list.forEach((s) => {
     const price = s.price && s.vat_included ? Math.round(s.price / 1.1) : s.price;
     const info = productInfo(s), contact = contactText(s);
     const productCell = s.url ? { text: s.product_name || s.title || job.query, hyperlink: s.url } : (s.product_name || job.query);
-    const row = ws.addRow([(s.recommended ? "★ " : "") + s.name, productCell, s.quantity ?? job.quantity, price ?? "Chưa có giá chính xác", yesNo(s.vat), info, contact]);
+    const row = ws.addRow([(s.recommended ? "★ " : "") + s.name, productCell, s.model_code || job.product_code || "", s.quantity ?? job.quantity, price ?? "Chưa có giá chính xác", vatText(s), info, contact]);
     row.height = Math.max(32, 15 * Math.max(lineCount(info), lineCount(contact)));
     for (let c = 1; c <= COLS.length; c++) {
       const cell = row.getCell(c); cell.border = BORDER; cell.alignment = WRAP;
       if (s.recommended) { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GREEN } }; cell.font = { bold: true }; }
     }
     row.getCell(2).font = { ...(s.recommended ? { bold: true } : {}), color: { argb: "FF0563C1" }, underline: true };
-    row.getCell(4).numFmt = "#,##0";
+    row.getCell(5).numFmt = "#,##0";
   });
   const rec = list.find((s) => s.recommended);
   const after = 3 + Math.max(list.length, 1) + 1;
@@ -99,33 +100,12 @@ export function buildJobWorkbook(job) {
   priceComparison(list).forEach((r) => cmp.addRow([r.name, r.price, r.ratio, r.recommended ? "Có" : ""]));
   cmp.getColumn(2).numFmt = "#,##0"; widths(cmp, [34, 16, 24, 14]);
 
-  const analysis = job.analysis || buildInsights(list, job.quantity, { product: job.query, spec: specText(job.spec), purpose: job.purpose, research: job.research });
-  const neg = wb.addWorksheet("Đàm phán NCC");
-  if (!analysis.negotiation.length) neg.addRow(["Chưa có NCC khuyến nghị để lập kịch bản đàm phán."]);
-  for (const n of analysis.negotiation) {
-    neg.addRow([`NCC: ${n.ncc}`]).font = { bold: true, size: 12 };
-    neg.addRow([`Giá hiện tại: ${money(n.current_price)}`]); neg.addRow([`Mục tiêu: ${n.target_note}`]); neg.addRow([`Phương án dự phòng: ${n.backup}`]);
-    for (const [title, lines] of [["Điểm mạnh thương lượng (từ dữ liệu thu thập)", n.leverage], ["Câu hỏi cần làm rõ với NCC", n.questions], ["Chiến lược thuyết phục NCC", n.strategies], ["Các bước đàm phán theo quy trình mua hàng", n.steps]]) {
-      neg.addRow([]); neg.addRow([title]).font = { bold: true }; lines.forEach((x) => neg.addRow([`- ${x}`]));
-    }
-    if (n.references.length) { neg.addRow([]); neg.addRow(["Căn cứ tham khảo trên web"]).font = { bold: true }; n.references.forEach((r) => neg.addRow([`- [${r.topic}] ${r.text} (${r.url})`])); }
-  }
-  widths(neg, [130]); neg.eachRow((r) => { r.alignment = { vertical: "top", wrapText: true }; });
-
-  const per = wb.addWorksheet("Thuyết phục sếp"), p = analysis.persuasion;
-  if (!p.title) per.addRow(["Chưa có NCC khuyến nghị để lập luận thuyết phục."]);
-  else {
-    per.addRow([p.title]).font = { bold: true, size: 13 };
-    p.sections.forEach((s) => { per.addRow([]); per.addRow([s.heading]).font = { bold: true }; s.points.forEach((x) => per.addRow([`- ${x}`])); });
-    per.addRow([]); per.addRow([p.closing]);
-  }
-  widths(per, [130]); per.eachRow((r) => { r.alignment = { vertical: "top", wrapText: true }; });
-
   const topics = Object.values(job.research || {});
   if (topics.length) {
     const kn = wb.addWorksheet("Tìm hiểu sản phẩm");
     headerRow(kn, ["Chủ đề", "Câu trả lời trích từ bài viết", "Nguồn"]);
     for (const r of topics) {
+      (r.summary || []).forEach((x) => kn.addRow([`${r.label} (tóm tắt)`, x.text, x.url]));
       if (r.price) kn.addRow([r.label, `Giá thấp nhất ${money(r.price.min)}, trung vị ${money(r.price.median)}, cao nhất ${money(r.price.max)}`, ""]);
       if (r.brands && r.brands.length) kn.addRow([r.label, `Hãng thấy trên bài viết: ${r.brands.map((b) => `${b.value} (${b.count})`).join(", ")}`, ""]);
       if (!r.snippets.length && !r.price) kn.addRow([r.label, "Chưa tìm được câu trả lời rõ ràng", ""]);

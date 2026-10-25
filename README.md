@@ -26,11 +26,11 @@ Yêu cầu Chrome từ bản 110. Safari không cài thẳng được (cần mac
 5. **10 câu hỏi, trong một khối, trả lời xong tự sang câu kế:** 5 câu cố định (tên sản phẩm, model, số lượng, mục đích sử dụng, hãng sản xuất = tên hãng trên sản phẩm, không phải tên website/NCC) và 5 câu dựng từ dữ liệu crawl (thông số, ngân sách, bảo hành, chất liệu, VAT, ưu tiên...). Mỗi lựa chọn kèm "thấy ở n/N trang"; chọn sẵn giá trị khi có từ 2 trang trở lên đồng ý; không có dữ liệu web thì dùng gợi ý chung và ghi rõ.
 6. **Kết quả:**
    - **Bảng so sánh giá và đề xuất:** Tên NCC, Tên sản phẩm / model, Số lượng, Đơn giá, VAT, Thông tin sản phẩm (thông số kỹ thuật), Liên hệ. Bấm tên sản phẩm mở đúng trang bán sản phẩm đó (không phải trang chủ NCC). Chỉ trang bán một sản phẩm, đúng model, mới vào bảng; giá phải đọc chắc chắn từ dữ liệu của trang (JSON-LD, thẻ giá, hoặc số sau chữ "giá"), nếu không thì để trống và báo "Chưa có giá chính xác". Liên hệ lấy từ trang sản phẩm và trang Liên hệ của NCC. Xuất Excel .xlsx.
-   - Tìm hiểu theo chủ đề đã chọn, trả lời cho câu hỏi bạn gõ thêm, tóm tắt từng bài tham khảo (đề mục, ý chính, số liệu, câu hỏi liên quan theo ngành hàng), đều có link nguồn; album ảnh Google Hình ảnh đặt theo tên + model để so khớp; kịch bản đàm phán, luận điểm thuyết phục sếp, soạn email.
+   - Tìm hiểu theo chủ đề đã chọn, trả lời cho câu hỏi bạn gõ thêm, tóm tắt từng bài tham khảo (đề mục, ý chính, số liệu, câu hỏi liên quan theo ngành hàng), đều có link nguồn; album ảnh Google Hình ảnh đặt theo tên + model để so khớp.
 
 **Tab Lịch sử tìm kiếm:** bảng STT, Tiêu đề, Số lượng, Từ khóa đã tìm, Các trang đã tìm; bấm một dòng để xem chỉ tiêu chi tiết và mở lại từng lần tìm; xuất Excel.
 
-**Tab Cài đặt:** thử Google, giá trị mặc định (số trang, số ảnh, thời gian chờ), khóa Anthropic, email sếp, sao lưu và khôi phục.
+**Tab Cài đặt:** thử Google, giá trị mặc định (số trang, số ảnh, thời gian chờ), khóa Anthropic, sao lưu và khôi phục.
 
 ## Cách app đọc và trả lời
 

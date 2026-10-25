@@ -1,6 +1,6 @@
 // Luồng xử lý một yêu cầu, tách khỏi giao diện. Hai giai đoạn:
 //  1) prepare: đọc ảnh -> tìm Google (1-5 trang, mở hết link) -> album ảnh -> phân tích -> sinh question card.
-//  2) run: tìm NCC -> liên hệ -> trả lời mọi chủ đề và câu hỏi từ kho dữ liệu -> bài tham khảo -> xếp hạng, tổng hợp.
+//  2) run: tìm NCC (tên, mã sản phẩm, giá, VAT, liên hệ) -> trả lời mọi chủ đề và câu hỏi từ kho dữ liệu -> bài tham khảo -> xếp hạng.
 //
 // Thuật toán: mỗi trang chỉ mở MỘT lần và được xử lý ngay thành tài liệu trong kho (corpus.js). Các chủ đề (giá, ưu nhược điểm,
 // công nghệ, phân loại, lưu ý khi mua) và các câu hỏi gõ thêm đều được trả lời từ kho trong MỘT lượt quét. Chỉ câu nào còn thiếu
@@ -104,7 +104,8 @@ export function buildSuppliers(job, docsIn) {
     if (s.relevance < 0.5) continue;
     const n = perDomain.get(d.domain) || 0; if (n >= 2) continue; perDomain.set(d.domain, n + 1);
     if (s.price && !core.isConfidentPrice(s.price_source)) { s.price_guess = s.price; s.price = null; s.note = "Chưa đọc được giá chính xác từ trang, hãy mở link để xem giá"; }
-    suppliers.push({ id: uid(), quantity: job.quantity, ...s });
+    const model_code = (modelOk && code ? code : core.titleModels(String(s.title).toUpperCase().replace(/[^A-Z0-9 -]/g, " "))[0] || "").toUpperCase();
+    suppliers.push({ id: uid(), quantity: job.quantity, ...s, model_code, vat_source: s.vat != null ? d.url : "", contact_source: hasContact(s.contacts) ? d.url : "" });
   }
   return { suppliers, others };
 }
@@ -112,27 +113,43 @@ export function buildSuppliers(job, docsIn) {
 export function buildOutputs(job) {
   job.suppliers = core.scoreSuppliers(job.suppliers, job.spec?.vat_required !== false, job.spec?.budget || null);
   job.price_stats = core.priceStats(job.suppliers);
-  job.analysis = core.buildInsights(job.suppliers, job.quantity, { product: job.query, spec: core.specText(job.spec), purpose: job.purpose, research: job.research });
 }
 
-async function enrichContacts(job, crawler, step) {
-  const origins = [...new Set(job.suppliers.map((s) => s.site_url).filter(Boolean))];
+const hasContact = (c) => !!(c && (c.phones?.length || c.emails?.length || c.zalo?.length));
+/**
+ * Liên hệ và VAT của NCC. Trang sản phẩm đã cho đủ số điện thoại/email và VAT thì KHÔNG mở thêm trang Liên hệ của website đó;
+ * chỉ website còn thiếu mới thử lần lượt vài đường dẫn, dừng ngay khi đủ. Trang đã có trong kho dùng lại, trang lỗi không thử lại.
+ */
+export async function enrichContacts(job, crawler, step) {
+  const missing = (s) => !hasContact(s.contacts) || s.vat == null;
+  const origins = [...new Set(job.suppliers.filter((s) => s.site_url && missing(s)).map((s) => s.site_url))];
   const merged = new Map();
   let i = 0;
   for (const origin of origins) {
     i++; step("contacts", "start", `${i}/${origins.length}: ${new URL(origin).hostname}`, i / origins.length);
+    const group = job.suppliers.filter((s) => s.site_url === origin);
     for (const path of ["/lien-he", "/contact", "/lien-he.html", "/contact-us", "/"]) {
       const { doc, fresh } = await crawler.visitInfo(origin + path);
-      const c = doc && doc.page && doc.page.contacts;
-      if (c && (c.phones.length || c.emails.length || c.zalo.length)) { merged.set(origin, c); break; }
+      if (doc) {
+        const c = doc.page && doc.page.contacts, v = core.detectVat(doc.text);
+        const found = merged.get(origin) || {};
+        if (hasContact(c) && !found.contacts) { found.contacts = c; found.contactUrl = doc.url; }
+        if (v.vat != null && found.vat == null) { found.vat = v.vat; found.vatUrl = doc.url; found.vatEvidence = v.evidence; }
+        merged.set(origin, found);
+        if ((found.contacts || group.every((s) => hasContact(s.contacts))) && (found.vat != null || group.every((s) => s.vat != null))) break;
+      }
       if (fresh) await crawler.wait(0.4);
     }
   }
   for (const s of job.suppliers) {
-    const extra = merged.get(s.site_url); if (!extra) continue;
-    const c = s.contacts || {};
-    const pick = (a = [], b = [], n = 4) => [...new Set([...a, ...b])].slice(0, n);
-    s.contacts = { ...c, phones: pick(c.phones, extra.phones), emails: pick(c.emails, extra.emails), zalo: pick(c.zalo, extra.zalo), messenger: pick(c.messenger, extra.messenger), facebook: pick(c.facebook, extra.facebook), zalo_guess: c.zalo_guess && extra.zalo_guess, website: c.website || extra.website };
+    const f = merged.get(s.site_url); if (!f) continue;
+    if (f.contacts) {
+      const c = s.contacts || {}, extra = f.contacts;
+      const pick = (a = [], b = [], n = 4) => [...new Set([...a, ...b])].slice(0, n);
+      s.contacts = { ...c, phones: pick(c.phones, extra.phones), emails: pick(c.emails, extra.emails), zalo: pick(c.zalo, extra.zalo), messenger: pick(c.messenger, extra.messenger), facebook: pick(c.facebook, extra.facebook), zalo_guess: c.zalo_guess && extra.zalo_guess, website: c.website || extra.website };
+      s.contact_source = s.contact_source || f.contactUrl;
+    }
+    if (s.vat == null && f.vat != null) { s.vat = f.vat; s.vat_source = f.vatUrl; s.vat_evidence = f.vatEvidence; }
   }
 }
 
