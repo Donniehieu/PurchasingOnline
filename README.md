@@ -32,13 +32,13 @@ Yêu cầu Chrome từ bản 110. Safari không cài thẳng được (cần mac
 
 **Tab Cài đặt:** thử Google, giá trị mặc định (số trang, số ảnh, thời gian chờ), khóa Anthropic, email sếp, sao lưu và khôi phục.
 
-## Cách app đọc và trả lời (tối ưu số lần mở trang)
+## Cách app đọc và trả lời
 
-- **Mỗi trang chỉ mở một lần.** Khi mở một trang, app xử lý ngay thành "tài liệu" trong kho dữ liệu của yêu cầu (câu đã chuẩn hóa, giá, hãng/model, thông số, liên hệ, đề mục) rồi bỏ HTML. Trang đã có trong kho thì dùng lại, không mở lại và không phải chờ.
-- **Một lượt quét trả lời nhiều câu hỏi.** Các chủ đề (giá, ưu nhược điểm, công nghệ, phân loại, lưu ý khi mua) và các câu hỏi gõ thêm được chấm cùng lúc trên cùng kho, nên thêm câu hỏi không làm tăng số trang phải mở.
-- **Chỉ tìm thêm cho phần còn thiếu.** Câu nào kho đã trả lời được (từ 2 câu trích trở lên) thì không tìm. Các chủ đề còn thiếu được gộp thành **một** lượt tìm Google (tối đa 2 lượt); câu hỏi gõ thêm còn thiếu mới tìm riêng.
-- **Kho được lưu bền vững** trong trình duyệt (giữ kho của 10 yêu cầu gần nhất). Sau khi có kết quả, ô "Hỏi thêm" ở khối câu hỏi bổ sung trả lời ngay từ kho, không mở lại trang; chỉ khi kho chưa đủ mới tìm thêm.
-- Mô phỏng cùng kịch bản (2 trang tìm sản phẩm, 2 trang tìm NCC, 5 chủ đề, 3 câu hỏi gõ thêm): cách cũ 20 lượt tải trang Google và 95 lần mở trang web; cách mới 10 lượt và 58 lần, không mở lại trang nào. Số liệu thật phụ thuộc kết quả Google.
+1. **Lấy ảnh trước:** có đủ tên + model (hoặc chỉ có ảnh) thì lấy ảnh Google Hình ảnh vào album ngay đầu, trước khi tìm bài và trả lời câu hỏi.
+2. **Trả lời lần lượt từng câu hỏi** (5 chủ đề đã chọn rồi các câu hỏi gõ thêm). Với mỗi câu: nếu các bài đã mở trước đó đã cho đủ đáp án (từ 3 câu của 2 bài, hoặc 5 câu) thì **không tìm thêm**; nếu chưa đủ, app tìm Google bằng **"từ khóa câu hỏi + tên sản phẩm"** (VD "ưu nhược điểm máy hút bụi cầm tay"), lấy danh sách bài (trang kết quả 2 chỉ tải khi trang 1 đã hết bài chưa mở), rồi mở từng bài.
+3. **Một bài mở ra, bổ sung đáp án cho mọi câu hỏi.** Mỗi bài chỉ mở **một lần**, được xử lý ngay thành tài liệu trong kho, rồi chấm cho **tất cả** câu hỏi cùng lúc; đáp án nào tìm thấy được thêm đúng vào block của câu hỏi đó. Đáp án đã lưu từ các bài cũ **không bao giờ bị xóa**, bài mới chỉ thêm đáp án (không trùng, tối đa 12 mỗi câu).
+4. **Bài đã mở không mở lại; bài không mở được thì bỏ qua ngay** (không chờ, không thử lại) và lấy bài khác. Mỗi câu hỏi mở tối đa 6 bài mới; dừng ngay khi đủ đáp án.
+5. **Kho và đáp án được lưu bền vững** trong trình duyệt (giữ kho của 10 yêu cầu gần nhất). Ô "Hỏi thêm" ở khối câu hỏi bổ sung chấm lại kho cho câu hỏi mới và trả lời ngay; chỉ khi chưa đủ mới tìm và mở bài mới (bài mới cũng bổ sung đáp án cho các block khác).
 
 ## Giới hạn cần biết
 
@@ -50,7 +50,7 @@ Yêu cầu Chrome từ bản 110. Safari không cài thẳng được (cần mac
 ## Kiểm thử
 
 ```bash
-node --test tests-js/core.test.mjs tests-js/flow.test.mjs tests-js/corpus.test.mjs
+node --test tests-js/core.test.mjs tests-js/flow.test.mjs tests-js/corpus.test.mjs tests-js/answers.test.mjs
 ```
 
 Chạy thử giao diện như trang web thường (không có Google và crawl): `python tools/serve_docs.py` rồi mở http://localhost:8080.

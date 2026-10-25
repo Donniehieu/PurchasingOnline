@@ -29,6 +29,17 @@
 - [x] Mô phỏng: 20 → 10 lượt tải trang Google, 95 → 58 lần mở trang web, không mở lại trang nào; 150 bài x 300 câu trả lời 10 câu hỏi trong dưới 4 giây (có test)
 - [ ] Số liệu mô phỏng chưa kiểm chứng trên Google thật
 
+### Trả lời theo từng câu hỏi, đáp án tích lũy
+- [x] Lấy ảnh trước: album ngay sau bước đọc ảnh (trước khi tìm Google), hoặc đầu giai đoạn 2 nếu lúc đầu chưa có model
+- [x] Kho đáp án (`answers.js`): mỗi bài được chấm cho TẤT CẢ câu hỏi cùng lúc, đáp án bổ sung đúng block từng câu; đáp án từ bài cũ không bao giờ bị xóa (tối đa 12 mỗi câu, không trùng); lưu và nạp lại được
+- [x] Tìm bài cho từng câu bằng "từ khóa câu hỏi + tên sản phẩm"; câu đã đủ đáp án từ các bài đã mở thì không tìm; mỗi câu mở tối đa 6 bài mới và dừng ngay khi đủ
+- [x] Danh sách bài lấy lười từng trang kết quả (trang 2 chỉ tải khi cần); bài đã mở không mở lại; bài lỗi bỏ qua ngay (không chờ, không thử lại) và lấy bài khác
+- [x] Hỏi thêm sau khi có kết quả: chấm lại kho, chỉ tìm bài mới khi chưa đủ, bài mới bổ sung cả các block khác
+- [x] Từ khóa câu hỏi gõ thêm không tính các từ thuộc tên sản phẩm (trước đây câu nào nhắc sản phẩm cũng khớp)
+- [x] Sửa tải thừa trang kết quả 2 khi đã đủ đáp án ở bài cuối của trang 1
+- [x] Mô phỏng (5 chủ đề + 3 câu hỏi thêm): 20 → 14 lượt tải Google, 95 → 62 lần mở trang, không mở lại trang nào; 40 test JS đạt
+- [ ] Chưa thử với Google thật; ngưỡng "đủ đáp án" (3 câu từ 2 bài) và tối đa 6 bài mỗi câu là giá trị chọn tạm, có thể chỉnh
+
 ### Chưa chắc / còn lại
 - [ ] **Chưa chạy thử với Google thật trong trình duyệt**: mở tab nền, đọc kết quả, phân trang, Google Hình ảnh; chỉ thử với dữ liệu mẫu. Google có thể chặn (403, xác minh), app không vượt qua
 - [ ] Trang bán hàng không có dữ liệu sản phẩm có cấu trúc (JSON-LD, thẻ giá) và không có nút mua sẽ bị loại khỏi bảng; Shopee, TikTok Shop vẽ giá bằng JavaScript nên dễ không đọc được giá

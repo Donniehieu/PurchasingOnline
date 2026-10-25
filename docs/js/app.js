@@ -58,8 +58,8 @@ function makeProgress(el, steps) {
     finish() { top = 100; bar.style.width = "100%"; },
   };
 }
-const PREPARE_STEPS = [{ id: "ocr", label: "Đọc ảnh, điền tên/model/từ khóa" }, { id: "google", label: "Tìm trên Google, mở hết link của từng trang" }, { id: "album", label: "Lấy ảnh vào album từ Google Hình ảnh" }, { id: "analyze", label: "Phân tích dữ liệu, dựng câu hỏi" }];
-const RUN_STEPS = [{ id: "suppliers", label: "Tìm nhà cung cấp bán đúng sản phẩm" }, { id: "contacts", label: "Thu thập liên hệ NCC" }, { id: "topics", label: "Trả lời mọi chủ đề từ dữ liệu đã đọc (chỉ tìm thêm cho phần còn thiếu)" }, { id: "extra", label: "Trả lời từ khóa/câu hỏi bạn bổ sung" }, { id: "refs", label: "Đọc và tóm tắt bài viết tham khảo" }, { id: "album", label: "Lấy ảnh vào album" }, { id: "compose", label: "Xếp hạng NCC, đề xuất, tổng hợp" }];
+const PREPARE_STEPS = [{ id: "ocr", label: "Đọc ảnh, điền tên/model/từ khóa" }, { id: "album", label: "Lấy ảnh vào album từ Google Hình ảnh (làm trước)" }, { id: "google", label: "Tìm trên Google, mở hết link của từng trang" }, { id: "analyze", label: "Phân tích dữ liệu, dựng câu hỏi" }];
+const RUN_STEPS = [{ id: "album", label: "Lấy ảnh vào album (nếu chưa có)" }, { id: "suppliers", label: "Tìm nhà cung cấp bán đúng sản phẩm" }, { id: "contacts", label: "Thu thập liên hệ NCC" }, { id: "topics", label: "Trả lời từng chủ đề: tìm bài bằng \"câu hỏi + tên sản phẩm\", bổ sung đáp án" }, { id: "extra", label: "Trả lời từ khóa/câu hỏi bạn bổ sung" }, { id: "refs", label: "Đọc và tóm tắt bài viết tham khảo" }, { id: "compose", label: "Xếp hạng NCC, đề xuất, tổng hợp" }];
 
 /** Báo tiến trình crawl của Google: "Tìm sản phẩm: trang 2/3, đọc link 4/10". */
 function crawlEvents(prog) {
@@ -342,7 +342,8 @@ function renderPrice(job) {
   const max = Math.max(...priced.map((s) => s.price)), min = priced[0].price;
   $("price-bars").innerHTML = priced.map((s) => `<div class="bar-row"><div class="bar-label" title="${esc(s.name)}">${esc(s.name)}</div><div class="bar-track"><div class="bar-fill ${s.recommended ? "best" : ""}" style="width:${(s.price / max * 100).toFixed(1)}%"></div></div><div class="bar-value">${money(s.price)} · ${(s.price / min * 100).toFixed(0)}%</div></div>`).join("") + '<p class="muted">Tỷ lệ % tính theo NCC có giá thấp nhất (100%).</p>';
 }
-const snippetList = (snippets) => (snippets.length ? `<ul class="points">${snippets.map((s) => `<li>${esc(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`).join("")}</ul>` : '<p class="muted">Chưa tìm được câu trả lời rõ ràng trong các bài đã đọc.</p>');
+const snippetItem = (s) => `<li>${esc(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`;
+const snippetList = (snippets) => (snippets.length ? `<div class="muted">${snippets.length} đáp án từ ${new Set(snippets.map((s) => s.url)).size} bài</div><ul class="points">${snippets.slice(0, 5).map(snippetItem).join("")}</ul>${snippets.length > 5 ? `<details><summary>Xem thêm ${snippets.length - 5} đáp án từ các bài khác</summary><ul class="points">${snippets.slice(5).map(snippetItem).join("")}</ul></details>` : ""}` : '<p class="muted">Chưa tìm được câu trả lời rõ ràng trong các bài đã đọc.</p>');
 function renderResearch(job) {
   const defs = knowledge.TOPIC_DEFS.filter((t) => job.research && job.research[t.id]); $("research-wrap").hidden = !defs.length;
   $("research").innerHTML = defs.map((t) => {
@@ -387,7 +388,7 @@ $("ask-btn").addEventListener("click", async () => {
     const crawler = new Crawler({ getDelay: () => job.cfg.delay * 1000, isCancelled: () => false, onEvent: () => {}, corpus });
     const r = await flow.askMore(job, q, crawler, { allowSearch: net.isExt });
     persist(); renderCustom(job);
-    $("ask-state").textContent = r.searched ? `Kho chưa đủ nên đã tìm thêm trên Google (mở ${crawler.fetched} trang mới, dùng lại ${crawler.reused} trang trong kho).` : `Trả lời từ ${corpus.list({ real: true }).length} trang trong kho, không mở thêm trang nào.`;
+    $("ask-state").textContent = r.searched ? `Kho chưa đủ nên đã tìm bài "${q} ${job.query}": mở ${r.opened} bài mới (${crawler.reused} bài cũ dùng lại, đáp án cũ giữ nguyên).` : `Trả lời từ ${corpus.list({ real: true }).length} bài đã mở, không mở thêm trang nào.`;
     $("ask-q").value = "";
   } catch (err) { $("ask-state").textContent = `Lỗi: ${err.message}`; }
   $("ask-btn").disabled = false;

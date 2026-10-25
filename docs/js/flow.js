@@ -6,6 +6,7 @@
 // công nghệ, phân loại, lưu ý khi mua) và các câu hỏi gõ thêm đều được trả lời từ kho trong MỘT lượt quét. Chỉ câu nào còn thiếu
 // mới tìm thêm trên Google (các chủ đề thiếu được gộp thành một lượt tìm), và trang mới cũng chỉ mở khi chưa có trong kho.
 import * as album from "./album.js";
+import { AnswerStore, searchKey } from "./answers.js";
 import * as core from "./core.js";
 import { asDoc, loadCorpus, saveCorpus } from "./corpus.js";
 import { CancelledError, pseudoDocs, readImages } from "./crawl.js";
@@ -53,7 +54,18 @@ export async function prepare(job, ctx) {
   if (!searchText) throw new Error("Chưa có từ khóa tìm kiếm: nhập tên sản phẩm/model, hoặc chọn ảnh có chữ (cần khóa Anthropic để đọc chữ trong ảnh)");
   job.search_text = searchText;
 
-  // 2. Google: tìm N trang, mở hết link của từng trang; mỗi trang được xử lý ngay thành tài liệu trong kho
+  // 2. Ảnh trước: đủ tên + model (hoặc chỉ có ảnh) thì lấy ảnh trên Google Hình ảnh vào album để so khớp
+  const imageOnly = files.length > 0 && !typedText;
+  const searchTextForAlbum = searchText;
+  if ((job.query && job.product_code) || imageOnly) {
+    job.album_label = `Album: ${albumQuery(job) || searchTextForAlbum}`;
+    step("album", "start", `${job.cfg.album_n} ảnh đầu của Google Hình ảnh cho "${albumQuery(job) || searchTextForAlbum}"`);
+    const a = await album.crawlAlbum(job.id, albumQuery(job) || searchTextForAlbum, job.cfg.album_n);
+    log(a.error ? `Album: ${a.error}` : `Album: thêm ${a.added.length} ảnh (đã thử ${a.tried})`);
+    step("album", a.error ? "error" : "done", a.error || `Thêm ${a.added.length}/${job.cfg.album_n} ảnh`);
+  } else step("album", "skip", "Chưa đủ tên sản phẩm + model, sẽ lấy ảnh sau khi bạn xác nhận model");
+
+  // 3. Google: tìm N trang, mở hết link của từng trang; mỗi trang được xử lý ngay thành tài liệu trong kho
   step("google", "start", `Tìm "${searchText}" trên Google, ${job.cfg.pages} trang`);
   const res = await crawler.google(searchText, job.cfg.pages, { label: "Tìm sản phẩm" });
   addPseudo(crawler, res.items, res.read);
@@ -62,17 +74,6 @@ export async function prepare(job, ctx) {
   res.errors.forEach((e) => log(`Google lỗi: ${e}`));
   step("google", res.items.length ? "done" : "error", `${res.pagesDone} trang kết quả, ${res.items.length} kết quả, ${statsText(crawler)}`);
   if (!res.items.length) throw new Error(res.errors[0] || "Google không trả kết quả nào");
-
-  // 3. Album: đủ tên + model (hoặc chỉ có ảnh) thì lấy ảnh trên Google Hình ảnh để so khớp
-  const imageOnly = files.length > 0 && !typedText;
-  if ((job.query && job.product_code) || imageOnly) {
-    job.album_label = `Album: ${albumQuery(job) || searchText}`;
-    step("album", "start", `${job.cfg.album_n} ảnh đầu của Google Hình ảnh cho "${albumQuery(job) || searchText}"`);
-    await crawler.wait();
-    const a = await album.crawlAlbum(job.id, albumQuery(job) || searchText, job.cfg.album_n);
-    log(a.error ? `Album: ${a.error}` : `Album: thêm ${a.added.length} ảnh (đã thử ${a.tried})`);
-    step("album", a.error ? "error" : "done", a.error || `Thêm ${a.added.length}/${job.cfg.album_n} ảnh`);
-  } else step("album", "skip", "Chưa đủ tên sản phẩm + model, sẽ lấy ảnh sau khi bạn xác nhận model");
 
   // 4. Phân tích kho dữ liệu đã đọc
   step("analyze", "start");
@@ -133,35 +134,62 @@ async function enrichContacts(job, crawler, step) {
   }
 }
 
+const MAX_OPEN_PER_QUESTION = 6; // mỗi câu hỏi mở tối đa 6 bài MỚI (bài đã mở rồi thì dùng luôn, không tính)
+
+function loadStore(job) {
+  const opts = { product: spaced(job.query, job.product_code), queryTokens: core.queryKeywords(job.query), topicIds: job.cfg.topics, questions: job.cfg.extra_q || [] };
+  return job.answer_store ? AnswerStore.fromJSON(job.answer_store, opts) : new AnswerStore(opts);
+}
+/** Đưa kho đáp án vào job để hiển thị và lưu (đáp án tích lũy, không mất khi tải lại). */
+function publish(job, store, crawler) {
+  const docs = crawler.corpus.list(), read = crawler.corpus.list({ real: true }).length;
+  job.research = Object.fromEntries(Object.entries(store.topicsOut(docs)).map(([id, e]) => [id, { ...e, pages_read: read }]));
+  job.custom_answers = store.customOut().map((a) => ({ ...a, pages_read: read }));
+  job.answer_store = store.toJSON();
+}
+
 /**
- * Trả lời các chủ đề đã chọn và các câu hỏi gõ thêm từ kho (một lượt quét), rồi bổ sung phần còn thiếu:
- * - các chủ đề thiếu được gộp thành MỘT lượt tìm Google (tối đa MAX_ROUNDS lượt), sau mỗi lượt trả lời lại từ kho;
- * - mỗi câu hỏi gõ thêm còn thiếu mới tìm riêng (tối đa MAX_CUSTOM_SEARCHES câu).
- * Trang đã có trong kho không bao giờ bị mở lại. Trả về { topics, custom, docs }.
+ * Tìm đáp án cho MỘT câu hỏi: tìm Google bằng "<câu hỏi> <tên sản phẩm>", lấy danh sách bài, rồi mở từng bài chưa mở.
+ * Mỗi bài mở ra được chấm cho TẤT CẢ câu hỏi (đáp án bổ sung đúng vào block từng câu hỏi, đáp án cũ giữ nguyên).
+ * Dừng khi câu hỏi đã đủ đáp án hoặc đã mở `maxOpen` bài mới. Bài không mở được thì bỏ qua ngay (không chờ) và lấy bài khác.
+ * Trả về { opened, skipped }.
  */
-export async function answerFromCorpus(job, crawler, { step = () => {}, topicPages = 1 } = {}) {
-  const product = spaced(job.query, job.product_code), tokens = core.queryKeywords(job.query);
-  const topicIds = job.cfg.topics.filter((id) => knowledge.TOPIC_DEFS.some((t) => t.id === id)), questions = job.cfg.extra_q || [];
-  const answer = () => knowledge.answerAll({ product, banks: knowledge.topicBanks(topicIds), custom: questions }, crawler.corpus.list(), tokens);
-  let all = answer();
-  step("topics", "start", `Đã trả lời ${topicIds.length} chủ đề và ${questions.length} câu hỏi từ ${all.docs} nguồn trong kho, không mở thêm trang`, 0.3);
-  for (let round = 1; round <= MAX_ROUNDS; round++) {
-    const weak = knowledge.weakTopicIds(all.topics).filter((id) => topicIds.includes(id));
-    if (!weak.length) break;
-    step("topics", "start", `Còn thiếu ${weak.length} chủ đề (${weak.map((id) => all.topics[id].label).join(", ")}): tìm bổ sung 1 lượt Google`, 0.3 + round * 0.2);
-    await crawler.wait();
-    const res = await crawler.google(knowledge.combinedQuery(product, weak), topicPages, { label: "Bổ sung chủ đề thiếu" });
-    addPseudo(crawler, res.items, res.read); all = answer();
+export async function findAnswers(store, entry, crawler, { product, maxPages = 2, maxOpen = MAX_OPEN_PER_QUESTION, onProgress = () => {} } = {}) {
+  let opened = 0, skipped = 0;
+  for await (const cand of crawler.candidates(searchKey(entry, product), maxPages, { label: entry.label })) {
+    if (store.enough(entry) || opened >= maxOpen) break;
+    const { doc, fresh } = await crawler.visitInfo(cand.url);
+    if (!doc) { skipped++; onProgress({ opened, skipped, url: cand.url, failed: true }); continue; }
+    store.ingest(doc); opened++;
+    onProgress({ opened, skipped, url: cand.url, failed: false });
+    if (store.enough(entry) || opened >= maxOpen) break; // dừng ngay, không xin ứng viên kế (tránh tải thừa trang kết quả kế tiếp)
+    if (fresh) await crawler.wait();
   }
-  let searched = 0;
-  for (const i of knowledge.weakCustomIdx(all.custom)) {
-    if (searched >= MAX_CUSTOM_SEARCHES) break; searched++;
-    step("extra", "start", `"${questions[i]}" chưa đủ trả lời từ kho, tìm bổ sung (trang 1-2)`, searched / MAX_CUSTOM_SEARCHES);
-    await crawler.wait();
-    const res = await crawler.google(spaced(product, questions[i]), 2, { label: "Câu hỏi thêm" });
-    addPseudo(crawler, res.items, res.read); all = answer();
+  return { opened, skipped };
+}
+
+/**
+ * Trả lời lần lượt từng câu hỏi (các chủ đề đã chọn rồi các câu hỏi gõ thêm):
+ *  1. lưu đáp án từ mọi bài đã mở ở các bước trước;
+ *  2. câu nào đã đủ đáp án thì không tìm thêm; câu còn thiếu thì tìm bài mới bằng "câu hỏi + tên sản phẩm" và bổ sung vào mọi block.
+ * Bài đã mở không mở lại, bài lỗi bỏ qua. Trả về kho đáp án.
+ */
+export async function answerQuestions(job, crawler, { step = () => {}, log = () => {}, maxPages = 2 } = {}) {
+  const product = spaced(job.query, job.product_code), store = loadStore(job);
+  let saved = 0; for (const d of crawler.corpus.list()) saved += store.ingest(d);
+  const entries = store.list();
+  publish(job, store, crawler);
+  step("topics", "start", `Đã lưu ${saved} đáp án từ ${crawler.corpus.list({ real: true }).length} bài đã mở`, 0.05);
+  for (const [i, e] of entries.entries()) {
+    const sid = e.kind === "topic" ? "topics" : "extra", frac = i / Math.max(1, entries.length);
+    if (store.enough(e)) { log(`"${e.label}": đã đủ ${e.items.length} đáp án từ ${store.pages(e)} bài đã mở, không tìm thêm`); continue; }
+    step(sid, "start", `Câu ${i + 1}/${entries.length} "${e.label}": tìm bài "${searchKey(e, product)}" (đã có ${e.items.length} đáp án)`, frac);
+    const r = await findAnswers(store, e, crawler, { product, maxPages, onProgress: (p) => step(sid, "start", `"${e.label}": ${p.failed ? `bỏ qua bài không mở được (${p.skipped})` : `đã mở ${p.opened} bài mới`}, có ${e.items.length} đáp án từ ${store.pages(e)} bài`, frac) });
+    log(`"${e.label}": mở ${r.opened} bài mới, bỏ qua ${r.skipped} bài không mở được, có ${e.items.length} đáp án từ ${store.pages(e)} bài`);
+    publish(job, store, crawler); // lưu ngay sau mỗi câu hỏi
   }
-  return { topics: all.topics, custom: all.custom, docs: all.docs };
+  publish(job, store, crawler);
+  return store;
 }
 
 /**
@@ -174,6 +202,16 @@ export async function run(job, ctx) {
   const guard = async (id, fn) => { try { await fn(); } catch (e) { if (e instanceof CancelledError) throw e; log(`${id}: ${e.message}`); step(id, "error", e.message); } };
   try {
     job.keywords = core.searchKeywords(job);
+    // Ảnh trước: có đủ tên + model thì lấy ảnh Google Hình ảnh vào album trước khi trả lời các câu hỏi
+    await guard("album", async () => {
+      if (job.album_label) { step("album", "skip", "Đã lấy ảnh ở bước đầu"); return; }
+      if (!(job.query && job.product_code)) { step("album", "skip", "Chưa đủ tên sản phẩm + model"); return; }
+      job.album_label = `Album: ${albumQuery(job)}`;
+      step("album", "start", `${job.cfg.album_n} ảnh đầu của Google Hình ảnh cho "${albumQuery(job)}"`);
+      const a = await album.crawlAlbum(job.id, albumQuery(job), job.cfg.album_n);
+      log(a.error ? `Album: ${a.error}` : `Album: thêm ${a.added.length} ảnh`);
+      step("album", a.error ? "error" : "done", a.error || `Thêm ${a.added.length}/${job.cfg.album_n} ảnh`);
+    });
     await guard("suppliers", async () => {
       step("suppliers", "start", `Tìm NCC bán "${product}", ${job.cfg.pages} trang`);
       await crawler.wait();
@@ -188,16 +226,14 @@ export async function run(job, ctx) {
     if (job.suppliers.length) await guard("contacts", async () => { await enrichContacts(job, crawler, step); step("contacts", "done", "Đã thu thập liên hệ trên trang sản phẩm và trang Liên hệ của NCC"); });
     else step("contacts", "skip", "Chưa có NCC");
 
-    // Chủ đề đã chọn và câu hỏi gõ thêm: trả lời từ kho, chỉ tìm thêm cho phần còn thiếu
+    // Chủ đề đã chọn và câu hỏi gõ thêm: trả lời từng câu, đáp án tích lũy từ nhiều bài, chỉ tìm bài mới cho câu còn thiếu
     job.research = {}; job.custom_answers = [];
     if (!job.cfg.topics.length && !job.cfg.extra_q.length) { step("topics", "skip", "Bạn không chọn chủ đề nào"); step("extra", "skip", "Không có câu hỏi thêm"); }
     else await guard("topics", async () => {
-      const r = await answerFromCorpus(job, crawler, { step, topicPages: Math.min(job.cfg.pages, 2) });
-      const read = crawler.corpus.list({ real: true }).length;
-      job.research = Object.fromEntries(Object.entries(r.topics).map(([id, e]) => [id, { ...e, pages_read: read }]));
-      job.custom_answers = r.custom.map((a) => ({ ...a, pages_read: read }));
-      step("topics", "done", `${Object.values(job.research).filter((e) => e.snippets.length).length}/${job.cfg.topics.length} chủ đề có câu trả lời từ bài viết`);
-      if (job.cfg.extra_q.length) step("extra", "done", `${job.custom_answers.filter((a) => a.snippets.length).length}/${job.cfg.extra_q.length} câu hỏi có câu trả lời`); else step("extra", "skip", "Không có câu hỏi thêm");
+      const store = await answerQuestions(job, crawler, { step, log, maxPages: Math.min(job.cfg.pages, 3) });
+      const topics = store.list().filter((e) => e.kind === "topic"), customs = store.list().filter((e) => e.kind === "custom");
+      step("topics", topics.length ? "done" : "skip", `${topics.filter((e) => e.items.length).length}/${topics.length} chủ đề có đáp án, tổng ${topics.reduce((n, e) => n + e.items.length, 0)} đáp án`);
+      step("extra", customs.length ? "done" : "skip", customs.length ? `${customs.filter((e) => e.items.length).length}/${customs.length} câu hỏi có đáp án` : "Không có câu hỏi thêm");
     });
 
     // Bài viết tham khảo do người dùng cung cấp: mở một lần, tóm tắt và hỏi đáp trên chính bài đó
@@ -216,13 +252,6 @@ export async function run(job, ctx) {
     if (!(e instanceof CancelledError)) throw e;
     job.partial = true; log("Đã dừng theo yêu cầu: tổng hợp phần đã có");
   }
-  // Ảnh: nếu lúc đầu thiếu model thì bây giờ đã đủ tên + model
-  if (job.query && job.product_code && !job.album_label && !job.partial) {
-    job.album_label = `Album: ${albumQuery(job)}`;
-    step("album", "start", `${job.cfg.album_n} ảnh đầu của Google Hình ảnh`);
-    const a = await album.crawlAlbum(job.id, albumQuery(job), job.cfg.album_n);
-    step("album", a.error ? "error" : "done", a.error || `Thêm ${a.added.length} ảnh`); log(a.error ? `Album: ${a.error}` : `Album: thêm ${a.added.length} ảnh`);
-  }
   job.queries = [...new Set([...(job.queries || []), ...crawler.queries])];
   job.stats = { fetched: crawler.fetched, reused: crawler.reused, searches: crawler.searches, docs: crawler.corpus.size };
   log(`Tổng kết: ${statsText(crawler)}, kho ${crawler.corpus.size} tài liệu`);
@@ -235,21 +264,20 @@ export async function run(job, ctx) {
 
 /* ------------------------------------------------------------------ hỏi thêm sau khi có kết quả */
 /**
- * Trả lời một câu hỏi mới từ kho dữ liệu đã lưu của yêu cầu (không mở lại trang nào). Nếu còn thiếu và allowSearch thì tìm thêm
- * trên Google (trang 1-2) rồi trả lời lại. Cần crawler dùng kho đã nạp (loadCorpus). Trả về { question, snippets, pages, searched }.
+ * Hỏi thêm một câu: chấm các bài đã lưu trong kho cho câu hỏi mới (không mở lại trang nào); nếu chưa đủ đáp án và allowSearch thì tìm bài mới
+ * bằng "câu hỏi + tên sản phẩm". Bài mới cũng bổ sung đáp án cho các câu hỏi khác; đáp án cũ giữ nguyên. Trả về { question, snippets, pages, searched, opened }.
  */
-export async function askMore(job, question, crawler, { allowSearch = true } = {}) {
-  const product = spaced(job.query, job.product_code), tokens = core.queryKeywords(job.query);
-  const ask = () => knowledge.answerCustom(question, crawler.corpus.list(), tokens);
-  let ans = ask(), searched = false;
-  if (knowledge.isWeak(ans) && allowSearch && (net.isExt || crawler.injected)) {
-    const res = await crawler.google(spaced(product, question), 2, { label: "Câu hỏi thêm" });
-    addPseudo(crawler, res.items, res.read); ans = ask(); searched = true;
+export async function askMore(job, question, crawler, { allowSearch = true, maxPages = 2 } = {}) {
+  const product = spaced(job.query, job.product_code), store = loadStore(job);
+  for (const d of crawler.corpus.list()) store.ingest(d); // bài chưa chấm (nếu có)
+  const e = store.addCustom(question, crawler.corpus.list()); // chấm toàn bộ kho cho câu hỏi mới
+  let searched = false, opened = 0;
+  if (!store.enough(e) && allowSearch && (net.isExt || crawler.injected)) {
+    searched = true; opened = (await findAnswers(store, e, crawler, { product, maxPages })).opened;
   }
-  const entry = { ...ans, pages_read: crawler.corpus.list({ real: true }).length };
-  job.custom_answers = [...(job.custom_answers || []).filter((a) => a.question !== question), entry];
+  publish(job, store, crawler);
   job.queries = [...new Set([...(job.queries || []), ...crawler.queries])];
   await save(job, crawler);
-  return { ...entry, searched };
+  return { question, snippets: store.snippets(e), pages: store.pages(e), searched, opened, pages_read: crawler.corpus.list({ real: true }).length };
 }
 export { loadCorpus };

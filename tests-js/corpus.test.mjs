@@ -71,36 +71,6 @@ test("khối lượng lớn vẫn nhanh: 150 bài x 300 câu, 5 chủ đề + 5 
   assert.ok(Date.now() - t < 4000, `quá chậm: ${Date.now() - t}ms`); assert.equal(Object.keys(all.topics).length, 5); assert.equal(all.custom.length, 5);
 });
 
-test("chỉ tìm thêm cho phần còn thiếu: kho đủ thì không tìm; thiếu thì gộp thành MỘT lượt tìm và không mở lại trang cũ", async () => {
-  const mk = (corpusUrls) => { const c = new Corpus(); corpusUrls.forEach((u) => c.addPage({ url: u, html: PAGES[u] })); return c; };
-  const job = () => ({ id: "t", query: PRODUCT, product_code: "", quantity: 1, cfg: { pages: 1, topics: ["price", "pros", "using", "types", "buy"], extra_q: [], ref_urls: [] } });
-  // 1. Kho đã đủ mọi chủ đề: 0 lượt tìm, 0 trang mở thêm
-  const opened1 = new Map(), full = new Crawler({ getDelay: () => 0, loadHtml: loadFrom(opened1), serp: serpOf({}), corpus: mk(["https://a.vn/danh-gia", "https://b.vn/cong-nghe", "https://c.vn/gia", "https://e.vn/tong-hop"]) });
-  const r1 = await flow.answerFromCorpus(job(), full, { topicPages: 1 });
-  assert.equal(full.searches, 0); assert.equal(full.fetched, 0); assert.ok(Object.values(r1.topics).every((t) => t.snippets.length >= 2 || t.price), JSON.stringify(Object.values(r1.topics).map((t) => [t.label, t.snippets.length])));
-  // 2. Kho chỉ có bài đánh giá: các chủ đề thiếu được gộp vào một truy vấn; bài đánh giá không bị mở lại
-  const opened2 = new Map(); let called = [];
-  const serp = async (q, p) => { called.push(q); return { results: ["https://a.vn/danh-gia", "https://b.vn/cong-nghe", "https://c.vn/gia", "https://e.vn/tong-hop"].map((url) => ({ url, title: url, snippet: "" })) }; };
-  const part = new Crawler({ getDelay: () => 0, loadHtml: loadFrom(opened2), serp, corpus: mk(["https://a.vn/danh-gia"]) });
-  const r2 = await flow.answerFromCorpus(job(), part, { topicPages: 1 });
-  assert.equal(part.searches, 1, `số lượt tìm ${part.searches}`); assert.match(called[0], /công nghệ/); assert.match(called[0], /phân loại/); assert.match(called[0], /giá/);
-  assert.equal(opened2.get("https://a.vn/danh-gia"), undefined, "bài đã có trong kho bị mở lại"); assert.equal(opened2.get("https://b.vn/cong-nghe"), 1); assert.equal(opened2.get("https://c.vn/gia"), 1); assert.equal(opened2.get("https://e.vn/tong-hop"), 1);
-  assert.ok(r2.topics.using.snippets.length >= 1 && r2.topics.types.snippets.length >= 1 && r2.topics.price.price);
-  // 3. Câu hỏi gõ thêm: đã có trong kho thì không tìm; không có thì tìm đúng câu đó
-  const j3 = job(); j3.cfg.topics = []; j3.cfg.extra_q = ["dung tích hộp bụi bao nhiêu", "hoàn toàn không liên quan zzz"];
-  const c3 = new Crawler({ getDelay: () => 0, loadHtml: loadFrom(new Map()), serp: async () => ({ results: [] }), corpus: mk(["https://a.vn/danh-gia"]) });
-  const r3 = await flow.answerFromCorpus(j3, c3, {});
-  assert.ok(r3.custom[0].snippets.length >= 1); assert.equal(c3.searches, 1); assert.deepEqual(c3.queries.map((q) => /zzz/.test(q)), [true]);
-});
-
-test("hỏi thêm sau khi có kết quả: trả lời từ kho, không mở lại trang", async () => {
-  const c = new Crawler({ getDelay: () => 0, loadHtml: loadFrom(new Map()), serp: async () => { throw new Error("không được tìm"); }, corpus: (() => { const k = new Corpus(); Object.entries(PAGES).forEach(([url, h]) => k.addPage({ url, html: h })); return k; })() });
-  const job = { id: "t2", query: PRODUCT, product_code: "", cfg: { delay: 0 }, custom_answers: [] };
-  const r = await flow.askMore(job, "máy hút bụi cầm tay bán chạy", c, { allowSearch: true });
-  assert.equal(r.searched, false); assert.ok(r.snippets.length >= 1); assert.equal(c.fetched, 0); assert.equal(job.custom_answers.length, 1);
-  await flow.askMore(job, "máy hút bụi cầm tay bán chạy", c, { allowSearch: false }); assert.equal(job.custom_answers.length, 1); // hỏi lại cùng câu thì thay, không nhân đôi
-});
-
 test("kho lưu bền vững (nén gọn rồi nạp lại) cho cùng câu trả lời", () => {
   const docs = Object.entries(PAGES).map(([url, h]) => asDoc({ url, html: h }));
   const back = docs.map((d) => unpackDoc(JSON.parse(JSON.stringify(packDoc(d)))));

@@ -84,36 +84,31 @@ const ALL_QUESTIONS = [...COMMON, ...Object.values(BY_CATEGORY).flat()];
 const relevant = (pages, tokens) => pages.map(asDoc).filter(Boolean).map((d) => ({ d, rel: phraseRelevance(tokens, d.norm) })).filter((x) => x.rel >= 0.5);
 
 /** Chọn câu trả lời tốt nhất: điểm cao, độ dài vừa phải, không trùng, mỗi bài tối đa `perPage` câu. */
-function pick(cands, max = 4, perPage = 2) {
+export function pickSnippets(cands, max = 4, perPage = 2) {
   cands.sort((a, b) => b.score - a.score || Math.abs(a.text.length - 140) - Math.abs(b.text.length - 140));
   const out = [], per = new Map(), seen = new Set();
   for (const c of cands) {
     const key = normKey(c.text).slice(0, 60);
     if (seen.has(key) || (per.get(c.url) || 0) >= perPage) continue;
-    seen.add(key); per.set(c.url, (per.get(c.url) || 0) + 1); out.push({ text: c.text, url: c.url });
+    seen.add(key); per.set(c.url, (per.get(c.url) || 0) + 1); out.push({ text: c.text, url: c.url, score: c.score });
     if (out.length >= max) break;
   }
   return out;
 }
 const QSTOP = new Set(["va", "la", "cua", "cho", "co", "khong", "nhu", "the", "nao", "gi", "duoc", "nay", "mot", "cac", "nhung", "bao", "nhieu", "khi", "hay", "voi", "trong", "thi", "da", "se", "ra", "vao", "can", "nen", "hon"]);
-const questionTokens = (q) => [...new Set(stripAccents(q).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !QSTOP.has(t)))];
+export const questionTokens = (q) => [...new Set(stripAccents(q).split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && !QSTOP.has(t)))];
 
-/**
- * Trả lời TẤT CẢ câu hỏi cùng lúc: các chủ đề (banks) và các câu hỏi gõ thêm (custom). Mỗi câu của mỗi tài liệu được duyệt đúng một lần
- * và chấm cho mọi câu hỏi, nên thêm câu hỏi không làm tăng số lần đọc trang. pages: tài liệu hoặc trang thô {url, html}.
- * Trả về { topics: {id: entry}, custom: [{question, snippets, pages}], docs }.
- */
-export function answerAll({ product = "", banks = [], custom = [] }, pages, queryTokens) {
-  const docs = relevant(pages, queryTokens);
-  let brands = [], brandKeys = [];
-  if (banks.some((q) => q.kind === "brands" || q.needsBrand)) { // đếm hãng một lần, chỉ khi có câu hỏi cần
-    const count = new Map();
-    for (const { d } of docs) for (const b of new Set(brandsIn(d.title, d.text, queryTokens, d.site))) { const k = stripAccents(b); const e = count.get(k) || { value: b, count: 0 }; e.count++; count.set(k, e); }
-    brands = [...count.values()].sort((a, b) => b.count - a.count).slice(0, 6); brandKeys = brands.slice(0, 5).map((b) => stripAccents(b.value));
-  }
-  const tspecs = banks.map((q) => ({ q, cands: [] }));
-  const cspecs = custom.map((question) => { const qTokens = questionTokens(question); return { question, qTokens, need: Math.max(1, Math.ceil(qTokens.length * 0.5)), cands: [] }; });
-  for (const { d, rel } of docs) for (const s of d.sentences) {
+/** Spec cho các câu hỏi chủ đề và câu hỏi gõ thêm; mỗi spec gom các câu ứng viên (cands) tìm được. */
+export const makeTopicSpecs = (banks) => banks.map((q) => ({ q, cands: [] }));
+/** productTokens: các từ của tên sản phẩm, không dùng để so khớp câu hỏi (câu nào cũng nhắc sản phẩm nên sẽ khớp nhầm). */
+export const makeCustomSpecs = (questions, productTokens = []) => questions.map((question) => {
+  const all = questionTokens(question), drop = new Set(productTokens), own = all.filter((t) => !drop.has(t)), qTokens = own.length ? own : all;
+  return { question, qTokens, need: Math.max(1, Math.ceil(qTokens.length * 0.5)), cands: [] };
+});
+
+/** Chấm MỘT tài liệu cho TẤT CẢ câu hỏi: mỗi câu của tài liệu được duyệt đúng một lần và đẩy ứng viên vào từng spec. */
+export function scoreDoc(d, rel, tspecs, cspecs, queryTokens, brandKeys = []) {
+  for (const s of d.sentences) {
     if (rel >= 0.8 || queryTokens.some((t) => s.n.includes(t))) { // trang chỉ liên quan một phần thì câu phải nhắc sản phẩm
       for (const sp of tspecs) {
         const q = sp.q;
@@ -129,9 +124,26 @@ export function answerAll({ product = "", banks = [], custom = [] }, pages, quer
       if (hit >= sp.need) sp.cands.push({ text: s.t, url: d.url, score: hit });
     }
   }
+}
+
+/**
+ * Trả lời TẤT CẢ câu hỏi cùng lúc: các chủ đề (banks) và các câu hỏi gõ thêm (custom). Mỗi câu của mỗi tài liệu được duyệt đúng một lần
+ * và chấm cho mọi câu hỏi, nên thêm câu hỏi không làm tăng số lần đọc trang. pages: tài liệu hoặc trang thô {url, html}.
+ * Trả về { topics: {id: entry}, custom: [{question, snippets, pages}], docs }.
+ */
+export function answerAll({ product = "", banks = [], custom = [] }, pages, queryTokens) {
+  const docs = relevant(pages, queryTokens);
+  let brands = [], brandKeys = [];
+  if (banks.some((q) => q.kind === "brands" || q.needsBrand)) { // đếm hãng một lần, chỉ khi có câu hỏi cần
+    const count = new Map();
+    for (const { d } of docs) for (const b of new Set(brandsIn(d.title, d.text, queryTokens, d.site))) { const k = stripAccents(b); const e = count.get(k) || { value: b, count: 0 }; e.count++; count.set(k, e); }
+    brands = [...count.values()].sort((a, b) => b.count - a.count).slice(0, 6); brandKeys = brands.slice(0, 5).map((b) => stripAccents(b.value));
+  }
+  const tspecs = makeTopicSpecs(banks), cspecs = makeCustomSpecs(custom, queryTokens);
+  for (const { d, rel } of docs) scoreDoc(d, rel, tspecs, cspecs, queryTokens, brandKeys);
   const topics = {};
   for (const sp of tspecs) {
-    const q = sp.q, snippets = pick(sp.cands), def = TOPIC_DEFS.find((t) => t.id === q.id);
+    const q = sp.q, snippets = pickSnippets(sp.cands), def = TOPIC_DEFS.find((t) => t.id === q.id);
     const entry = { label: def ? def.label : q.label, group: q.group, group_label: GROUPS[q.group], query: q.ask(product), snippets, pages: new Set(snippets.map((s) => s.url)).size };
     if (q.kind === "brands") entry.brands = brands;
     if (q.kind === "price") { // khoảng giá từ giá đọc chắc chắn của từng trang (đã loại phụ kiện, voucher), không quét mọi con số trên trang
@@ -140,7 +152,7 @@ export function answerAll({ product = "", banks = [], custom = [] }, pages, quer
     }
     topics[q.id] = entry;
   }
-  return { topics, custom: cspecs.map((sp) => { const snippets = pick(sp.cands, 6); return { question: sp.question, snippets, pages: new Set(snippets.map((s) => s.url)).size }; }), docs: docs.length };
+  return { topics, custom: cspecs.map((sp) => { const snippets = pickSnippets(sp.cands, 6); return { question: sp.question, snippets, pages: new Set(snippets.map((s) => s.url)).size }; }), docs: docs.length };
 }
 
 /** Câu trả lời còn thiếu (ít hơn 2 câu trích): chỉ những câu này mới cần tìm thêm trên Google. */

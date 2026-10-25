@@ -21,7 +21,7 @@ export class Crawler {
     this.getDelay = getDelay; this.isCancelled = isCancelled || (() => false); this.onEvent = onEvent || (() => {});
     this.corpus = corpus || new Corpus(); this.injected = !!(serp || loadHtml); // bản thay thế khi kiểm thử không cần tiện ích
     this.serp = serp || net.serpPage; this.loadHtml = loadHtml || ((url) => this.defaultLoad(url));
-    this.fetched = 0; this.reused = 0; this.searches = 0; this.failed = new Set(); this.queries = [];
+    this.fetched = 0; this.reused = 0; this.searches = 0; this.failed = new Set(); this.queries = []; this.errors = [];
   }
   check() { if (this.isCancelled()) throw new CancelledError(); }
   /** Chờ giữa hai lệnh (±25% ngẫu nhiên), kiểm tra yêu cầu dừng mỗi 250ms. */
@@ -72,6 +72,37 @@ export class Crawler {
     const todo = items.filter((it) => { const d = this.corpus.get(it.url); return !d || d.pseudo; }).length; // trang đã có trong kho không cần luồng thứ hai
     await Promise.all([worker(), todo > 1 ? (async () => { await net.sleep(Math.min(800, this.getDelay() / 2)); await worker(); })() : Promise.resolve()]);
     return out.filter(Boolean);
+  }
+
+  /**
+   * Danh sách bài viết ứng viên cho một từ khóa (VD "ưu nhược điểm máy hút bụi cầm tay"), lấy lười từng trang kết quả Google:
+   * trang 2 chỉ được tải khi người gọi đã dùng hết các bài của trang 1 mà vẫn cần thêm. Bỏ qua bài đã mở (đã có trong kho),
+   * bài đã lỗi, website không phải bài viết/NCC, và quá `perDomain` bài cùng một website. Dùng: for await (const r of crawler.candidates(q, 3)) {...}
+   */
+  async *candidates(query, pages, { perDomain = 2, label = "" } = {}) {
+    if (!this.queries.includes(query)) this.queries.push(query);
+    this.searches++;
+    const seen = new Set(), domainCount = new Map();
+    for (let p = 1; p <= pages; p++) {
+      this.check();
+      if (p > 1) await this.wait();
+      this.onEvent({ kind: "serp", label, query, page: p, pages, state: "start" });
+      let res;
+      try { res = await this.serp(query, p); }
+      catch (e) { if (e instanceof CancelledError) throw e; this.errors.push(`"${query}" trang ${p}: ${e.message}`); this.onEvent({ kind: "serp", label, query, page: p, pages, state: "error", message: e.message }); return; }
+      const fresh = res.results.filter((r) => !seen.has(r.url));
+      if (!fresh.length) { this.onEvent({ kind: "serp", label, query, page: p, pages, state: "end" }); return; }
+      fresh.forEach((r) => seen.add(r.url));
+      this.onEvent({ kind: "serp", label, query, page: p, pages, state: "results", n: fresh.length });
+      await this.wait(); // chờ sau khi tải kết quả rồi mới mở bài đầu tiên
+      for (const r of fresh) {
+        const d = core.domainOf(r.url), have = this.corpus.get(r.url);
+        if (!d || SKIP_DOMAINS.some((x) => d.includes(x)) || SKIP_EXT.test(r.url)) continue;
+        if ((have && !have.pseudo) || this.failed.has(r.url)) continue; // đã mở hoặc đã lỗi: không mở lại
+        const c = domainCount.get(d) || 0; if (c >= perDomain) continue; domainCount.set(d, c + 1);
+        yield r;
+      }
+    }
   }
 
   /**
