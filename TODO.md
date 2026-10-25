@@ -144,6 +144,11 @@
 - [x] Tab nền bị đóng hoặc bị trình duyệt thay giữa chừng (Memory Saver, lỡ đóng) làm engine báo lỗi: tắt tự loại bỏ cho tab đọc và tự thử lại bằng tab mới tối đa 3 lần, báo rõ nguyên nhân nếu vẫn lỗi
 - [ ] Chưa tái hiện được lỗi trên máy này (chỉ suy ra nguyên nhân từ thông báo), cần bạn thử lại sau khi tải lại tiện ích 1.2.3
 
+## Google chặn truy cập (403, udm=2)
+- [x] Nhận diện trang bị chặn (403, "does not have permission", CAPTCHA, quá nhiều yêu cầu) ở cả tìm web và tìm ảnh, báo rõ engine nào bị chặn và gợi ý cách xử lý; app không tìm cách vượt qua
+- [x] Giãn nhịp 1,5 đến 2,5 giây giữa các trang kết quả của engine chạy bằng trình duyệt để không gửi dồn dập
+- [ ] Nếu Google vẫn chặn thì dùng Cốc Cốc, DuckDuckGo, Bing; ảnh sẽ lấy từ các nguồn còn lại
+
 ## Chưa làm / cần bạn quyết định
 - [ ] Card dựng theo quy tắc, chưa dùng AI. Có thể soạn card bằng Claude khi có ANTHROPIC_API_KEY để gợi ý sát sản phẩm hơn
 - [ ] Tìm kiếm ảnh ngược (reverse image search). Hiện ảnh chỉ được mô tả bằng Claude khi có ANTHROPIC_API_KEY

@@ -73,6 +73,7 @@ function filterDomains(urls, max) {
 // "Trang" ở đây là trang kết quả của engine (1, 2, 3... như thanh phân trang), tối đa 10 trang mỗi engine; engine hết kết quả sớm thì dừng ở trang cuối.
 // Kết quả của mọi trang (tiêu đề, đoạn mô tả, link) được thu thập; chỉ một phần link tốt nhất (MAX_DEEP) được mở ra đọc đầy đủ.
 const PAGES_DEFAULT = 10, API_PAGE_CAP = 3, MAX_DEEP = 30;
+const BROWSER_ENGINES = new Set(["googleweb", "coccoc", "bing", "bravesearch"]);
 const pagesPerEngine = () => Math.min(10, Math.max(1, parseInt(settings.serp_pages, 10) || PAGES_DEFAULT));
 const ENGINE_NAMES = { googleweb: "Google", coccoc: "Cốc Cốc", duckduckgo: "DuckDuckGo", bing: "Bing", bravesearch: "Brave Search", google: "Google API", brave: "Brave API" };
 const PAGE_FETCHERS = {
@@ -129,6 +130,7 @@ async function searchEngines(engines, query, pages = pagesPerEngine(), onProgres
     const cap = e === "google" || e === "brave" ? Math.min(pages, API_PAGE_CAP) : pages, seen = new Set();
     let read = 0, got = 0;
     for (let p = 1; p <= cap; p++) {
+      if (p > 1 && BROWSER_ENGINES.has(e)) await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000)); // giãn nhịp để không gửi dồn dập vào engine
       onProgress && onProgress({ engine: e, page: p, pages: cap, results: got, state: "start" });
       let res;
       try { res = await PAGE_FETCHERS[e](query, p); } catch (err) { errors[e] = `trang ${p}: ${err.message}`; onProgress && onProgress({ engine: e, page: p, pages: cap, results: got, state: "error", message: err.message }); break; }

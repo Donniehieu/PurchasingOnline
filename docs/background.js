@@ -57,7 +57,7 @@ function readPage(mode) {
       byHref.set(a.href, { score, item: { url: a.href, title: title.slice(0, 160), snippet: text(block).replace(title, "").trim().slice(0, 320) } });
     }
     const out = [...byHref.values()].map((v) => v.item);
-    return { title: document.title, results: out, bodyLen: document.body ? document.body.innerText.length : 0 };
+    return { title: document.title, results: out, bodyLen: document.body ? document.body.innerText.length : 0, bodyText: document.body ? text(document.body).slice(0, 240) : "" };
   }
   if (mode === "images") {
     // Trang kết quả hình ảnh (Google/Bing): ưu tiên link ảnh gốc trong imgres/murl, không có thì lấy ảnh thu nhỏ.
@@ -75,7 +75,7 @@ function readPage(mode) {
       seen.add(src);
       out.push({ thumb: src.startsWith("data:") && src.length > 400000 ? "" : src, full, page, title: (img.alt || "").slice(0, 160), width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
     }
-    return { title: document.title, images: out };
+    return { title: document.title, images: out, bodyText: document.body ? text(document.body).slice(0, 240) : "" };
   }
   if (mode === "links") {
     const skip = /(^|\.)(coccoc\.com|google\.[a-z.]+|gstatic\.com|googleusercontent\.com|facebook\.com|youtube\.com)$/i;

@@ -37,7 +37,11 @@ function timeout(ms = 15000) { const c = new AbortController(); setTimeout(() =>
 const enc = encodeURIComponent;
 
 /* ---------------- tìm web theo từng trang kết quả ---------------- */
-const BLOCKED = /sorry|unusual traffic|captcha|verify you|xác minh|are you a robot|access denied/i;
+const BLOCKED = /sorry|unusual traffic|captcha|verify you|xác minh|are you a robot|access denied|\b403\b|forbidden|does not have permission|not allowed|too many requests|\b429\b/i;
+/** Engine từ chối phục vụ (CAPTCHA, 403, quá nhiều yêu cầu): báo rõ để bạn xử lý, app không tìm cách vượt qua. */
+function blockedError(label, data) {
+  return new Error(`${label} từ chối truy cập${data.bodyText ? ` ("${data.bodyText.slice(0, 90)}")` : ""}. Đây là chặn từ phía ${label}, app không vượt qua được. Hãy đợi vài phút rồi thử lại, mở ${label} trong trình duyệt để xác minh nếu có, giảm số trang kết quả, hoặc bỏ tick engine này và dùng engine khác.`);
+}
 
 /** Mỗi engine: cách dựng URL của trang kết quả thứ p (bắt đầu từ 1). */
 export const ENGINE_PAGES = {
@@ -87,7 +91,7 @@ async function resolveAll(results) {
 export async function serpPage(engine, query, page) {
   const def = ENGINE_PAGES[engine]; if (!def) throw new Error(`Engine không hỗ trợ: ${engine}`);
   const data = await renderPage(def.url(query, page), "serp");
-  if (!data.results.length && BLOCKED.test(data.title || "")) throw new Error(`${def.label} yêu cầu xác minh. Hãy mở ${def.label} trong trình duyệt, xác minh rồi thử lại (app không vượt qua bước này)`);
+  if (!data.results.length && (BLOCKED.test(data.title || "") || BLOCKED.test(data.bodyText || ""))) throw blockedError(def.label, data);
   return { results: await resolveAll(data.results), raw: data.results.length };
 }
 
@@ -123,7 +127,7 @@ export async function browserImages(engine, query) {
     brave: `https://search.brave.com/images?q=${enc(query)}`,
   };
   const data = await renderPage(urls[engine], "images");
-  if (!data.images.length && BLOCKED.test(data.title || "")) throw new Error(`${engine} yêu cầu xác minh, hãy mở trang ảnh trong trình duyệt và xác minh rồi thử lại`);
+  if (!data.images.length && (BLOCKED.test(data.title || "") || BLOCKED.test(data.bodyText || ""))) throw blockedError(`${engine === "google" ? "Google" : engine === "bing" ? "Bing" : "Brave"} Hình ảnh`, data);
   return data.images.map((i) => ({ image_url: i.full || i.thumb, thumb_url: i.thumb, page_url: i.page, title: i.title }));
 }
 
