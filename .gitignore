@@ -1,0 +1,8 @@
+# Dữ liệu cục bộ, không đưa lên GitHub
+data/
+jobs/
+__pycache__/
+*.pyc
+.venv/
+.env
+~$*.xlsx

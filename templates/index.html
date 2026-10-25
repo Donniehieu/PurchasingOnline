@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mua hàng tự động</title>
+<style>
+  :root {
+    --accent:#4f46e5; --accent2:#7c3aed; --accent-soft:#eef0ff; --green:#8fd14f; --bg1:#f6f7fd; --bg2:#eceffd;
+    --card:#ffffff; --line:#e6e9f4; --text:#1f2540; --muted:#6b7394; --hover:#f0f2ff;
+    --shadow:0 10px 30px rgba(40,50,110,.08); --radius:18px; --danger:#dc2626;
+  }
+  body.dark {
+    --accent:#8b8cff; --accent2:#a78bfa; --accent-soft:#262a4a; --bg1:#0f1220; --bg2:#141830; --card:#1a1f38; --line:#2c3356;
+    --text:#e8eaf8; --muted:#9aa2c8; --hover:#232a4d; --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Inter,"Segoe UI",system-ui,Arial,sans-serif; color:var(--text); background:linear-gradient(160deg,var(--bg1),var(--bg2)) fixed; min-height:100vh; line-height:1.45; }
+  header { position:sticky; top:0; z-index:10; backdrop-filter:blur(14px); background:color-mix(in srgb,var(--card) 82%,transparent); border-bottom:1px solid var(--line); }
+  .bar { max-width:1240px; margin:0 auto; padding:12px 20px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+  .brand { font-weight:800; font-size:18px; background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  nav { display:flex; gap:4px; background:var(--accent-soft); padding:4px; border-radius:999px; flex:0 1 auto; flex-wrap:wrap; }
+  nav button { background:none; color:var(--muted); border:0; border-radius:999px; padding:8px 16px; font-weight:600; box-shadow:none; }
+  nav button.active { background:var(--card); color:var(--accent); box-shadow:0 2px 8px rgba(40,50,110,.12); }
+  .spacer { flex:1; }
+  main { max-width:1240px; margin:0 auto; padding:24px 20px 60px; }
+  h3 { margin:22px 0 10px; font-size:17px; } h3.first { margin-top:0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:22px; margin-bottom:20px; box-shadow:var(--shadow); }
+  label { display:block; font-weight:600; font-size:13px; margin:12px 0 6px; color:var(--muted); }
+  input[type=text], input[type=number], input[type=email], input[type=password], input[type=search], select, textarea {
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:12px; font:inherit; background:var(--card); color:var(--text); transition:border-color .15s, box-shadow .15s; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent); }
+  .row { display:flex; gap:14px; flex-wrap:wrap; } .row > div { flex:1; min-width:200px; }
+  button, a.button, label.button { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; border:0; border-radius:999px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600; text-decoration:none; display:inline-block; box-shadow:0 6px 16px color-mix(in srgb,var(--accent) 30%,transparent); transition:transform .12s, box-shadow .12s; margin:0; }
+  button:hover, a.button:hover { transform:translateY(-1px); }
+  button:disabled { background:#aab0c8; box-shadow:none; cursor:default; transform:none; }
+  button.secondary, a.button.secondary, label.button.secondary { background:var(--card); color:var(--accent); border:1px solid var(--line); box-shadow:none; }
+  button.small { padding:6px 12px; font-size:12px; }
+  .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; align-items:center; }
+  .muted { color:var(--muted); font-size:13px; } .error { color:var(--danger); font-weight:600; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:6px 14px; font-weight:500; font-size:13px; margin:0; cursor:pointer; display:inline-flex; gap:6px; align-items:center; color:var(--text); background:var(--card); }
+  .chip.static { cursor:default; background:var(--accent-soft); border-color:transparent; }
+  .chip:has(input:checked) { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .engines { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; } .engines label { margin:0; color:var(--text); font-weight:500; }
+  .engines .off { opacity:.5; }
+  .log { font-family:Consolas,monospace; font-size:12px; background:#0f1424; color:#dfe5ff; padding:12px; border-radius:12px; max-height:180px; overflow:auto; white-space:pre-wrap; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:10px 0; }
+  .toolbar input[type=search] { max-width:280px; } .toolbar select { max-width:200px; }
+  details.cols { position:relative; } details.cols summary { list-style:none; cursor:pointer; border:1px solid var(--line); border-radius:999px; padding:9px 16px; font-size:14px; font-weight:600; color:var(--accent); background:var(--card); }
+  details.cols summary::-webkit-details-marker { display:none; }
+  details.cols .menu { position:absolute; z-index:6; top:44px; left:0; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 14px; box-shadow:var(--shadow); min-width:220px; }
+  .menu label { margin:4px 0; color:var(--text); font-weight:500; display:flex; gap:8px; align-items:center; }
+  .table-wrap { max-height:460px; overflow:auto; border:1px solid var(--line); border-radius:14px; cursor:grab; user-select:none; }
+  .table-wrap.dragging { cursor:grabbing; }
+  table { border-collapse:separate; border-spacing:0; font-size:14px; min-width:1100px; width:100%; background:var(--card); }
+  th, td { border-bottom:1px solid var(--line); padding:10px 12px; text-align:left; vertical-align:top; }
+  th { background:var(--accent); color:#fff; position:sticky; top:0; z-index:2; font-weight:600; white-space:nowrap; } body.dark th { color:#0f1220; }
+  tbody tr:hover td { background:var(--hover); }
+  tr.recommended td { background:var(--green); color:#1d2a10; font-weight:700; } tr.recommended:hover td { background:#7cc23f; }
+  tr.recommended a { color:#14308a; }
+  tr.excluded td { color:var(--muted); }
+  [contenteditable] { user-select:text; cursor:text; border-radius:6px; padding:2px 4px; min-width:40px; display:inline-block; outline:none; }
+  [contenteditable]:hover { background:color-mix(in srgb,var(--accent) 10%,transparent); }
+  [contenteditable]:focus { background:var(--card); box-shadow:0 0 0 2px var(--accent); color:var(--text); }
+  td select { padding:4px 8px; border-radius:8px; width:auto; }
+  .saved { color:#16a34a; font-size:13px; font-weight:600; }
+  a { color:var(--accent); }
+  .bar-row { display:flex; align-items:center; gap:10px; margin:7px 0; font-size:13px; }
+  .bar-label { width:220px; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar-track { flex:1; background:var(--accent-soft); border-radius:999px; height:20px; overflow:hidden; } .bar-fill { height:100%; border-radius:999px; background:linear-gradient(90deg,var(--accent),var(--accent2)); } .bar-fill.best { background:linear-gradient(90deg,#65b32e,var(--green)); }
+  .bar-value { width:170px; }
+  ul.points { padding-left:20px; margin:6px 0; line-height:1.65; }
+  .closing { background:var(--accent-soft); border-left:4px solid var(--accent); padding:12px 14px; border-radius:10px; line-height:1.6; }
+  .block { border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
+  .block h4 { margin:0 0 4px; color:var(--accent); font-size:14px; }
+  .q-card .q-title { font-weight:700; color:var(--accent); } .q-card .opt { display:block; font-weight:500; color:var(--text); margin:6px 0; cursor:pointer; }
+  .q-card .custom { margin:4px 0 0 24px; width:calc(100% - 24px); display:none; } .q-card .custom.show { display:block; }
+  .stats, .metrics { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  .stat { border:1px solid var(--line); border-radius:14px; padding:12px; background:linear-gradient(180deg,var(--card),var(--accent-soft)); font-size:13px; color:var(--muted); } .stat b { display:block; font-size:18px; color:var(--text); margin-top:2px; }
+  .group { border:1px solid var(--line); border-radius:16px; margin-bottom:12px; background:var(--card); overflow:hidden; }
+  .group-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:14px 18px; cursor:pointer; flex-wrap:wrap; }
+  .group-head:hover { background:var(--hover); } .group-head .name { font-weight:700; font-size:15px; }
+  .group-body { padding:4px 18px 18px; border-top:1px dashed var(--line); }
+  .jobrow { display:flex; justify-content:space-between; border:1px solid var(--line); border-radius:10px; padding:8px 12px; margin:6px 0; cursor:pointer; font-size:13px; flex-wrap:wrap; gap:8px; } .jobrow:hover { background:var(--hover); }
+  .modal-bg { position:fixed; inset:0; background:rgba(15,18,32,.55); display:none; align-items:center; justify-content:center; z-index:20; padding:16px; backdrop-filter:blur(3px); }
+  .modal-bg.show { display:flex; }
+  .modal { background:var(--card); border-radius:20px; padding:22px; width:min(560px,100%); max-height:90vh; overflow:auto; box-shadow:var(--shadow); }
+  .contact-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-top:10px; }
+  .contact-tile { border:1px solid var(--line); border-radius:14px; padding:12px; text-align:center; background:var(--accent-soft); }
+  .contact-tile .t { font-weight:700; margin-bottom:6px; } .contact-tile a { display:block; word-break:break-all; margin:3px 0; font-size:13px; }
+  details.guide { border:1px solid var(--line); border-radius:14px; padding:10px 14px; margin:10px 0; } details.guide summary { cursor:pointer; font-weight:600; } details.guide ol { line-height:1.7; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#10162e; color:#fff; padding:11px 18px; border-radius:999px; display:none; z-index:30; box-shadow:var(--shadow); }
+  table.plain { min-width:0; } table.plain th { position:static; }
+  [hidden] { display:none !important; }
+  @media print { header, form, .actions, .toolbar { display:none !important; } }
+  @media (max-width:640px) { .bar-label { width:110px; } .bar-value { width:110px; font-size:12px; } .card { padding:16px; } }
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <span class="brand">Mua hàng tự động</span>
+  <nav>
+    <button data-tab="new" class="active">Yêu cầu mới</button>
+    <button data-tab="history">Lịch sử tìm kiếm</button>
+    <button data-tab="edits">Lịch sử điều chỉnh</button>
+    <button data-tab="settings">Cài đặt</button>
+  </nav>
+  <span class="spacer"></span>
+  <button class="secondary small" id="theme-btn" type="button">Chế độ tối</button>
+</div></header>
+
+<main>
+<!-- ============ YÊU CẦU MỚI ============ -->
+<div id="tab-new">
+  <section class="card">
+    <form id="request-form">
+      <div class="row">
+        <div><label for="query">Tên sản phẩm cần mua</label><input type="text" id="query" name="query" placeholder="VD: áo điều hòa pin 20000mAh 18V"></div>
+        <div><label for="product-code">Mã / model (tùy chọn)</label><input type="text" id="product-code" name="product_code" placeholder="VD: GIFV F20, Yamako Hero Light"></div>
+      </div>
+      <div class="row">
+        <div><label for="quantity">Số lượng</label><input type="number" id="quantity" name="quantity" min="1" value="1"></div>
+        <div><label for="purpose">Mục đích sử dụng</label><input type="text" id="purpose" name="purpose" placeholder="VD: công nhân làm ngoài trời"></div>
+        <div><label for="images">Ảnh sản phẩm (đọc cả chữ trong ảnh)</label><input type="file" id="images" name="images" accept="image/*" multiple></div>
+      </div>
+      <label>Tìm hiểu thêm về sản phẩm (tick để thêm từ khóa tìm kiếm)</label>
+      <div class="chips" id="topics"></div>
+      <label for="extra-keywords">Từ khóa tìm kiếm thêm (tùy chọn)</label>
+      <input type="text" id="extra-keywords" name="extra_keywords" placeholder="VD: chính hãng, xuất hóa đơn VAT, giao hàng toàn quốc">
+      <label>Engine tìm kiếm</label>
+      <div class="engines" id="engines">Đang tải...</div>
+      <p class="muted">Engine mờ là chưa có khóa: vào tab <a href="#" data-goto="settings">Cài đặt</a> để nhập.</p>
+      <label for="seed-urls">Link NCC / website (tùy chọn, mỗi dòng một link)</label>
+      <textarea id="seed-urls" name="seed_urls" rows="3" placeholder="https://..."></textarea>
+      <div class="actions">
+        <label class="button secondary">Nhập link từ Excel/CSV<input type="file" id="link-file" accept=".xlsx,.csv,.txt" hidden></label>
+        <span class="muted" id="link-status"></span>
+      </div>
+      <p class="muted">Để trống link: app tự tìm NCC và tự điền link.</p>
+      <div class="actions"><button type="submit" id="submit-btn">Tìm NCC và điền form</button></div>
+    </form>
+  </section>
+
+  <section class="card" id="cards-card" hidden>
+    <h3 class="first">Xác nhận thông tin sản phẩm trước khi tìm</h3>
+    <p class="muted">Chọn đáp án đúng. Chọn "Khác" để nhập riêng. Chưa xác nhận thì app chưa tìm kiếm.</p>
+    <div id="cards"></div>
+    <div class="actions"><button type="button" id="confirm-btn">Xác nhận và tìm kiếm</button></div>
+    <div id="cards-error" class="error"></div>
+  </section>
+
+  <section class="card" id="status-card" hidden>
+    <h3 class="first">Tiến trình</h3>
+    <div id="status-text" class="muted"></div><div class="log" id="log"></div><div id="error" class="error"></div>
+  </section>
+
+  <section class="card" id="result-card" hidden>
+    <h3 class="first">Bảng so sánh NCC</h3>
+    <p class="muted">Bấm vào ô để sửa, thay đổi được tự lưu, chấm điểm lại và cập nhật file Excel. Giữ chuột kéo để xem trái/phải/lên/xuống.</p>
+    <div class="toolbar">
+      <input type="search" id="filter-text" placeholder="Lọc theo tên, ghi chú...">
+      <select id="filter-status"><option value="all">Tất cả NCC</option><option value="recommended">Chỉ khuyến nghị</option><option value="eligible">Đủ điều kiện</option><option value="excluded">Bị loại</option><option value="priced">Có giá</option></select>
+      <details class="cols"><summary>Ẩn/hiện cột</summary><div class="menu" id="col-menu"></div></details>
+      <span class="saved" id="save-state"></span>
+    </div>
+    <div class="table-wrap" id="table-wrap"><div id="result-table"></div></div>
+
+    <h3>Giá và tỷ lệ so sánh</h3>
+    <div class="stats" id="price-stats"></div>
+    <div id="price-bars" style="margin-top:12px"></div>
+
+    <div id="research-wrap" hidden><h3>Kiến thức sản phẩm (từ web)</h3><div id="research"></div></div>
+
+    <h3>Kịch bản đàm phán với NCC</h3><div id="negotiation"></div>
+    <h3>Luận điểm thuyết phục sếp</h3><div id="persuasion"></div>
+    <div class="actions"><button type="button" class="secondary" id="copy-persuasion">Sao chép luận điểm</button>
+      <button type="button" class="secondary" onclick="window.print()">In trang</button></div>
+
+    <h3>Xuất file và gửi sếp</h3>
+    <div class="actions">
+      <a id="download" class="button" href="#">Xuất form Excel (.xlsx)</a>
+      <a id="export-links" class="button secondary" href="#">Xuất link NCC (.xlsx)</a>
+    </div>
+    <div class="row"><div><label for="boss-email">Email sếp (tùy chọn)</label>
+      <input type="email" id="boss-email" placeholder="Để trống: chỉ xuất file, không gửi email"></div></div>
+    <div class="actions"><button type="button" id="send-btn" class="secondary">Gửi email cho sếp</button></div>
+    <p class="muted" id="send-status">Không có email thì app không tự gửi, chỉ tải file xlsx về để bạn gửi thủ công.</p>
+  </section>
+</div>
+
+<!-- ============ LỊCH SỬ TÌM KIẾM ============ -->
+<div id="tab-history" hidden>
+  <section class="card">
+    <h3 class="first">Lịch sử theo sản phẩm</h3>
+    <p class="muted">Bấm vào phiếu sản phẩm để xem các chỉ tiêu tổng hợp. Bấm "Đóng" để thu lại.</p>
+    <div class="actions" style="margin-top:0"><a class="button secondary" href="/api/history/groups.xlsx">Xuất tổng hợp (.xlsx)</a>
+      <input type="search" id="history-filter" placeholder="Lọc theo tên sản phẩm" style="max-width:280px"></div>
+    <div id="history" style="margin-top:14px"></div>
+  </section>
+</div>
+
+<!-- ============ LỊCH SỬ ĐIỀU CHỈNH ============ -->
+<div id="tab-edits" hidden>
+  <section class="card">
+    <h3 class="first">Lịch sử điều chỉnh form</h3>
+    <div class="toolbar">
+      <input type="search" id="edit-filter" placeholder="Lọc theo sản phẩm, NCC, trường...">
+      <select id="edit-field"><option value="">Mọi trường</option></select>
+      <a class="button secondary" href="/api/history/edits.xlsx">Xuất (.xlsx)</a>
+      <details class="cols"><summary>Ẩn/hiện cột</summary><div class="menu" id="edit-col-menu"></div></details>
+    </div>
+    <div class="table-wrap" style="cursor:auto;user-select:text"><div id="edits-table"></div></div>
+  </section>
+</div>
+
+<!-- ============ CÀI ĐẶT ============ -->
+<div id="tab-settings" hidden>
+  <section class="card">
+    <h3 class="first">Khóa API và cấu hình</h3>
+    <p class="muted">Khóa lưu trong file <code>data/settings.json</code> trên máy chạy app, không đưa lên GitHub. Ô để trống nghĩa là giữ nguyên. Giao diện chỉ hiện khóa đã che bớt.
+      Google và Brave không có đăng nhập tài khoản để cấp quyền (không dùng OAuth), nên cách duy nhất là dán khóa vào đây.</p>
+
+    <h3>Google</h3>
+    <details class="guide" open><summary>Hướng dẫn lấy khóa Google (đọc kỹ cảnh báo)</summary>
+      <p class="error">Cảnh báo: Google đã đóng Custom Search JSON API với khách hàng mới (ngừng hẳn từ 01/01/2027). Dự án mới thường bị lỗi 403 dù làm đúng các bước. Nếu nút "Thử kết nối" báo 403, hãy dùng Brave.</p>
+      <ol>
+        <li>Vào <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>, đăng nhập Google, tạo một Project mới.</li>
+        <li>Menu <b>APIs &amp; Services → Library</b>, tìm <b>Custom Search API</b>, bấm <b>Enable</b>.</li>
+        <li>Menu <b>APIs &amp; Services → Credentials → Create credentials → API key</b>. Sao chép khóa, dán vào ô "Google API key" bên dưới.</li>
+        <li>Vào <a href="https://programmablesearchengine.google.com/" target="_blank" rel="noopener">programmablesearchengine.google.com</a>, bấm <b>Add</b>, tạo công cụ tìm kiếm. Mở công cụ vừa tạo, sao chép <b>Search engine ID</b>, dán vào ô "Search engine ID (cx)".</li>
+        <li>Bấm <b>Lưu cài đặt</b> rồi <b>Thử kết nối</b>. Hạn mức miễn phí trước đây: 100 lượt/ngày.</li>
+      </ol>
+    </details>
+    <div class="row">
+      <div><label>Google API key <span data-status="GOOGLE_CSE_API_KEY"></span></label><input type="password" data-setting="GOOGLE_CSE_API_KEY" autocomplete="off"></div>
+      <div><label>Search engine ID (cx) <span data-status="GOOGLE_CSE_ID"></span></label><input type="text" data-setting="GOOGLE_CSE_ID" autocomplete="off"></div>
+    </div>
+    <div class="actions"><button type="button" class="secondary" data-test="google">Thử kết nối Google</button><span class="muted" data-result="google"></span></div>
+
+    <h3>Brave Search</h3>
+    <details class="guide" open><summary>Hướng dẫn lấy khóa Brave</summary>
+      <ol>
+        <li>Vào <a href="https://brave.com/search/api/" target="_blank" rel="noopener">brave.com/search/api</a>, tạo tài khoản và chọn gói <b>Search</b>.</li>
+        <li>Theo các nguồn tôi tìm được, gói mới tính theo lượng dùng, có khoảng 5 USD tín dụng mỗi tháng (khoảng 1.000 lượt) và có thể yêu cầu thẻ thanh toán. Hãy xác nhận trên trang giá chính thức của Brave.</li>
+        <li>Trong trang quản lý (Dashboard), mục <b>API Keys</b>, tạo khóa và sao chép (gọi là subscription token).</li>
+        <li>Dán vào ô bên dưới, bấm <b>Lưu cài đặt</b> rồi <b>Thử kết nối</b>.</li>
+      </ol>
+    </details>
+    <div class="row"><div><label>Brave API key <span data-status="BRAVE_API_KEY"></span></label><input type="password" data-setting="BRAVE_API_KEY" autocomplete="off"></div></div>
+    <div class="actions"><button type="button" class="secondary" data-test="brave">Thử kết nối Brave</button><span class="muted" data-result="brave"></span></div>
+
+    <h3>Anthropic (nhận diện ảnh và đọc chữ trong ảnh)</h3>
+    <details class="guide"><summary>Hướng dẫn lấy khóa Anthropic</summary>
+      <ol><li>Vào <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>, tạo tài khoản và nạp tín dụng (tính phí theo lượng dùng).</li>
+      <li>Mục <b>API Keys</b>, tạo khóa mới (bắt đầu bằng sk-ant-), dán vào ô bên dưới.</li></ol>
+    </details>
+    <div class="row"><div><label>Anthropic API key <span data-status="ANTHROPIC_API_KEY"></span></label><input type="password" data-setting="ANTHROPIC_API_KEY" autocomplete="off"></div></div>
+    <div class="actions"><button type="button" class="secondary" data-test="anthropic">Thử kết nối Anthropic</button><span class="muted" data-result="anthropic"></span></div>
+
+    <h3>Email gửi sếp (tùy chọn)</h3>
+    <div class="row">
+      <div><label>Email sếp</label><input type="text" data-setting="BOSS_EMAIL"></div>
+      <div><label>Email người gửi</label><input type="text" data-setting="SMTP_FROM"></div>
+    </div>
+    <div class="row">
+      <div><label>SMTP host (VD smtp.gmail.com)</label><input type="text" data-setting="SMTP_HOST"></div>
+      <div><label>SMTP port</label><input type="text" data-setting="SMTP_PORT" placeholder="587"></div>
+      <div><label>SMTP user</label><input type="text" data-setting="SMTP_USER"></div>
+      <div><label>SMTP password <span data-status="SMTP_PASSWORD"></span></label><input type="password" data-setting="SMTP_PASSWORD" autocomplete="off"></div>
+    </div>
+    <div class="actions"><button type="button" id="save-settings">Lưu cài đặt</button><span class="muted" id="settings-status"></span></div>
+  </section>
+</div>
+</main>
+
+<div class="modal-bg" id="contact-modal"><div class="modal" id="contact-body"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let pollTimer = null, currentJobId = null, currentJob = null, bossEmailConfigured = false;
+
+function esc(t) { return String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function money(v) { return v ? Number(v).toLocaleString("vi-VN") + " đ" : "Chưa rõ"; }
+function shortDate(iso) { if (!iso) return ""; const [y,m,d] = iso.split("T")[0].split("-"); return `${d}/${m}/${y}`; }
+function dateTime(iso) { return (iso || "").replace("T", " "); }
+function safeUrl(u) { return /^https?:\/\//i.test(u || "") ? u : ""; }
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 2600); }
+async function api(url, opts) { const r = await fetch(url, opts); let b = {}; try { b = await r.json(); } catch (e) {} return { ok: r.ok, body: b }; }
+function store(key, value) { try { if (value === undefined) return JSON.parse(localStorage.getItem(key)); localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} return null; }
+
+/* ---------- Tab + giao diện sáng/tối ---------- */
+const TABS = ["new", "history", "edits", "settings"];
+function showTab(name) {
+  TABS.forEach((t) => $("tab-" + t).hidden = t !== name);
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  if (name === "history") loadHistory();
+  if (name === "edits") loadEdits();
+  if (name === "settings") loadSettings();
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+document.querySelectorAll("[data-goto]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); showTab(a.dataset.goto); }));
+if (store("theme") === "dark") document.body.classList.add("dark");
+$("theme-btn").addEventListener("click", () => { document.body.classList.toggle("dark"); store("theme", document.body.classList.contains("dark") ? "dark" : "light"); });
+
+/* ---------- Engine + chủ đề ---------- */
+async function loadEngines() {
+  const { body } = await api("/api/engines");
+  $("engines").innerHTML = body.map((e) => `<label class="chip ${e.available ? "" : "off"}" title="${esc(e.reason)}">
+    <input type="checkbox" name="engines" value="${e.id}" ${e.available && e.id === "bing" ? "checked" : ""} ${e.available ? "" : "disabled"}>
+    ${esc(e.label)}${e.available ? "" : " (chưa cấu hình)"}</label>`).join("");
+}
+async function loadTopics() {
+  const { body } = await api("/api/topics");
+  $("topics").innerHTML = body.map((t) => `<label class="chip"><input type="checkbox" name="topics" value="${t.id}"> ${esc(t.label)}</label>`).join("");
+}
+$("link-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const data = new FormData(); data.append("file", file);
+  const { ok, body } = await api("/api/links/import", { method: "POST", body: data });
+  if (!ok) { $("link-status").textContent = body.error; return; }
+  $("seed-urls").value = [$("seed-urls").value.trim(), ...body.urls].filter(Boolean).join("\n");
+  $("link-status").textContent = `Đã nhập ${body.urls.length} link từ ${file.name}`; e.target.value = "";
+});
+
+/* ---------- Kéo để xem bảng (không chặn sửa ô) ---------- */
+(function () {
+  const wrap = $("table-wrap"); let drag = false, sx = 0, sy = 0, sl = 0, st = 0;
+  wrap.addEventListener("mousedown", (e) => {
+    if (e.target.closest("[contenteditable],select,button,a,input")) return;
+    drag = true; sx = e.clientX; sy = e.clientY; sl = wrap.scrollLeft; st = wrap.scrollTop; wrap.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", (e) => { if (!drag) return; wrap.scrollLeft = sl - (e.clientX - sx); wrap.scrollTop = st - (e.clientY - sy); });
+  window.addEventListener("mouseup", () => { drag = false; wrap.classList.remove("dragging"); });
+})();
+
+/* ---------- Cột bảng: ẩn/hiện + lọc ---------- */
+const COLUMNS = [
+  { key: "name", label: "NCC" }, { key: "price", label: "Đơn giá" }, { key: "mah", label: "Pin (mAh)" }, { key: "volt", label: "Điện áp (V)" },
+  { key: "warranty_months", label: "Bảo hành (tháng)" }, { key: "vat", label: "VAT" }, { key: "date", label: "Ngày cập nhật web" },
+  { key: "note", label: "Ghi chú" }, { key: "contact", label: "Liên hệ" }, { key: "score", label: "Điểm" }, { key: "status", label: "Trạng thái" },
+];
+let hiddenCols = new Set(store("hiddenCols") || []);
+function buildColMenu() {
+  $("col-menu").innerHTML = COLUMNS.map((c) => `<label><input type="checkbox" data-col-toggle="${c.key}" ${hiddenCols.has(c.key) ? "" : "checked"} ${c.key === "name" ? "disabled" : ""}> ${esc(c.label)}</label>`).join("") +
+    '<button type="button" class="secondary small" id="col-reset" style="margin-top:6px">Hiện tất cả</button>';
+  document.querySelectorAll("[data-col-toggle]").forEach((cb) => cb.addEventListener("change", () => {
+    cb.checked ? hiddenCols.delete(cb.dataset.colToggle) : hiddenCols.add(cb.dataset.colToggle);
+    store("hiddenCols", [...hiddenCols]); applyColumns();
+  }));
+  $("col-reset").addEventListener("click", () => { hiddenCols.clear(); store("hiddenCols", []); buildColMenu(); applyColumns(); });
+}
+function applyColumns() {
+  document.querySelectorAll("#result-table [data-col]").forEach((el) => { el.hidden = hiddenCols.has(el.dataset.col); });
+}
+function applyFilters() {
+  const text = $("filter-text").value.trim().toLowerCase(), mode = $("filter-status").value;
+  document.querySelectorAll("#result-table tbody tr").forEach((tr) => {
+    const s = currentJob.suppliers.find((x) => x.url === tr.dataset.url) || {};
+    let ok = !text || tr.textContent.toLowerCase().includes(text);
+    if (mode === "recommended") ok = ok && s.recommended;
+    if (mode === "eligible") ok = ok && s.eligible;
+    if (mode === "excluded") ok = ok && !s.eligible;
+    if (mode === "priced") ok = ok && !!s.price;
+    tr.hidden = !ok;
+  });
+}
+$("filter-text").addEventListener("input", applyFilters);
+$("filter-status").addEventListener("change", applyFilters);
+
+/* ---------- Liên hệ NCC ---------- */
+function rfqText(job, s) {
+  const spec = [job.spec && job.spec.mah ? `pin ${job.spec.mah} mAh` : "", job.spec && job.spec.volt ? `${job.spec.volt}V` : ""].filter(Boolean).join(", ");
+  return `Kính gửi ${s.name},\n\nCông ty chúng tôi cần mua: ${job.query}${spec ? " (" + spec + ")" : ""}, số lượng ${job.quantity}.\n` +
+    `Mục đích sử dụng: ${job.purpose || "chưa nêu"}.\n\nXin anh/chị vui lòng gửi báo giá gồm:\n- Đơn giá chưa VAT và đã VAT\n- Thông số kỹ thuật, model, xuất xứ\n- Thời gian bảo hành, chính sách đổi trả\n- Thời gian giao hàng, phí vận chuyển\n- Chiết khấu theo số lượng\n- Hiệu lực báo giá\n\nXin cảm ơn và mong sớm nhận phản hồi.`;
+}
+function openContact(url) {
+  const job = currentJob, s = job.suppliers.find((x) => x.url === url), c = s.contacts || {};
+  const tiles = [];
+  const tile = (title, links) => { if (links.length) tiles.push(`<div class="contact-tile"><div class="t">${title}</div>${links.join("")}</div>`); };
+  tile("Gọi điện", (c.phones || []).map((p) => `<a href="tel:${esc(p)}">${esc(p)}</a>`));
+  tile("Zalo" + (c.zalo_guess ? " (theo số ĐT, chưa xác nhận)" : ""), (c.zalo || []).filter(safeUrl).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">Mở Zalo</a>`));
+  tile("Messenger", (c.messenger || []).filter(safeUrl).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">Nhắn Messenger</a>`));
+  tile("Facebook", (c.facebook || []).filter(safeUrl).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">Trang Facebook</a>`));
+  const subject = encodeURIComponent("Đề nghị báo giá: " + job.query), body = encodeURIComponent(rfqText(job, s));
+  tile("Email", (c.emails || []).map((m) => `<a href="mailto:${esc(m)}?subject=${subject}&body=${body}">${esc(m)}</a>`));
+  tile("Skype", (c.skype || []).map((k) => `<a href="skype:${esc(k)}?chat">${esc(k)}</a>`));
+  tile("Website", safeUrl(c.website) ? [`<a href="${esc(c.website)}" target="_blank" rel="noopener">Mở website</a>`, `<a href="${esc(s.url)}" target="_blank" rel="noopener">Trang sản phẩm</a>`] : []);
+  $("contact-body").innerHTML = `<h3 class="first">Liên hệ ${esc(s.name)}</h3>
+    ${tiles.length ? `<div class="contact-grid">${tiles.join("")}</div>` : '<p class="muted">Không tìm thấy thông tin liên hệ trên trang này. Hãy mở website và tìm mục Liên hệ.</p>'}
+    <p class="muted">Liên hệ lấy từ nội dung trang web, hãy kiểm tra lại trước khi dùng.</p>
+    <div class="actions"><button type="button" id="copy-rfq">Sao chép email hỏi giá</button><button type="button" class="secondary" id="close-contact">Đóng</button></div>`;
+  $("copy-rfq").onclick = () => navigator.clipboard.writeText(rfqText(job, s)).then(() => toast("Đã sao chép nội dung hỏi giá"));
+  $("close-contact").onclick = () => $("contact-modal").classList.remove("show");
+  $("contact-modal").classList.add("show");
+}
+$("contact-modal").addEventListener("click", (e) => { if (e.target.id === "contact-modal") $("contact-modal").classList.remove("show"); });
+
+/* ---------- Bảng kết quả (sửa ô tự lưu) ---------- */
+function editable(s, field, text) {
+  return `<span contenteditable="true" spellcheck="false" data-edit="${field}" data-url="${esc(s.url)}" data-orig="${esc(text)}">${esc(text)}</span>`;
+}
+function renderTable(job) {
+  const wrap = $("table-wrap"), left = wrap.scrollLeft, top = wrap.scrollTop;
+  const rows = job.suppliers.map((s) => {
+    const cls = s.recommended ? "recommended" : (s.eligible ? "" : "excluded");
+    const vatSel = `<select data-edit="vat" data-url="${esc(s.url)}" data-orig="${s.vat === true ? "Có" : s.vat === false ? "Không" : "Chưa rõ"}">
+      ${["Có", "Không", "Chưa rõ"].map((o) => `<option ${((s.vat === true && o === "Có") || (s.vat === false && o === "Không") || (s.vat === null && o === "Chưa rõ")) ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+    const status = s.recommended ? "★ Khuyến nghị" : (s.eligible ? "Đủ điều kiện" : esc(s.reason));
+    return `<tr class="${cls}" data-url="${esc(s.url)}">
+      <td data-col="name"><a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener" title="Mở website">↗</a> ${editable(s, "name", s.name)}</td>
+      <td data-col="price">${editable(s, "price", s.price ? String(s.price) : "")}${s.vat_included ? '<div class="muted">(đã gồm VAT)</div>' : ""}</td>
+      <td data-col="mah">${editable(s, "mah", s.mah ? String(s.mah) : "")}</td>
+      <td data-col="volt">${editable(s, "volt", s.volt ? String(s.volt) : "")}</td>
+      <td data-col="warranty_months">${editable(s, "warranty_months", s.warranty_months != null ? String(s.warranty_months) : "")}</td>
+      <td data-col="vat">${vatSel}</td>
+      <td data-col="date">${editable(s, "date", shortDate(s.date))}</td>
+      <td data-col="note">${editable(s, "note", s.note || "")}</td>
+      <td data-col="contact"><button type="button" class="secondary small" data-contact="${esc(s.url)}">Liên hệ NCC</button></td>
+      <td data-col="score">${s.score ?? "-"}</td><td data-col="status">${status}</td></tr>`;
+  }).join("");
+  $("result-table").innerHTML = `<table><thead><tr>${COLUMNS.map((c) => `<th data-col="${c.key}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+  document.querySelectorAll("[data-contact]").forEach((b) => b.addEventListener("click", () => openContact(b.dataset.contact)));
+  document.querySelectorAll("#result-table [data-edit]").forEach((el) => {
+    const commit = () => saveEdit(el);
+    if (el.tagName === "SELECT") el.addEventListener("change", commit);
+    else {
+      el.addEventListener("blur", commit);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); el.blur(); } if (e.key === "Escape") { el.textContent = el.dataset.orig; el.blur(); } });
+    }
+  });
+  applyColumns(); applyFilters(); wrap.scrollLeft = left; wrap.scrollTop = top;
+}
+async function saveEdit(el) {
+  const value = el.tagName === "SELECT" ? el.value : el.textContent.trim();
+  if (value === el.dataset.orig) return;
+  $("save-state").textContent = "Đang lưu...";
+  const { ok, body } = await api(`/api/jobs/${currentJobId}/supplier`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: el.dataset.url, field: el.dataset.edit, value }) });
+  if (!ok) { $("save-state").textContent = ""; toast(body.error || "Không lưu được"); el.tagName === "SELECT" ? (el.value = el.dataset.orig) : (el.textContent = el.dataset.orig); return; }
+  currentJob = body; renderResult(body);
+  $("save-state").textContent = "Đã tự lưu " + new Date().toLocaleTimeString("vi-VN");
+}
+
+function renderPrice(job) {
+  const st = job.price_stats;
+  $("price-stats").innerHTML = st ? `<div class="stat">Giá trung bình<b>${money(st.mean)}</b></div><div class="stat">Trung vị<b>${money(st.median)}</b></div>
+    <div class="stat">Thấp nhất<b>${money(st.min)}</b></div><div class="stat">Cao nhất<b>${money(st.max)}</b></div><div class="stat">Số NCC có giá<b>${st.count}</b></div>` : "";
+  const priced = job.suppliers.filter((s) => s.price).sort((a, b) => a.price - b.price);
+  if (!priced.length) { $("price-bars").innerHTML = '<p class="muted">Chưa có giá để so sánh.</p>'; return; }
+  const max = Math.max(...priced.map((s) => s.price)), min = priced[0].price;
+  $("price-bars").innerHTML = priced.map((s) => `<div class="bar-row"><div class="bar-label" title="${esc(s.name)}">${esc(s.name)}</div>
+    <div class="bar-track"><div class="bar-fill ${s.recommended ? "best" : ""}" style="width:${(s.price / max * 100).toFixed(1)}%"></div></div>
+    <div class="bar-value">${money(s.price)} · ${(s.price / min * 100).toFixed(0)}%</div></div>`).join("") + '<p class="muted">Tỷ lệ % tính theo NCC có giá thấp nhất (100%).</p>';
+}
+function renderResearch(job) {
+  const keys = Object.keys(job.research || {});
+  $("research-wrap").hidden = !keys.length;
+  $("research").innerHTML = keys.map((k) => {
+    const r = job.research[k];
+    const items = r.snippets.length ? r.snippets.map((s) => `<li>${esc(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`).join("") : "<li class='muted'>Không trích được câu phù hợp.</li>";
+    return `<div class="block"><h4>${esc(r.label)}</h4><div class="muted">Từ khóa: ${esc(r.query)}</div><ul class="points">${items}</ul></div>`;
+  }).join("");
+}
+function list(title, items) { return items && items.length ? `<h4>${title}</h4><ul class="points">${items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""; }
+function renderAnalysis(job) {
+  const neg = job.analysis.negotiation || [];
+  $("negotiation").innerHTML = neg.length ? neg.map((n) => `<div class="block"><b>${esc(n.ncc)}</b> · Giá hiện tại ${money(n.current_price)} · Dự phòng: ${esc(n.backup)}
+    <p class="muted">${esc(n.target_note)}</p>
+    ${list("Điểm mạnh thương lượng (từ dữ liệu thu thập)", n.leverage)}${list("Câu hỏi cần làm rõ với NCC", n.questions)}
+    ${list("Chiến lược thuyết phục NCC", n.strategies)}${list("Các bước đàm phán theo quy trình mua hàng", n.steps)}
+    ${n.references.length ? `<h4>Căn cứ tham khảo trên web</h4><ul class="points">${n.references.map((r) => `<li>[${esc(r.topic)}] ${esc(r.text)} <a href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`).join("")}</ul>` : ""}</div>`).join("")
+    : '<p class="muted">Chưa có NCC khuyến nghị.</p>';
+  const p = job.analysis.persuasion || {};
+  $("persuasion").innerHTML = p.title ? `<p><b>${esc(p.title)}</b></p>${p.sections.map((s) => `<div class="block">${list(esc(s.heading), s.points)}</div>`).join("")}<div class="closing">${esc(p.closing)}</div>` : '<p class="muted">Chưa có luận điểm.</p>';
+}
+$("copy-persuasion").addEventListener("click", () => {
+  const p = (currentJob && currentJob.analysis.persuasion) || {};
+  if (!p.title) return;
+  const text = [p.title, "", ...p.sections.flatMap((s) => [s.heading, ...s.points.map((x) => "- " + x), ""]), p.closing].join("\n");
+  navigator.clipboard.writeText(text).then(() => toast("Đã sao chép"));
+});
+function renderResult(job) {
+  $("result-card").hidden = false;
+  renderTable(job); renderPrice(job); renderResearch(job); renderAnalysis(job);
+  $("download").href = `/api/jobs/${job.id}/file`; $("export-links").href = `/api/jobs/${job.id}/links.xlsx`;
+}
+function render(job) {
+  currentJob = job; currentJobId = job.id;
+  $("status-card").hidden = false;
+  $("status-text").textContent = `Trạng thái: ${job.status}` + (job.keywords ? ` | Từ khóa: ${job.keywords}` : "");
+  $("log").textContent = job.log.join("\n"); $("error").textContent = job.error || "";
+  if (job.status === "done") renderResult(job);
+}
+async function poll(id) {
+  const { body: job } = await api(`/api/jobs/${id}`);
+  render(job);
+  if (job.status === "done" || job.status === "error") { clearInterval(pollTimer); $("submit-btn").disabled = false; }
+}
+
+/* ---------- Question card ---------- */
+function renderCards(job) {
+  $("cards").innerHTML = job.questions.map((card) => `<div class="block q-card"><div class="q-title">${esc(card.title)}</div><div class="muted">${esc(card.question)}</div>
+    ${card.options.map((o) => `<label class="opt"><input type="radio" name="card-${esc(card.id)}" value="${esc(o.value)}" ${o.value === card.default ? "checked" : ""}> ${esc(o.label)}</label>`).join("")}
+    <input type="text" class="custom" data-custom="${esc(card.id)}" placeholder="Nhập nội dung khác"></div>`).join("");
+  document.querySelectorAll("#cards input[type=radio]").forEach((r) => r.addEventListener("change", () => {
+    r.closest(".q-card").querySelector(".custom").classList.toggle("show", r.value === "__custom__" && r.checked);
+  }));
+}
+function collectAnswers(job) {
+  const answers = {};
+  for (const card of job.questions) {
+    const checked = document.querySelector(`input[name="card-${card.id}"]:checked`);
+    const custom = document.querySelector(`[data-custom="${card.id}"]`);
+    answers[card.id] = { value: checked ? checked.value : "", custom: custom ? custom.value.trim() : "" };
+  }
+  return answers;
+}
+async function showCards(id) {
+  const { body: job } = await api(`/api/jobs/${id}`);
+  currentJob = job; currentJobId = id;
+  $("cards-card").hidden = false; $("cards-error").textContent = "";
+  renderCards(job); $("confirm-btn").disabled = false; $("submit-btn").disabled = false;
+  $("cards-card").scrollIntoView({ behavior: "smooth" });
+}
+$("confirm-btn").addEventListener("click", async () => {
+  $("confirm-btn").disabled = true; $("cards-error").textContent = "";
+  const { ok, body } = await api(`/api/jobs/${currentJobId}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers: collectAnswers(currentJob) }) });
+  if (!ok) { $("cards-error").textContent = body.error; $("confirm-btn").disabled = false; return; }
+  $("cards-card").hidden = true; $("submit-btn").disabled = true;
+  clearInterval(pollTimer); pollTimer = setInterval(() => poll(currentJobId), 2000); poll(currentJobId);
+});
+$("request-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const engines = [...document.querySelectorAll('input[name="engines"]:checked')].map((c) => c.value);
+  if (!engines.length && !$("seed-urls").value.trim()) { $("status-card").hidden = false; $("error").textContent = "Chọn ít nhất một engine hoặc nhập link NCC"; return; }
+  $("submit-btn").disabled = true; $("result-card").hidden = true; $("status-card").hidden = true;
+  const { ok, body } = await api("/api/jobs", { method: "POST", body: new FormData($("request-form")) });
+  if (!ok) { $("status-card").hidden = false; $("error").textContent = body.error; $("submit-btn").disabled = false; return; }
+  await showCards(body.id);
+});
+
+/* ---------- Xuất file / gửi sếp ---------- */
+$("send-btn").addEventListener("click", async () => {
+  if (!currentJobId) return;
+  const typed = $("boss-email").value.trim();
+  if (!typed && !bossEmailConfigured) {
+    $("send-status").textContent = "Chưa có email sếp nên không gửi. Đã xuất file xlsx để bạn gửi thủ công.";
+    window.location.href = `/api/jobs/${currentJobId}/file`; return;
+  }
+  if (!confirm("Gửi form báo giá này qua email cho sếp?")) return;
+  $("send-btn").disabled = true;
+  const { ok, body } = await api(`/api/jobs/${currentJobId}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true, to: typed || null }) });
+  $("send-status").textContent = ok ? `Đã gửi tới ${body.sent_to}` : body.error; $("send-btn").disabled = false;
+  if (!ok && body.no_email) window.location.href = `/api/jobs/${currentJobId}/file`;
+});
+
+/* ---------- Lịch sử tìm kiếm (phiếu đóng/mở) ---------- */
+let historyGroups = [];
+const jobLabel = { done: "Hoàn tất", error: "Lỗi", awaiting_confirmation: "Chờ xác nhận", running: "Đang chạy", queued: "Đang chờ" };
+function chips(items, fmt) { return items.length ? `<div class="chips">${items.map((i) => `<span class="chip static">${fmt(i)}</span>`).join("")}</div>` : '<span class="muted">Chưa có</span>'; }
+function groupBody(g) {
+  const change = g.price_change_pct == null ? "Chưa đủ dữ liệu" : (g.price_change_pct > 0 ? "+" : "") + g.price_change_pct + "%";
+  const tiles = [
+    ["Số lượt tìm kiếm", g.searches], ["Giá trung bình", money(g.avg_price)], ["Giá trung vị", money(g.median_price)],
+    ["Giá thấp nhất", money(g.min_price)], ["Giá cao nhất", money(g.max_price)], ["Biến động giá (đầu → cuối)", change],
+    ["Số trang web", g.sites.length], ["Số NCC", g.supplier_count], ["NCC trung bình mỗi lượt", g.avg_suppliers_per_search],
+    ["Tổng số lượng yêu cầu", g.total_quantity], ["Số lần sửa bảng", g.edit_count], ["Engine đã dùng", g.engines.join(", ") || "Chỉ link nhập tay"],
+    ["Lần đầu tìm", dateTime(g.first_search)], ["Lần gần nhất", dateTime(g.last_search)],
+  ];
+  return `<div class="metrics">${tiles.map(([k, v]) => `<div class="stat">${esc(k)}<b>${esc(v)}</b></div>`).join("")}</div>
+    <h4>Từ khóa đã dùng để tìm</h4>${chips(g.keywords, (k) => esc(k))}
+    <h4>Các trang web đã tìm</h4>${chips(g.sites, (s) => `${esc(s.domain)} (${s.visits})`)}
+    <h4>Các nhà cung cấp</h4>${chips(g.suppliers, (s) => `${esc(s.name)} · ${s.times} lần${s.min_price ? " · thấp nhất " + money(s.min_price) : ""}`)}
+    <h4>NCC được khuyến nghị</h4>${chips(g.recommended, (r) => `${esc(r.name)} (${r.times})`)}
+    <h4>Các lần tìm (bấm để mở)</h4>${g.jobs.map((j) => `<div class="jobrow" data-job="${esc(j.id)}"><span>${esc(dateTime(j.created))} · SL ${j.quantity}</span><span>${jobLabel[j.status] || esc(j.status)}</span></div>`).join("")}
+    <div class="actions"><button type="button" class="secondary small" data-close-group>Đóng</button></div>`;
+}
+function renderHistory() {
+  const q = $("history-filter").value.trim().toLowerCase();
+  const groups = historyGroups.filter((g) => !q || g.name.toLowerCase().includes(q));
+  $("history").innerHTML = groups.length ? groups.map((g) => `<div class="group" data-key="${esc(g.key)}">
+    <div class="group-head" tabindex="0" role="button"><span class="name">${esc(g.name)}</span>
+      <span class="chips"><span class="chip static">${g.searches} lượt tìm</span><span class="chip static">TB ${money(g.avg_price)}</span><span class="chip static">${g.supplier_count} NCC</span><span class="chip static">▾</span></span></div>
+    <div class="group-body" hidden>${groupBody(g)}</div></div>`).join("") : '<p class="muted">Chưa có yêu cầu nào.</p>';
+  document.querySelectorAll(".group").forEach((el) => {
+    const head = el.querySelector(".group-head"), body = el.querySelector(".group-body");
+    const toggle = () => { body.hidden = !body.hidden; };
+    head.addEventListener("click", toggle);
+    head.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    el.querySelector("[data-close-group]").addEventListener("click", () => { body.hidden = true; head.scrollIntoView({ block: "nearest" }); });
+  });
+  document.querySelectorAll("[data-job]").forEach((r) => r.addEventListener("click", async () => {
+    showTab("new");
+    const { body: job } = await api(`/api/jobs/${r.dataset.job}`);
+    if (job.status === "awaiting_confirmation") await showCards(job.id); else render(job);
+  }));
+}
+async function loadHistory() { const { body } = await api("/api/history/groups"); historyGroups = body; renderHistory(); }
+$("history-filter").addEventListener("input", renderHistory);
+
+/* ---------- Lịch sử điều chỉnh ---------- */
+const EDIT_COLS = [{ key: "time", label: "Thời gian" }, { key: "product", label: "Sản phẩm" }, { key: "supplier", label: "NCC" }, { key: "field_label", label: "Trường" }, { key: "old", label: "Giá trị cũ" }, { key: "new", label: "Giá trị mới" }];
+let editRows = [], hiddenEditCols = new Set(store("hiddenEditCols") || []);
+function renderEdits() {
+  const q = $("edit-filter").value.trim().toLowerCase(), field = $("edit-field").value;
+  const rows = editRows.filter((e) => (!field || e.field_label === field) && (!q || [e.product, e.supplier, e.field_label, e.old, e.new].join(" ").toLowerCase().includes(q)));
+  const cols = EDIT_COLS.filter((c) => !hiddenEditCols.has(c.key));
+  $("edits-table").innerHTML = rows.length ? `<table class="plain"><thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows.map((e) => `<tr>${cols.map((c) => `<td>${esc(c.key === "time" ? dateTime(e.time) : e[c.key])}</td>`).join("")}</tr>`).join("")}</tbody></table>` : '<p class="muted" style="padding:14px">Chưa có chỉnh sửa nào.</p>';
+}
+async function loadEdits() {
+  const { body } = await api("/api/history/edits"); editRows = body;
+  const fields = [...new Set(body.map((e) => e.field_label))];
+  $("edit-field").innerHTML = '<option value="">Mọi trường</option>' + fields.map((f) => `<option>${esc(f)}</option>`).join("");
+  $("edit-col-menu").innerHTML = EDIT_COLS.map((c) => `<label><input type="checkbox" data-ecol="${c.key}" ${hiddenEditCols.has(c.key) ? "" : "checked"}> ${esc(c.label)}</label>`).join("");
+  document.querySelectorAll("[data-ecol]").forEach((cb) => cb.addEventListener("change", () => {
+    cb.checked ? hiddenEditCols.delete(cb.dataset.ecol) : hiddenEditCols.add(cb.dataset.ecol); store("hiddenEditCols", [...hiddenEditCols]); renderEdits();
+  }));
+  renderEdits();
+}
+$("edit-filter").addEventListener("input", renderEdits); $("edit-field").addEventListener("change", renderEdits);
+
+/* ---------- Cài đặt ---------- */
+async function loadSettings() {
+  const { body } = await api("/api/settings");
+  bossEmailConfigured = !!(body.BOSS_EMAIL && body.BOSS_EMAIL.configured);
+  document.querySelectorAll("[data-setting]").forEach((input) => { const s = body[input.dataset.setting]; input.value = (!s.secret && s.configured) ? s.display : ""; });
+  document.querySelectorAll("[data-status]").forEach((el) => { const s = body[el.dataset.status]; el.textContent = s.configured ? `(đã có: ${s.display}, nguồn ${s.source})` : "(chưa có)"; });
+}
+$("save-settings").addEventListener("click", async () => {
+  const values = {};
+  document.querySelectorAll("[data-setting]").forEach((i) => { if (i.value.trim()) values[i.dataset.setting] = i.value.trim(); });
+  const { ok, body } = await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values }) });
+  $("settings-status").textContent = ok ? "Đã lưu" : body.error;
+  if (ok) { toast("Đã lưu cài đặt"); loadSettings(); loadEngines(); }
+});
+document.querySelectorAll("[data-test]").forEach((btn) => btn.addEventListener("click", async () => {
+  const service = btn.dataset.test, out = document.querySelector(`[data-result="${service}"]`);
+  out.textContent = "Đang thử..."; btn.disabled = true;
+  const { body } = await api(`/api/settings/test/${service}`, { method: "POST" });
+  out.textContent = (body.ok ? "OK: " : "Lỗi: ") + body.message; btn.disabled = false;
+}));
+
+buildColMenu(); loadEngines(); loadTopics(); loadSettings();
+</script>
+</body>
+</html>
