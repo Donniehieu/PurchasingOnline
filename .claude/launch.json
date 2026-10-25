@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-X", "utf8", "app.py"],
       "port": 5000
+    },
+    {
+      "name": "static-docs",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["tools/serve_docs.py"],
+      "port": 8080
     }
   ]
 }

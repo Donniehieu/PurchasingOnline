@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Mua hàng tự động",
+  "version": "1.0.0",
+  "description": "Tìm NCC trên Cốc Cốc/DuckDuckGo, đọc giá, điền form duyệt báo giá, crawl ảnh đối chiếu. Chạy trong trình duyệt của bạn.",
+  "action": { "default_title": "Mở Mua hàng tự động" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["tabs", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
+}

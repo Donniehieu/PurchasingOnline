@@ -1,5 +1,21 @@
 # Mua hàng tự động
 
+## Cài làm tiện ích Cốc Cốc / Chrome (khuyến nghị)
+
+Cách này không cần Python hay Flask. App chạy ngay trong trình duyệt của bạn nên: tìm được bằng **Cốc Cốc** và **DuckDuckGo** không cần khóa, đọc được cả trang cần JavaScript (Shopee, TikTok Shop), không bị chặn CORS, và crawl ảnh về album.
+
+1. Mở `coccoc://extensions` (Cốc Cốc) hoặc `chrome://extensions` (Chrome).
+2. Bật **Chế độ nhà phát triển** (Developer mode) ở góc trên.
+3. Bấm **Tải tiện ích đã giải nén** (Load unpacked), chọn thư mục `docs` của dự án này.
+4. Bấm biểu tượng tiện ích **Mua hàng tự động** trên thanh công cụ để mở giao diện (ghim nó nếu không thấy).
+5. Vào tab **Cài đặt**, bấm **Thử Cốc Cốc** và **Thử DuckDuckGo** để kiểm tra. Khi tìm, tiện ích mở một tab nền như bạn tự tìm rồi tự đóng, mỗi lượt vài giây.
+
+Quyền tiện ích xin: đọc mọi website (để tải trang NCC và ảnh) và mở/đọc tab nền. Dữ liệu và khóa chỉ lưu trong trình duyệt của bạn. Sau khi sửa mã trong `docs/`, bấm nút tải lại trên trang tiện ích.
+
+Chạy thử như trang web thường (không có Cốc Cốc, không crawl ảnh): `python tools/serve_docs.py` rồi mở http://localhost:8080.
+
+Bản Python (Flask) bên dưới vẫn còn nhưng không còn là hướng chính.
+
 Hỗ trợ quy trình mua hàng: nhập tên sản phẩm hoặc ảnh, xác nhận bằng question card, so sánh NCC, điền form duyệt báo giá (Excel), gợi ý NCC tốt nhất, soạn kịch bản đàm phán và luận điểm thuyết phục sếp.
 
 Repository có **hai bản**:

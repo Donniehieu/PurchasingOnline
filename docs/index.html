@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mua hàng tự động</title>
 <meta name="description" content="Công cụ hỗ trợ quy trình mua hàng: so sánh NCC, form duyệt báo giá, đàm phán, thuyết phục sếp. Chạy hoàn toàn trên trình duyệt.">
+<meta http-equiv="Content-Security-Policy" content="script-src 'self'; object-src 'self'">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -41,6 +42,7 @@
       <label>Engine tìm kiếm</label>
       <div class="engines" id="engines">Đang tải...</div>
       <p class="muted">Engine mờ là chưa có khóa: vào tab <a href="#" data-goto="settings">Cài đặt</a> để nhập. Không dùng engine thì nhập link NCC bên dưới hoặc thêm NCC thủ công trong bảng.</p>
+      <label class="chip" style="margin-top:10px;width:fit-content"><input type="checkbox" id="crawl-images" checked> Crawl ảnh từ web về album để đối chiếu</label>
       <label for="seed-urls">Link NCC / website (tùy chọn, mỗi dòng một link)</label>
       <textarea id="seed-urls" rows="3" placeholder="https://..."></textarea>
       <div class="actions">
@@ -81,12 +83,22 @@
     <div class="stats" id="price-stats"></div>
     <div id="price-bars" style="margin-top:12px"></div>
 
+    <h3>Album ảnh đối chiếu</h3>
+    <p class="muted">Ảnh bạn up và ảnh crawl từ web theo từ khóa của yêu cầu này. Chỉ số "giống" so với ảnh bạn up, chỉ để tham khảo: hãy mở trang nguồn để xác nhận đúng sản phẩm. Ảnh lưu trong trình duyệt này (bản thu nhỏ).</p>
+    <div class="toolbar">
+      <input type="search" id="album-query" placeholder="Từ khóa ảnh (để trống: dùng từ khóa của yêu cầu)">
+      <button type="button" class="secondary" id="album-more">Tìm thêm ảnh</button>
+      <label class="button secondary">Up ảnh của bạn<input type="file" id="album-upload" accept="image/*" multiple hidden></label>
+      <span class="muted" id="album-state"></span>
+    </div>
+    <div class="album" id="album"></div>
+
     <div id="research-wrap" hidden><h3>Kiến thức sản phẩm (từ web)</h3><div id="research"></div></div>
 
     <h3>Kịch bản đàm phán với NCC</h3><div id="negotiation"></div>
     <h3>Luận điểm thuyết phục sếp</h3><div id="persuasion"></div>
     <div class="actions"><button type="button" class="secondary" id="copy-persuasion">Sao chép luận điểm</button>
-      <button type="button" class="secondary" onclick="window.print()">In trang</button></div>
+      <button type="button" class="secondary" id="print-btn">In trang</button></div>
 
     <h3>Xuất file và gửi sếp</h3>
     <div class="actions">
@@ -131,7 +143,12 @@
     <h3 class="first">Khóa API và cấu hình</h3>
     <div class="notice">Trang này chạy hoàn toàn trên trình duyệt. Khóa và dữ liệu chỉ lưu trong trình duyệt của bạn (localStorage), không gửi lên máy chủ của trang. Không dùng chung máy hoặc để người khác mở trình duyệt này khi đã nhập khóa.</div>
 
-    <h3>Cách app tải trang NCC</h3>
+    <h3>Tìm kiếm không cần khóa (tiện ích Cốc Cốc/Chrome)</h3>
+    <p class="muted">Khi cài làm tiện ích, app dùng Cốc Cốc và DuckDuckGo mà không cần khóa API, đọc được cả trang cần JavaScript (Shopee, TikTok Shop) bằng cách mở tab nền, và không bị chặn CORS nên không cần proxy. Cốc Cốc mở một tab nền như bạn tự tìm, mỗi lượt vài giây.</p>
+    <div class="actions"><button type="button" class="secondary" data-test="coccoc">Thử Cốc Cốc</button><span class="muted" data-result="coccoc"></span>
+      <button type="button" class="secondary" data-test="duckduckgo">Thử DuckDuckGo</button><span class="muted" data-result="duckduckgo"></span></div>
+
+    <h3>Cách app tải trang NCC khi chạy dạng trang web thường</h3>
     <p class="muted">Trình duyệt chỉ đọc trực tiếp được những website cho phép (CORS). Nhiều website chặn, khi đó cần một proxy. Tôi không dùng proxy công cộng mặc định vì kiểm tra thấy các dịch vụ miễn phí không ổn định hoặc đòi khóa. Cách đáng tin cậy là tự triển khai Cloudflare Worker miễn phí của bạn (có sẵn mã trong thư mục <code>tools/</code>).</p>
     <div class="row"><div><label>Địa chỉ proxy của bạn (mẫu, dùng {url} cho link cần tải)</label><input type="text" id="set-proxy" placeholder="https://ten-ban.workers.dev/?url={url}"></div></div>
     <label class="chip" style="width:fit-content"><input type="checkbox" id="set-proxy-ok"> Tôi đồng ý gửi link NCC và từ khóa qua proxy này</label>
@@ -199,6 +216,7 @@
 </main>
 
 <div class="modal-bg" id="contact-modal"><div class="modal" id="contact-body"></div></div>
+<div class="lightbox" id="lightbox"><img alt=""></div>
 <div class="toast" id="toast"></div>
 
 <script src="vendor/exceljs.min.js"></script>

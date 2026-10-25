@@ -87,3 +87,14 @@ table.plain { min-width:0; } table.plain th { position:static; }
 @media print { header, form, .actions, .toolbar { display:none !important; } }
 @media (max-width:640px) { .bar-label { width:110px; } .bar-value { width:110px; font-size:12px; } .card { padding:16px; } }
 td[data-col="note"] { min-width:260px; } td[data-col="name"] { min-width:190px; } td[data-col="contact"] { min-width:130px; }
+
+/* album ảnh đối chiếu */
+.album { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; margin-top:10px; }
+.photo { border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--card); display:flex; flex-direction:column; font-size:12px; }
+.photo img { width:100%; height:150px; object-fit:cover; display:block; background:var(--accent-soft); cursor:zoom-in; }
+.photo .cap { padding:8px 10px; display:flex; flex-direction:column; gap:4px; }
+.photo .cap .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.badge { align-self:flex-start; border-radius:999px; padding:2px 9px; font-weight:700; background:var(--accent-soft); color:var(--accent); }
+.badge.high { background:var(--green); color:#1d2a10; }
+.lightbox { position:fixed; inset:0; background:rgba(15,18,32,.85); display:none; align-items:center; justify-content:center; z-index:40; padding:20px; cursor:zoom-out; }
+.lightbox.show { display:flex; } .lightbox img { max-width:100%; max-height:100%; border-radius:12px; }

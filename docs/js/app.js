@@ -1,6 +1,8 @@
 // Giao diện và quy trình chạy hoàn toàn trên trình duyệt (GitHub Pages, không có máy chủ).
 import * as core from "./core.js";
 import { downloadEdits, downloadHistory, downloadJob, downloadLinks, readLinkFile } from "./excel.js";
+import * as net from "./net.js";
+import * as album from "./album.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -29,8 +31,18 @@ const proxyReady = () => !!(settings.proxy && settings.proxy.includes("{url}") &
 const proxied = (url) => settings.proxy.replace("{url}", encodeURIComponent(url));
 function withTimeout(ms = 15000) { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; }
 
-/** Tải HTML: thử trực tiếp (chỉ được nếu website cho phép CORS), không được thì dùng proxy của người dùng. */
+// Các sàn vẽ giá bằng JavaScript: fetch chỉ ra khung rỗng nên phải để trình duyệt thật mở trang.
+const RENDER_DOMAINS = ["shopee.vn", "tiki.vn", "lazada.vn", "tiktok.com", "sendo.vn"];
+
+/** Tải HTML. Tiện ích: fetch trực tiếp (không bị CORS), trang cần JavaScript hoặc fetch lỗi thì mở tab nền.
+ *  Trang web thường: thử trực tiếp (chỉ được nếu website cho phép CORS), không được thì dùng proxy của người dùng. */
 async function fetchHtml(url) {
+  if (net.isExt) {
+    if (!RENDER_DOMAINS.some((d) => core.domainOf(url).endsWith(d))) {
+      try { const r = await fetch(url, { signal: withTimeout() }); if (r.ok) { const t = await r.text(); if (t.length > 2000) return t; } } catch { /* mở tab nền */ }
+    }
+    return (await net.renderPage(url, "html")).html;
+  }
   try { const r = await fetch(url, { signal: withTimeout() }); if (r.ok) return await r.text(); } catch { /* thử proxy */ }
   if (!proxyReady()) throw new Error("Website chặn đọc trực tiếp (CORS) và chưa cấu hình proxy");
   const r = await fetch(proxied(url), { signal: withTimeout(25000) });
@@ -52,9 +64,11 @@ const SEARCHERS = {
     if (!r.ok) throw new Error(httpHint(r.status));
     return filterDomains(((await r.json()).items || []).map((i) => i.link), n);
   },
+  async coccoc(q, n) { return filterDomains(await net.coccocWeb(q, n), n); },
+  async duckduckgo(q, n) { return filterDomains(await net.duckduckgoWeb(q, n), n); },
   async brave(q, n) {
     const target = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=${Math.min(n * 2, 20)}&country=vn&search_lang=vi`;
-    const r = await fetch(proxied(target), { headers: { "X-Subscription-Token": settings.brave_key, Accept: "application/json" }, signal: withTimeout(25000) });
+    const r = await fetch(net.isExt ? target : proxied(target), { headers: { "X-Subscription-Token": settings.brave_key, Accept: "application/json" }, signal: withTimeout(25000) });
     if (!r.ok) throw new Error(httpHint(r.status));
     return filterDomains(((await r.json()).web?.results || []).map((i) => i.url), n);
   },
@@ -64,8 +78,10 @@ function httpHint(status) {
 }
 function engineStatus() {
   return [
+    { id: "coccoc", label: "Cốc Cốc (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Cốc Cốc/Chrome", recommended: true },
+    { id: "duckduckgo", label: "DuckDuckGo (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Cốc Cốc/Chrome", recommended: true },
     { id: "google", label: "Google (Custom Search API)", available: !!(settings.google_key && settings.google_cx), reason: "Chưa nhập Google API key và Search engine ID (tab Cài đặt)" },
-    { id: "brave", label: "Brave Search API (qua proxy)", available: !!(settings.brave_key && proxyReady()), reason: "Cần Brave API key và proxy đã bật (tab Cài đặt)" },
+    { id: "brave", label: net.isExt ? "Brave Search API" : "Brave Search API (qua proxy)", available: !!(settings.brave_key && (net.isExt || proxyReady())), reason: "Cần Brave API key (và proxy nếu không chạy dạng tiện ích)" },
   ];
 }
 async function searchEngines(engines, query, per) {
@@ -106,7 +122,7 @@ function log(job, msg) { job.log.push(`${new Date().toLocaleTimeString("vi-VN")}
 async function createJob(form, images) {
   const job = {
     id: uid(), status: "awaiting_confirmation", created: nowIso(), query: form.query, product_code: form.product_code, quantity: form.quantity,
-    purpose: form.purpose, engines: form.engines, seed_urls: form.seed_urls, topics: form.topics, extra_keywords: form.extra_keywords,
+    purpose: form.purpose, engines: form.engines, seed_urls: form.seed_urls, topics: form.topics, extra_keywords: form.extra_keywords, crawl_images: form.crawl_images,
     images: images.map((i) => i.name), suggested_name: null, ocr_text: "", questions: [], answers: {}, spec: {}, keywords: null, errors: {}, log: [],
     suppliers: [], research: {}, sites_searched: [], edits: [], price_stats: null, analysis: { negotiation: [], persuasion: { title: "", sections: [], points: [], closing: "" } }, error: null,
   };
@@ -150,6 +166,11 @@ async function runJob(job) {
     }
     log(job, `Đã thử ${urls.length} trang, đọc được ${found.filter((s) => !s.unreadable).length} trang, ${unreadable} trang cần nhập tay`);
     job.suppliers = found;
+    if (job.crawl_images !== false && net.isExt) {
+      log(job, "Đang crawl ảnh về album...");
+      const res = await album.crawlAlbum(job.id, job.keywords);
+      log(job, res.error ? `Album: ${res.error}` : `Album: thêm ${res.added.length} ảnh (đã thử ${res.tried} link ảnh)`);
+    }
     if (job.topics.length && engines.length) { log(job, `Nghiên cứu chủ đề: ${job.topics.join(", ")}`); job.research = await research(job, engines); }
     buildOutputs(job);
     job.status = "done";
@@ -222,7 +243,7 @@ $("theme-btn").addEventListener("click", () => { document.body.classList.toggle(
 /* ------------------------------------------------------------------ form yêu cầu */
 function renderEngines() {
   $("engines").innerHTML = engineStatus().map((e) => `<label class="chip ${e.available ? "" : "off"}" title="${esc(e.available ? "" : e.reason)}">
-    <input type="checkbox" name="engines" value="${e.id}" ${e.available ? "checked" : "disabled"}> ${esc(e.label)}${e.available ? "" : " (chưa cấu hình)"}</label>`).join("");
+    <input type="checkbox" name="engines" value="${e.id}" ${e.available ? (e.recommended || !net.isExt ? "checked" : "") : "disabled"}> ${esc(e.label)}${e.available ? "" : e.recommended ? " (cần cài tiện ích)" : " (chưa cấu hình)"}</label>`).join("");
 }
 $("topics").innerHTML = Object.entries(core.TOPICS).map(([id, t]) => `<label class="chip"><input type="checkbox" name="topics" value="${id}"> ${esc(t.label)}</label>`).join("");
 $("link-file").addEventListener("change", async (e) => {
@@ -245,10 +266,12 @@ $("request-form").addEventListener("submit", async (e) => {
     query, product_code: code, quantity, purpose: $("purpose").value.trim(), extra_keywords: $("extra-keywords").value.trim(),
     engines: [...document.querySelectorAll('input[name="engines"]:checked')].map((c) => c.value), seed_urls: core.parseUrls($("seed-urls").value),
     topics: [...document.querySelectorAll('input[name="topics"]:checked')].map((c) => c.value),
+    crawl_images: $("crawl-images").checked,
   };
   try {
     const images = await Promise.all(files.map(fileToImage));
     const job = await createJob(form, images);
+    if (files.length) await album.addUploads(job.id, files);
     currentJobId = job.id; currentJob = job; showCards(job);
   } catch (err) { showError(err.message); }
   $("submit-btn").disabled = false;
@@ -289,8 +312,40 @@ function renderResult(job) {
   const unread = job.suppliers.filter((s) => s.unreadable).length;
   $("manual-notice").hidden = !unread && job.suppliers.length > 0;
   $("manual-notice").textContent = job.suppliers.length ? `${unread} NCC không đọc tự động được (website chặn). Mở link và nhập tay giá, bảo hành, VAT vào bảng.` : "Chưa có NCC nào. Bấm '+ Thêm NCC' để nhập tay, hoặc tạo yêu cầu mới có link NCC.";
-  renderTable(job); renderPrice(job); renderResearch(job); renderAnalysis(job);
+  renderTable(job); renderPrice(job); renderAlbum(job); renderResearch(job); renderAnalysis(job);
 }
+
+/* ------------------------------------------------------------------ album ảnh đối chiếu */
+let albumUrls = [];
+async function renderAlbum(job) {
+  const photos = (await album.listPhotos(job.id)).sort((a, b) => (a.source === "upload" ? -1000 : -(a.match ?? -1)) - (b.source === "upload" ? -1000 : -(b.match ?? -1)));
+  if (job.id !== currentJobId) return;
+  albumUrls.forEach((u) => URL.revokeObjectURL(u)); albumUrls = [];
+  $("album").innerHTML = photos.length ? photos.map((p) => {
+    const src = URL.createObjectURL(p.blob); albumUrls.push(src);
+    const badge = p.source === "upload" ? '<span class="badge high">Ảnh bạn up</span>' : p.match != null && p.match >= 70 ? `<span class="badge ${p.match >= 80 ? "high" : ""}">Giống ảnh up ${p.match}%</span>` : "";
+    return `<div class="photo"><img src="${src}" data-zoom alt="${esc(p.title)}"><div class="cap">${badge}<span class="t" title="${esc(p.title)}">${esc(p.title || "(không tiêu đề)")}</span>
+      <span class="muted">${p.width}×${p.height} · ${esc(p.engine)}</span>
+      <span>${safeUrl(p.page_url) ? `<a href="${esc(p.page_url)}" target="_blank" rel="noopener">Trang nguồn</a> · ` : ""}<a href="#" data-del-photo="${esc(p.id)}">Xóa</a></span></div></div>`;
+  }).join("") : `<p class="muted">Chưa có ảnh. ${net.isExt ? 'Bấm "Tìm thêm ảnh" hoặc "Up ảnh của bạn".' : "Crawl ảnh chỉ chạy khi cài làm tiện ích Cốc Cốc/Chrome, bạn vẫn up ảnh của mình được."}</p>`;
+  document.querySelectorAll("#album [data-zoom]").forEach((img) => img.addEventListener("click", () => { $("lightbox").querySelector("img").src = img.src; $("lightbox").classList.add("show"); }));
+  document.querySelectorAll("[data-del-photo]").forEach((a) => a.addEventListener("click", async (e) => { e.preventDefault(); await album.deletePhoto(a.dataset.delPhoto); renderAlbum(job); }));
+}
+$("lightbox").addEventListener("click", () => $("lightbox").classList.remove("show"));
+$("album-more").addEventListener("click", async () => {
+  if (!currentJob) return;
+  $("album-more").disabled = true; $("album-state").textContent = "Đang tìm và tải ảnh...";
+  const res = await album.crawlAlbum(currentJob.id, $("album-query").value.trim() || currentJob.keywords || currentJob.query);
+  $("album-more").disabled = false;
+  $("album-state").textContent = res.error || (res.added.length ? `Đã thêm ${res.added.length} ảnh` : "Không có ảnh mới, thử từ khóa khác");
+  renderAlbum(currentJob);
+});
+$("album-upload").addEventListener("change", async (e) => {
+  if (!currentJob || !e.target.files.length) return;
+  const added = await album.addUploads(currentJob.id, [...e.target.files]); e.target.value = "";
+  $("album-state").textContent = added.length ? `Đã thêm ${added.length} ảnh của bạn` : "Không có ảnh hợp lệ hoặc ảnh đã có";
+  renderAlbum(currentJob);
+});
 
 const COLUMNS = [
   { key: "name", label: "NCC" }, { key: "price", label: "Đơn giá" }, { key: "mah", label: "Pin (mAh)" }, { key: "volt", label: "Điện áp (V)" },
@@ -385,6 +440,7 @@ function renderAnalysis(job) {
   const p = job.analysis.persuasion || {};
   $("persuasion").innerHTML = p.title ? `<p><b>${esc(p.title)}</b></p>${p.sections.map((s) => `<div class="block">${list(esc(s.heading), s.points)}</div>`).join("")}<div class="closing">${esc(p.closing)}</div>` : '<p class="muted">Chưa có luận điểm.</p>';
 }
+$("print-btn").addEventListener("click", () => window.print());
 $("copy-persuasion").addEventListener("click", () => { const t = core.persuasionText(currentJob?.analysis.persuasion); if (t) navigator.clipboard.writeText(t).then(() => toast("Đã sao chép")); });
 
 /* ------------------------------------------------------------------ liên hệ NCC */
@@ -510,7 +566,9 @@ document.querySelectorAll("[data-test]").forEach((btn) => btn.addEventListener("
   out.textContent = "Đang thử..."; btn.disabled = true;
   try {
     if (service === "google") { if (!(settings.google_key && settings.google_cx)) throw new Error("Cần lưu cả Google API key và Search engine ID trước"); await SEARCHERS.google("quạt", 1); }
-    else if (service === "brave") { if (!settings.brave_key) throw new Error("Chưa lưu Brave API key"); if (!proxyReady()) throw new Error("Brave chặn gọi trực tiếp từ trình duyệt, cần cấu hình proxy trước"); await SEARCHERS.brave("quạt", 1); }
+    else if (service === "coccoc") { const urls = await net.coccocWeb("quạt mini", 5); if (!urls.length) throw new Error("Mở được Cốc Cốc nhưng không đọc được link nào"); }
+    else if (service === "duckduckgo") { const urls = await net.duckduckgoWeb("quạt mini", 5); if (!urls.length) throw new Error("DuckDuckGo không trả link nào"); }
+    else if (service === "brave") { if (!settings.brave_key) throw new Error("Chưa lưu Brave API key"); if (!net.isExt && !proxyReady()) throw new Error("Brave chặn gọi trực tiếp từ trình duyệt, cần cấu hình proxy trước"); await SEARCHERS.brave("quạt", 1); }
     else { if (!settings.anthropic_key) throw new Error("Chưa lưu Anthropic API key"); const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": settings.anthropic_key, "anthropic-version": "2023-06-01", "content-type": "application/json", "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify({ model: "claude-haiku-5-5", max_tokens: 5, messages: [{ role: "user", content: "ping" }] }) }); if (!r.ok) throw new Error(httpHint(r.status)); }
     out.textContent = "OK: kết nối thành công";
   } catch (e) { out.textContent = `Lỗi: ${e.message}`; }
@@ -528,7 +586,7 @@ $("restore").addEventListener("change", async (e) => {
   } catch (err) { toast(err.message); }
   e.target.value = "";
 });
-$("wipe").addEventListener("click", () => { if (confirm("Xóa toàn bộ lịch sử trong trình duyệt này? Không thể hoàn tác.")) { jobs = []; persist(); currentJob = null; $("result-card").hidden = true; toast("Đã xóa lịch sử"); } });
+$("wipe").addEventListener("click", () => { if (confirm("Xóa toàn bộ lịch sử trong trình duyệt này? Không thể hoàn tác.")) { jobs = []; persist(); album.clearAll().catch(() => {}); currentJob = null; $("result-card").hidden = true; toast("Đã xóa lịch sử"); } });
 
 buildColMenu(); renderEngines();
 // Yêu cầu bị dở dang khi tải lại trang (đang chạy) được đánh dấu lỗi để người dùng tạo lại.

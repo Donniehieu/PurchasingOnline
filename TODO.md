@@ -88,6 +88,16 @@
 - [ ] Chưa chạy thử với Brave/Google thật (chưa có khóa). Độ giống dHash chỉ gợi ý, không thay cho việc người dùng kiểm tra
 - [ ] Bản web tĩnh `docs/` chưa có album (trình duyệt bị CORS khi tải ảnh từ web)
 
+## Đợt cập nhật: chuyển sang tiện ích Cốc Cốc / Chrome
+- [x] Thư mục `docs/` là tiện ích (manifest MV3, `background.js`). Cách cài: README, mục đầu
+- [x] Tìm bằng Cốc Cốc: tiện ích mở tab nền cho trang tự chạy JavaScript, rồi lấy link ra ngoài (không lách CAPTCHA, đúng như người dùng tự mở)
+- [x] Tìm bằng DuckDuckGo không cần khóa; Brave gọi trực tiếp, không cần proxy; trang NCC tải không bị CORS
+- [x] Trang Shopee, TikTok Shop, Tiki, Lazada, Sendo đọc bằng tab nền để lấy giá do JavaScript vẽ
+- [x] Album ảnh trong IndexedDB: up ảnh, crawl DuckDuckGo, lọc trùng, độ giống dHash, xóa, tìm thêm theo từ khóa
+- [x] Đã kiểm thử trên trang tĩnh: nạp app, album (up, bỏ trùng, dHash, xóa), xuất Excel dưới CSP của tiện ích, 10 test JS, kiểm tra cú pháp
+- [ ] **Chưa chạy thử bên trong Cốc Cốc/Chrome thật**: chưa kiểm chứng `background.js` mở tab nền, trích link Cốc Cốc, và crawl ảnh. Dùng nút "Thử Cốc Cốc", "Thử DuckDuckGo" trong tab Cài đặt để kiểm tra
+- [ ] Ảnh album không nằm trong file sao lưu .json (chỉ lưu trong trình duyệt)
+
 ## Chưa làm / cần bạn quyết định
 - [ ] Card dựng theo quy tắc, chưa dùng AI. Có thể soạn card bằng Claude khi có ANTHROPIC_API_KEY để gợi ý sát sản phẩm hơn
 - [ ] Tìm kiếm ảnh ngược (reverse image search). Hiện ảnh chỉ được mô tả bằng Claude khi có ANTHROPIC_API_KEY
