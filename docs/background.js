@@ -18,10 +18,13 @@ api.action.onClicked.addListener(async () => {
   }
 });
 
+const PROTO = 2; // tăng khi đổi định dạng dữ liệu trả về; giao diện kiểm tra để phát hiện service worker còn là bản cũ
+
 api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.type === "ping") { sendResponse({ ok: true, proto: PROTO }); return false; }
   if (!msg || msg.type !== "render") return false;
   renderPage(msg.url, msg.mode || "html")
-    .then((data) => sendResponse({ ok: true, data }))
+    .then((data) => sendResponse({ ok: true, proto: PROTO, data }))
     .catch((err) => sendResponse({ ok: false, error: String(err && err.message ? err.message : err) }));
   return true; // trả lời bất đồng bộ
 });
@@ -35,7 +38,7 @@ function readPage(mode) {
     // Trang kết quả tìm kiếm: mỗi kết quả là một link ra ngoài (hoặc link bọc chuyển hướng) kèm tiêu đề và đoạn mô tả.
     const nav = /(^|\.)(gstatic\.com|googleusercontent\.com|youtube\.com|facebook\.com|accounts\.google\.com|support\.google\.com|policies\.google\.com|maps\.google\.com)$/i;
     const own = location.hostname.replace(/^www\./, "");
-    const out = [], seen = new Set();
+    const byHref = new Map();
     for (const a of document.querySelectorAll("a[href]")) {
       let u; try { u = new URL(a.href); } catch { continue; }
       if (!/^https?:$/.test(u.protocol) || nav.test(u.hostname)) continue;
@@ -44,13 +47,16 @@ function readPage(mode) {
       if (!external && !wrapped) continue;
       const heading = a.querySelector("h1,h2,h3,h4");
       const title = heading ? text(heading) : text(a);
-      if (title.length < 6 || seen.has(a.href)) continue;
-      seen.add(a.href);
-      let block = a, snippet = "";
+      if (title.length < 6) continue;
+      // Một kết quả thường có hai link cùng địa chỉ (dòng "tên miền › đường dẫn" và dòng tiêu đề): ưu tiên link có thẻ tiêu đề, rồi link có chữ dài hơn.
+      const crumb = /^https?:\/\//.test(title) || /https?:\/\/\S+\s*›/.test(title); // dòng "Tên miền https://... › đường dẫn" không phải tiêu đề
+      const prev = byHref.get(a.href), score = (heading ? 1000 : 0) - (crumb ? 500 : 0) + title.length;
+      if (prev && prev.score >= score) continue;
+      let block = a;
       for (let i = 0; i < 5 && block.parentElement; i++) { block = block.parentElement; if (text(block).length > title.length + 60) break; }
-      snippet = text(block).replace(title, "").trim().slice(0, 320);
-      out.push({ url: a.href, title: title.slice(0, 160), snippet });
+      byHref.set(a.href, { score, item: { url: a.href, title: title.slice(0, 160), snippet: text(block).replace(title, "").trim().slice(0, 320) } });
     }
+    const out = [...byHref.values()].map((v) => v.item);
     return { title: document.title, results: out, bodyLen: document.body ? document.body.innerText.length : 0 };
   }
   if (mode === "images") {

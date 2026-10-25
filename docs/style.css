@@ -165,3 +165,5 @@ td[data-col="note"] { min-width:260px; } td[data-col="name"] { min-width:190px; 
 .steps .s-detail { flex:1 1 100%; padding-left:24px; word-break:break-word; }
 @keyframes pulse { 50% { box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 22%,transparent); } }
 .info-line { font-weight:600; }
+.error-banner { max-width:1240px; margin:12px auto 0; background:#fee2e2; color:#991b1b; font-weight:600; border:1px solid #fecaca; }
+body.dark .error-banner { background:#3b1d1d; color:#fecaca; border-color:#7f1d1d; }

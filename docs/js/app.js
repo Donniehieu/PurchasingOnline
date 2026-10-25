@@ -892,6 +892,7 @@ $("restore").addEventListener("change", async (e) => {
 $("wipe").addEventListener("click", () => { if (confirm("Xóa toàn bộ lịch sử trong trình duyệt này? Không thể hoàn tác.")) { jobs = []; persist(); album.clearAll().catch(() => {}); currentJob = null; $("result-card").hidden = true; toast("Đã xóa lịch sử"); } });
 
 buildColMenu(); renderEngines(); renderPagesSelect();
+net.checkWorker().then((r) => { if (!r.ok) { $("ext-warning").hidden = false; $("ext-warning").textContent = r.message; } });
 // Yêu cầu bị dở dang khi tải lại trang (đang chạy) được đánh dấu lỗi để người dùng tạo lại.
 jobs.forEach((j) => { if (["running", "queued", "researching"].includes(j.status)) { j.status = "error"; j.error = "Bị gián đoạn khi tải lại trang"; } });
 persist();

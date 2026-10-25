@@ -6,7 +6,16 @@
 
 const api = globalThis.chrome || globalThis.browser;
 export const isExt = typeof api !== "undefined" && !!(api.runtime && api.runtime.id);
+const PROTO = 2; // phải khớp background.js
+const STALE_WORKER = "Tiện ích đang chạy bản cũ. Mở trang extensions của trình duyệt (chrome://extensions, coccoc://extensions, brave://extensions), bấm nút tải lại (biểu tượng vòng tròn) ở tiện ích \"Mua hàng tự động\", rồi mở lại app.";
 const EXT_ONLY = "Chức năng này chỉ chạy khi cài làm tiện ích Chrome/Cốc Cốc/Brave/Edge (xem README)";
+
+/** Kiểm tra service worker của tiện ích đã là bản mới chưa. Trả về { ok, message }. */
+export async function checkWorker() {
+  if (!isExt) return { ok: true };
+  try { const r = await api.runtime.sendMessage({ type: "ping" }); return r && r.proto === PROTO ? { ok: true } : { ok: false, message: STALE_WORKER }; }
+  catch { return { ok: false, message: STALE_WORKER }; }
+}
 
 let active = 0; const waiting = [];
 async function slot() { if (active >= 2) await new Promise((r) => waiting.push(r)); active++; }
@@ -18,6 +27,7 @@ export async function renderPage(url, mode = "html") {
   await slot();
   try {
     const res = await api.runtime.sendMessage({ type: "render", url, mode });
+    if (res && res.ok && res.proto !== PROTO) throw new Error(STALE_WORKER);
     if (!res || !res.ok) throw new Error((res && res.error) || "Không mở được trang");
     return res.data;
   } finally { release(); }
@@ -61,7 +71,12 @@ async function resolveAll(results) {
   const out = []; let next = 0;
   await Promise.all(Array.from({ length: 6 }, async () => {
     while (next < results.length) {
-      const r = results[next++], url = await resolveUrl(r.url);
+      const r = results[next++];
+      let url = await resolveUrl(r.url);
+      if (!/^https?:\/\//i.test(url)) { // không theo được chuyển hướng: dùng tên miền hiển thị trong kết quả ("Tên https://domain › đường dẫn")
+        const shown = /(https?:\/\/[^\s›…]+)/.exec(`${r.title} ${r.snippet}`);
+        try { url = shown ? new URL(shown[1]).origin : ""; } catch { url = ""; }
+      }
       if (/^https?:\/\//i.test(url)) out.push({ ...r, url });
     }
   }));
