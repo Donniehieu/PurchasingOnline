@@ -32,6 +32,14 @@ Yêu cầu Chrome từ bản 110. Safari không cài thẳng được (cần mac
 
 **Tab Cài đặt:** thử Google, giá trị mặc định (số trang, số ảnh, thời gian chờ), khóa Anthropic, email sếp, sao lưu và khôi phục.
 
+## Cách app đọc và trả lời (tối ưu số lần mở trang)
+
+- **Mỗi trang chỉ mở một lần.** Khi mở một trang, app xử lý ngay thành "tài liệu" trong kho dữ liệu của yêu cầu (câu đã chuẩn hóa, giá, hãng/model, thông số, liên hệ, đề mục) rồi bỏ HTML. Trang đã có trong kho thì dùng lại, không mở lại và không phải chờ.
+- **Một lượt quét trả lời nhiều câu hỏi.** Các chủ đề (giá, ưu nhược điểm, công nghệ, phân loại, lưu ý khi mua) và các câu hỏi gõ thêm được chấm cùng lúc trên cùng kho, nên thêm câu hỏi không làm tăng số trang phải mở.
+- **Chỉ tìm thêm cho phần còn thiếu.** Câu nào kho đã trả lời được (từ 2 câu trích trở lên) thì không tìm. Các chủ đề còn thiếu được gộp thành **một** lượt tìm Google (tối đa 2 lượt); câu hỏi gõ thêm còn thiếu mới tìm riêng.
+- **Kho được lưu bền vững** trong trình duyệt (giữ kho của 10 yêu cầu gần nhất). Sau khi có kết quả, ô "Hỏi thêm" ở khối câu hỏi bổ sung trả lời ngay từ kho, không mở lại trang; chỉ khi kho chưa đủ mới tìm thêm.
+- Mô phỏng cùng kịch bản (2 trang tìm sản phẩm, 2 trang tìm NCC, 5 chủ đề, 3 câu hỏi gõ thêm): cách cũ 20 lượt tải trang Google và 95 lần mở trang web; cách mới 10 lượt và 58 lần, không mở lại trang nào. Số liệu thật phụ thuộc kết quả Google.
+
 ## Giới hạn cần biết
 
 - Google có thể hiện trang xác minh hoặc báo 403 khi truy cập tự động. App báo rõ và **không vượt qua**; hãy tăng thời gian chờ, giảm số trang, hoặc mở google.com xác minh rồi thử lại.
@@ -42,7 +50,7 @@ Yêu cầu Chrome từ bản 110. Safari không cài thẳng được (cần mac
 ## Kiểm thử
 
 ```bash
-node --test tests-js/core.test.mjs tests-js/flow.test.mjs
+node --test tests-js/core.test.mjs tests-js/flow.test.mjs tests-js/corpus.test.mjs
 ```
 
 Chạy thử giao diện như trang web thường (không có Google và crawl): `python tools/serve_docs.py` rồi mở http://localhost:8080.

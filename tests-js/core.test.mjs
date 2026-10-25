@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../docs/js/core.js";
 import * as knowledge from "../docs/js/knowledge.js";
+import { asDoc } from "../docs/js/corpus.js";
 
 const sup = (name, price, mah = null, months = null, vat = null) => ({ name, price, mah, warranty_months: months, vat, vat_included: false, relevance: 1, url: "https://" + name, title: name, contacts: {} });
 
@@ -47,7 +48,7 @@ test("nhận diện nhóm ngành hàng theo cụm từ dài nhất", () => {
   assert.equal(core.detectCategory("thứ gì đó lạ"), "chung");
 });
 test("tìm hiểu từ trang web: thông số, model, hãng, bảo hành, giá", () => {
-  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
+  const d = core.buildDiscovery(SHIRT.map(asDoc), SHIRT_TOKENS, "áo điều hòa");
   assert.equal(d.read, 4); assert.equal(d.total, 3); assert.equal(d.category, "gia_dung");
   assert.equal(d.mah[0].value, "20000"); assert.equal(d.mah[0].count, 2); assert.equal(d.volt[0].value, "18");
   assert.ok(d.models.some((m) => m.value === "F20" && m.count === 2));
@@ -64,7 +65,7 @@ test("question card nhận ra thông số trong tên và áp câu trả lời", 
   assert.throws(() => core.applyAnswers({ questions: cards }, { product: { value: "x" }, quantity: { value: "abc" } }), /Số lượng/);
 });
 test("câu trả lời card bổ sung (ngân sách, hãng, thông số) vào spec, từ khóa và văn bản thông số", () => {
-  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
+  const d = core.buildDiscovery(SHIRT.map(asDoc), SHIRT_TOKENS, "áo điều hòa");
   const cards = core.buildCards({ query: "áo điều hòa", quantity: 3 }, null, "", d);
   const answers = Object.fromEntries(cards.map((c) => [c.id, { value: c.default, custom: "" }]));
   answers.budget = { value: "1500000", custom: "" }; answers.brand = { value: "Yamako", custom: "" }; answers.vat = { value: "no", custom: "" };

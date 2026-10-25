@@ -1,6 +1,8 @@
 // Crawl Google có nhịp: mỗi lệnh gửi xong và có phản hồi rồi mới chờ một khoảng (cấu hình được) rồi gửi lệnh tiếp theo,
-// không dồn dập để tránh trang báo lỗi, bị chặn hoặc tải lỗi.
+// không dồn dập để tránh trang báo lỗi, bị chặn hoặc tải lỗi. Mỗi URL chỉ được mở MỘT lần cho cả yêu cầu: trang được xử lý
+// ngay thành tài liệu trong kho (corpus.js); mọi câu hỏi sau đó khai thác kho, không mở lại trang.
 import * as core from "./core.js";
+import { Corpus, makeDoc } from "./corpus.js";
 import * as net from "./net.js";
 
 export const SKIP_DOMAINS = ["youtube.com", "facebook.com", "tiktok.com", "wikipedia.org", "pinterest.", "google.", "reddit.com", "instagram.com", "twitter.com", "x.com", "porn", "xxx", "xhamster", "sex", "baidu.com", "zhihu.com", "linkedin.com"];
@@ -11,10 +13,15 @@ const SKIP_EXT = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|jpe?g|png|gif|webp|mp4|mp3)(\
 export class CancelledError extends Error { constructor() { super("Đã dừng theo yêu cầu"); this.name = "CancelledError"; } }
 
 export class Crawler {
-  /** opts: getDelay() -> mili giây chờ giữa hai lệnh, isCancelled() -> bool, onEvent(ev) -> báo tiến trình cho giao diện. */
-  constructor({ getDelay, isCancelled, onEvent }) {
+  /**
+   * opts: getDelay() -> mili giây chờ giữa hai lệnh, isCancelled() -> bool, onEvent(ev) -> báo tiến trình,
+   * corpus (kho dùng chung, mặc định tạo mới), serp(query, page) và loadHtml(url) (thay thế khi kiểm thử).
+   */
+  constructor({ getDelay, isCancelled, onEvent, corpus, serp, loadHtml }) {
     this.getDelay = getDelay; this.isCancelled = isCancelled || (() => false); this.onEvent = onEvent || (() => {});
-    this.cache = new Map(); this.readCount = 0; this.queries = []; // các từ khóa đã gửi lên Google
+    this.corpus = corpus || new Corpus(); this.injected = !!(serp || loadHtml); // bản thay thế khi kiểm thử không cần tiện ích
+    this.serp = serp || net.serpPage; this.loadHtml = loadHtml || ((url) => this.defaultLoad(url));
+    this.fetched = 0; this.reused = 0; this.searches = 0; this.failed = new Set(); this.queries = [];
   }
   check() { if (this.isCancelled()) throw new CancelledError(); }
   /** Chờ giữa hai lệnh (±25% ngẫu nhiên), kiểm tra yêu cầu dừng mỗi 250ms. */
@@ -23,58 +30,66 @@ export class Crawler {
     for (let t = 0; t < total; t += 250) { this.check(); await net.sleep(Math.min(250, total - t)); }
   }
 
-  /** Tải HTML một trang. Tiện ích: fetch trực tiếp, trang cần JavaScript hoặc fetch lỗi thì mở tab nền. Có bộ nhớ tạm trong phiên. */
-  async fetchHtml(url) {
-    this.check();
-    if (this.cache.has(url)) return this.cache.get(url);
+  /** Tải HTML một trang. Tiện ích: fetch trực tiếp, trang cần JavaScript hoặc fetch lỗi thì mở tab nền. */
+  async defaultLoad(url) {
     if (!net.isExt) throw new Error(net.EXT_ONLY);
-    let html = null;
     if (!RENDER_DOMAINS.some((d) => core.domainOf(url).endsWith(d))) {
       try {
         const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000);
         const r = await fetch(url, { signal: ctl.signal }); clearTimeout(timer);
-        if (r.ok && /html|xml/i.test(r.headers.get("content-type") || "html")) { const t = await r.text(); if (t.length > 2000) html = t; }
+        if (r.ok && /html|xml/i.test(r.headers.get("content-type") || "html")) { const t = await r.text(); if (t.length > 2000) return t; }
       } catch { /* mở tab nền */ }
     }
-    if (html == null) html = (await net.renderPage(url, "html")).html;
-    if (this.cache.size >= 80) this.cache.delete(this.cache.keys().next().value);
-    this.cache.set(url, html);
-    return html;
+    return (await net.renderPage(url, "html")).html;
   }
 
-  /** Mở lần lượt các link (2 luồng), mỗi luồng gửi xong có phản hồi rồi mới chờ `delay` và gửi link kế tiếp. */
+  /** Mở một URL nếu chưa có trong kho. Trả về { doc, fresh }: fresh = true khi vừa phải mở trang (cần chờ trước lệnh kế). */
+  async visitInfo(url) {
+    this.check();
+    const have = this.corpus.get(url);
+    if (have && !have.pseudo) { this.reused++; return { doc: have, fresh: false }; }
+    if (this.failed.has(url)) return { doc: null, fresh: false };
+    let doc = null;
+    try { doc = makeDoc({ url, html: await this.loadHtml(url) }); } catch (e) { if (e instanceof CancelledError) throw e; doc = null; }
+    if (!doc) { this.failed.add(url); return { doc: null, fresh: true }; }
+    this.fetched++; this.corpus.add(doc); return { doc, fresh: true };
+  }
+  async visit(url) { return (await this.visitInfo(url)).doc; }
+
+  /** Mở lần lượt các link (2 luồng): xong một trang có phản hồi rồi mới chờ `delay` và mở trang kế. Trang đã có trong kho không cần chờ. */
   async readLinks(items, label = "") {
     const out = new Array(items.length); let next = 0, done = 0;
     const worker = async () => {
       while (next < items.length) {
         this.check();
         const i = next++, it = items[i];
-        try { out[i] = { url: it.url, title: it.title || "", snippet: it.snippet || "", html: await this.fetchHtml(it.url) }; }
-        catch (e) { if (e instanceof CancelledError) throw e; out[i] = null; }
-        this.readCount++; done++;
-        this.onEvent({ kind: "read", label, done, total: items.length, url: it.url, ok: !!out[i] });
-        if (next < items.length) await this.wait();
+        const { doc, fresh } = await this.visitInfo(it.url);
+        out[i] = doc; done++;
+        this.onEvent({ kind: "read", label, done, total: items.length, url: it.url, ok: !!doc, reused: !fresh });
+        if (fresh && next < items.length) await this.wait();
       }
     };
-    await Promise.all([worker(), (async () => { await net.sleep(Math.min(800, this.getDelay() / 2)); await worker(); })()]);
+    const todo = items.filter((it) => { const d = this.corpus.get(it.url); return !d || d.pseudo; }).length; // trang đã có trong kho không cần luồng thứ hai
+    await Promise.all([worker(), todo > 1 ? (async () => { await net.sleep(Math.min(800, this.getDelay() / 2)); await worker(); })() : Promise.resolve()]);
     return out.filter(Boolean);
   }
 
   /**
-   * Tìm trên Google `pages` trang kết quả (1-5). Mỗi trang: lấy kết quả rồi MỞ HẾT các link của trang đó để đọc,
+   * Tìm trên Google `pages` trang kết quả (1-5). Mỗi trang: lấy kết quả rồi MỞ HẾT các link của trang đó (link đã đọc thì dùng lại),
    * xong mới chờ rồi sang trang kế. Không còn kết quả mới thì dừng sớm.
-   * Trả về { items (mọi kết quả), read (các trang đã đọc, có html), pagesDone, errors }.
+   * Trả về { items (mọi kết quả), read (tài liệu của các trang đã mở), pagesDone, errors }.
    */
   async google(query, pages, { read = true, perDomain = 2, label = "" } = {}) {
     if (!this.queries.includes(query)) this.queries.push(query);
-    const items = [], readPages = [], errors = [], seen = new Set(), domainCount = new Map();
+    this.searches++;
+    const items = [], readDocs = [], errors = [], seen = new Set(), domainCount = new Map();
     let pagesDone = 0;
     for (let p = 1; p <= pages; p++) {
       this.check();
       if (p > 1) await this.wait();
       this.onEvent({ kind: "serp", label, query, page: p, pages, state: "start" });
       let res;
-      try { res = await net.serpPage(query, p); }
+      try { res = await this.serp(query, p); }
       catch (e) { if (e instanceof CancelledError) throw e; errors.push(`trang ${p}: ${e.message}`); this.onEvent({ kind: "serp", label, query, page: p, pages, state: "error", message: e.message }); break; }
       const fresh = res.results.filter((r) => !seen.has(r.url));
       if (!fresh.length) { this.onEvent({ kind: "serp", label, query, page: p, pages, state: "end" }); break; }
@@ -88,18 +103,18 @@ export class Crawler {
           const c = domainCount.get(d) || 0; if (c >= perDomain) return false; domainCount.set(d, c + 1); return true;
         });
         await this.wait();
-        readPages.push(...(await this.readLinks(links, `${label} trang ${p}`.trim())));
+        readDocs.push(...(await this.readLinks(links, `${label} trang ${p}`.trim())));
       }
       this.onEvent({ kind: "serp", label, query, page: p, pages, state: "done" });
     }
-    return { items, read: readPages, pagesDone, errors };
+    return { items, read: readDocs, pagesDone, errors };
   }
 }
 
-/** Các kết quả không mở được vẫn góp tiêu đề và mô tả trong kết quả tìm kiếm (trang giả). */
+/** Các kết quả không mở được vẫn góp tiêu đề và mô tả trong kết quả tìm kiếm: trả về các tài liệu "giả" (pseudo) để thêm vào kho. */
 const escHtml = (t) => String(t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-export function pseudoPages(items, readUrls = new Set()) {
-  return items.filter((i) => !readUrls.has(i.url)).map((i) => ({ url: i.url, pseudo: true, html: `<html><head><title>${escHtml(i.title)}</title></head><body><p>${escHtml(i.title)}. ${escHtml(i.snippet)}</p></body></html>` }));
+export function pseudoDocs(items, skip = new Set()) {
+  return items.filter((i) => !skip.has(i.url)).map((i) => makeDoc({ url: i.url, pseudo: true, html: `<html><head><title>${escHtml(i.title)}</title></head><body><p>${escHtml(i.title)}. ${escHtml(i.snippet)}</p></body></html>` })).filter(Boolean);
 }
 
 /* ------------------------------------------------------------------ đọc ảnh: tên sản phẩm, model, chữ trong ảnh */

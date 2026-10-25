@@ -19,6 +19,16 @@
 ### Tab Lịch sử tìm kiếm
 - [x] Giữ tính năng cũ, trình bày dạng bảng: STT, Tiêu đề, Số lượng, Từ khóa đã tìm, Các trang đã tìm (bấm dòng xem chỉ tiêu chi tiết, mở lại từng lần); xuất Excel
 
+### Tối ưu thuật toán tìm kiếm và trả lời câu hỏi
+- [x] Kho dữ liệu (`corpus.js`): mỗi trang chỉ mở một lần, xử lý ngay thành tài liệu (câu chuẩn hóa, giá, hãng/model, thông số, liên hệ, đề mục), bỏ HTML; trang đã có trong kho dùng lại không phải chờ; trang lỗi không thử lại
+- [x] Trả lời nhiều câu hỏi trong một lượt quét (`answerAll`): 5 chủ đề và mọi câu hỏi gõ thêm chấm cùng lúc; kết quả giống hệt khi trả lời từng câu riêng (có test)
+- [x] Chỉ tìm thêm cho câu thiếu (dưới 2 câu trích): chủ đề thiếu gộp thành một lượt Google (tối đa 2 lượt), câu gõ thêm thiếu mới tìm riêng (tối đa 4); kho đủ thì 0 lượt tìm (có test)
+- [x] Kho lưu bền vững trong IndexedDB (10 yêu cầu gần nhất); ô "Hỏi thêm" trả lời ngay từ kho sau khi có kết quả, không mở lại trang
+- [x] Khoảng giá của chủ đề giá lấy từ giá đọc chắc chắn của từng trang (loại phụ kiện, voucher), không quét mọi con số
+- [x] Sửa lỗi mẫu nhận diện câu nói về giá không khớp "1.200.000đ" (`` sau chữ "đ"), nên chủ đề Giá trung bình trước đây thiếu câu trả lời
+- [x] Mô phỏng: 20 → 10 lượt tải trang Google, 95 → 58 lần mở trang web, không mở lại trang nào; 150 bài x 300 câu trả lời 10 câu hỏi trong dưới 4 giây (có test)
+- [ ] Số liệu mô phỏng chưa kiểm chứng trên Google thật
+
 ### Chưa chắc / còn lại
 - [ ] **Chưa chạy thử với Google thật trong trình duyệt**: mở tab nền, đọc kết quả, phân trang, Google Hình ảnh; chỉ thử với dữ liệu mẫu. Google có thể chặn (403, xác minh), app không vượt qua
 - [ ] Trang bán hàng không có dữ liệu sản phẩm có cấu trúc (JSON-LD, thẻ giá) và không có nút mua sẽ bị loại khỏi bảng; Shopee, TikTok Shop vẽ giá bằng JavaScript nên dễ không đọc được giá

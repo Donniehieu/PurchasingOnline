@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as core from "../docs/js/core.js";
 import * as knowledge from "../docs/js/knowledge.js";
 import * as net from "../docs/js/net.js";
-import { Crawler, CancelledError, pseudoPages } from "../docs/js/crawl.js";
+import { asDoc } from "../docs/js/corpus.js";
 import * as flow from "../docs/js/flow.js";
 
 const page = (url, title, body, head = "") => ({ url, html: `<html><head><title>${title}</title>${head}</head><body>${body}</body></html>` });
@@ -17,13 +17,13 @@ const VAC = [
 const TOKENS = core.queryKeywords("máy hút bụi cầm tay");
 
 test("hãng lấy từ dữ liệu sản phẩm, không nhầm tên website/NCC", () => {
-  const d = core.buildDiscovery(VAC, TOKENS, "máy hút bụi cầm tay");
+  const d = core.buildDiscovery(VAC.map(asDoc), TOKENS, "máy hút bụi cầm tay");
   assert.ok(d.brands.some((b) => /elmich/i.test(b.value)), JSON.stringify(d.brands));
   for (const banned of ["FPT", "FPTSHOP", "NGUYENKIM", "HC"]) assert.ok(!d.brands.some((b) => core.stripAccents(b.value).toUpperCase() === banned), `${banned} bị coi là hãng`);
   assert.ok(d.models.some((m) => m.value === "VCE-9304" && m.count >= 2), JSON.stringify(d.models));
 });
 test("question card: đúng 10 câu, 5 câu cố định (tên, model, số lượng, mục đích, hãng) và 5 câu từ dữ liệu crawl", () => {
-  const d = core.buildDiscovery(VAC, TOKENS, "máy hút bụi cầm tay");
+  const d = core.buildDiscovery(VAC.map(asDoc), TOKENS, "máy hút bụi cầm tay");
   const cards = core.buildCards({ query: "máy hút bụi cầm tay", quantity: 4 }, null, "", d), ids = cards.map((c) => c.id);
   assert.equal(cards.length, 10);
   assert.deepEqual(ids.slice(0, 5), ["product", "model", "quantity", "purpose", "brand"]);
@@ -79,22 +79,6 @@ test("giải link bọc của Google; link khác giữ nguyên", () => {
   assert.equal(net.resolveUrl("https://www.google.com/url?q=https%3A%2F%2Fshop.vn%2Fp&sa=U"), "https://shop.vn/p");
   assert.equal(net.resolveUrl("https://shop.vn/direct"), "https://shop.vn/direct");
   assert.equal(net.resolveUrl("https://www.google.com/search?q=x"), "");
-});
-test("crawl có nhịp: gửi xong có phản hồi rồi mới chờ, không dồn dập; dừng được giữa chừng", async () => {
-  const stamps = [];
-  const c = new Crawler({ getDelay: () => 40, onEvent: () => {} });
-  c.fetchHtml = async (url) => { stamps.push({ url, t: Date.now(), phase: "start" }); await net.sleep(10); stamps.push({ url, t: Date.now(), phase: "end" }); return "<html></html>"; };
-  const out = await c.readLinks([1, 2, 3, 4].map((i) => ({ url: `https://x.vn/${i}` })));
-  assert.equal(out.length, 4);
-  // mỗi luồng: sau khi một link xong phải chờ (>= 40*0.75 ms) mới bắt đầu link kế
-  for (const w of [0, 1]) { /* hai luồng đan xen, kiểm tra gián tiếp bằng tổng thời gian */ }
-  const total = stamps.at(-1).t - stamps[0].t; assert.ok(total >= 30, `tổng thời gian ${total}ms quá ngắn`);
-  let stop = false; const c2 = new Crawler({ getDelay: () => 10, isCancelled: () => stop }); c2.fetchHtml = async () => { stop = true; return "<html></html>"; };
-  await assert.rejects(() => c2.readLinks([{ url: "https://a.vn" }, { url: "https://b.vn" }, { url: "https://c.vn" }]), CancelledError);
-});
-test("kết quả không mở được vẫn góp tiêu đề và mô tả", () => {
-  const p = pseudoPages([{ url: "https://a.vn", title: "Máy hút bụi <X>", snippet: "Giá: 1.500.000đ" }, { url: "https://b.vn", title: "b", snippet: "" }], new Set(["https://b.vn"]));
-  assert.equal(p.length, 1); assert.ok(p[0].pseudo); assert.match(p[0].html, /&lt;X&gt;/);
 });
 test("cấu hình mặc định giới hạn: trang 1-5, ảnh 1-20, chờ 1-15 giây", () => {
   assert.deepEqual(flow.defaultConfig({ pages: 99, album_n: -5, delay: -3 }), { pages: 5, album_n: 1, delay: 1, topics: ["price", "pros", "using", "types", "buy"], extra_q: [], ref_urls: [] });

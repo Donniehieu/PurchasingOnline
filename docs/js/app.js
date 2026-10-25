@@ -2,6 +2,7 @@
 import * as album from "./album.js";
 import * as core from "./core.js";
 import { CancelledError, Crawler } from "./crawl.js";
+import { Corpus, clearCorpora, loadCorpus, pruneCorpora } from "./corpus.js";
 import { downloadHistory, downloadJob, downloadLinks, readLinkFile } from "./excel.js";
 import * as flow from "./flow.js";
 import * as knowledge from "./knowledge.js";
@@ -58,7 +59,7 @@ function makeProgress(el, steps) {
   };
 }
 const PREPARE_STEPS = [{ id: "ocr", label: "Đọc ảnh, điền tên/model/từ khóa" }, { id: "google", label: "Tìm trên Google, mở hết link của từng trang" }, { id: "album", label: "Lấy ảnh vào album từ Google Hình ảnh" }, { id: "analyze", label: "Phân tích dữ liệu, dựng câu hỏi" }];
-const RUN_STEPS = [{ id: "suppliers", label: "Tìm nhà cung cấp bán đúng sản phẩm" }, { id: "contacts", label: "Thu thập liên hệ NCC" }, { id: "topics", label: "Tìm hiểu giá, ưu nhược điểm, công nghệ, phân loại, lưu ý khi mua" }, { id: "extra", label: "Trả lời từ khóa/câu hỏi bạn bổ sung" }, { id: "refs", label: "Đọc và tóm tắt bài viết tham khảo" }, { id: "album", label: "Lấy ảnh vào album" }, { id: "compose", label: "Xếp hạng NCC, đề xuất, tổng hợp" }];
+const RUN_STEPS = [{ id: "suppliers", label: "Tìm nhà cung cấp bán đúng sản phẩm" }, { id: "contacts", label: "Thu thập liên hệ NCC" }, { id: "topics", label: "Trả lời mọi chủ đề từ dữ liệu đã đọc (chỉ tìm thêm cho phần còn thiếu)" }, { id: "extra", label: "Trả lời từ khóa/câu hỏi bạn bổ sung" }, { id: "refs", label: "Đọc và tóm tắt bài viết tham khảo" }, { id: "album", label: "Lấy ảnh vào album" }, { id: "compose", label: "Xếp hạng NCC, đề xuất, tổng hợp" }];
 
 /** Báo tiến trình crawl của Google: "Tìm sản phẩm: trang 2/3, đọc link 4/10". */
 function crawlEvents(prog) {
@@ -104,8 +105,14 @@ function beginRun(title) {
   $("progress-card").hidden = false; $("error").textContent = ""; $("progress-title").textContent = title; $("submit-btn").disabled = true;
 }
 function endRun() { running = false; $("stop-btn").hidden = true; $("submit-btn").disabled = false; }
-function makeCtx(job, prog) {
-  const crawler = new Crawler({ getDelay: () => job.cfg.delay * 1000, isCancelled: () => cancelled, onEvent: crawlEvents(prog) });
+// Kho dữ liệu đã đọc của từng yêu cầu: dùng chung giữa giai đoạn tìm hiểu và giai đoạn tìm NCC để không mở lại trang.
+const corpora = new Map();
+async function corpusOf(job) {
+  if (!corpora.has(job.id)) corpora.set(job.id, (await loadCorpus(job.id).catch(() => null)) || new Corpus());
+  return corpora.get(job.id);
+}
+function makeCtx(job, prog, corpus) {
+  const crawler = new Crawler({ getDelay: () => job.cfg.delay * 1000, isCancelled: () => cancelled, onEvent: crawlEvents(prog), corpus });
   return {
     crawler, settings, files: [], log: (m) => addLog(job, m),
     step: (id, state, detail, frac) => ({ start: () => prog.start(id, detail, frac), done: () => prog.done(id, detail), skip: () => prog.skip(id, detail), error: () => prog.fail(id, detail) }[state]()),
@@ -132,7 +139,8 @@ $("request-form").addEventListener("submit", async (e) => {
   $("result-card").hidden = true; $("wizard-card").hidden = true; $("log").textContent = "";
   beginRun("Đang tìm hiểu sản phẩm trên Google");
   if (files.length) await album.addUploads(job.id, files);
-  const prog = makeProgress($("progress"), PREPARE_STEPS), ctx = makeCtx(job, prog); ctx.files = files;
+  corpora.set(job.id, new Corpus());
+  const prog = makeProgress($("progress"), PREPARE_STEPS), ctx = makeCtx(job, prog, corpora.get(job.id)); ctx.files = files;
   try {
     await flow.prepare(job, ctx);
     prog.skipPending(); prog.finish();
@@ -197,11 +205,12 @@ async function confirmAnswers() {
   try { core.applyAnswers(job, wiz.answers); } catch (err) { $("cards-error").textContent = err.message; return; }
   job.status = "queued"; $("wizard-card").hidden = true; persist();
   beginRun("Đang tìm nhà cung cấp và tìm hiểu sản phẩm");
-  const prog = makeProgress($("progress"), RUN_STEPS), ctx = makeCtx(job, prog);
+  const prog = makeProgress($("progress"), RUN_STEPS), ctx = makeCtx(job, prog, await corpusOf(job));
   try {
     await flow.run(job, ctx);
     prog.skipPending(); prog.finish();
     currentJob = job; persist(); renderResult(job);
+    pruneCorpora(jobs.slice(0, 10).map((j) => j.id)).catch(() => {});
   } catch (err) {
     job.status = "error"; job.error = err.message; addLog(job, `Lỗi: ${err.message}`); prog.fail(prog.active || "suppliers", err.message); showError(err.message); persist();
   }
@@ -343,8 +352,8 @@ function renderResearch(job) {
   }).join("");
 }
 function renderCustom(job) {
-  const list = job.custom_answers || []; $("custom-wrap").hidden = !list.length;
-  $("custom-answers").innerHTML = list.map((a) => `<div class="block"><h4>${esc(a.question)}</h4><div class="muted">đã đọc ${a.pages_read ?? 0} bài ở trang 1-2 của Google</div>${snippetList(a.snippets)}</div>`).join("");
+  const list = job.custom_answers || []; $("custom-wrap").hidden = false; // luôn hiện để có ô hỏi thêm từ kho dữ liệu
+  $("custom-answers").innerHTML = list.map((a) => `<div class="block"><h4>${esc(a.question)}</h4><div class="muted">đã tìm trong ${a.pages_read ?? 0} bài đã đọc</div>${snippetList(a.snippets)}</div>`).join("");
 }
 function renderRefs(job) {
   const list = job.refs || []; $("refs-wrap").hidden = !list.length;
@@ -366,6 +375,24 @@ function renderAnalysis(job) {
 }
 $("copy-persuasion").addEventListener("click", () => { const t = core.persuasionText(currentJob?.analysis.persuasion); if (t) navigator.clipboard.writeText(t).then(() => toast("Đã sao chép")); });
 $("print-btn").addEventListener("click", () => window.print());
+
+/* ------------------------------------------------------------------ hỏi thêm từ kho dữ liệu đã đọc */
+$("ask-btn").addEventListener("click", async () => {
+  const q = $("ask-q").value.trim();
+  if (!currentJob || !q || running) return;
+  $("ask-btn").disabled = true; $("ask-state").textContent = "Đang tìm trong kho dữ liệu đã đọc...";
+  try {
+    const job = currentJob, corpus = await corpusOf(job);
+    if (!corpus.size) { $("ask-state").textContent = "Kho dữ liệu của yêu cầu này đã bị xóa hoặc không có, không có gì để tìm."; $("ask-btn").disabled = false; return; }
+    const crawler = new Crawler({ getDelay: () => job.cfg.delay * 1000, isCancelled: () => false, onEvent: () => {}, corpus });
+    const r = await flow.askMore(job, q, crawler, { allowSearch: net.isExt });
+    persist(); renderCustom(job);
+    $("ask-state").textContent = r.searched ? `Kho chưa đủ nên đã tìm thêm trên Google (mở ${crawler.fetched} trang mới, dùng lại ${crawler.reused} trang trong kho).` : `Trả lời từ ${corpus.list({ real: true }).length} trang trong kho, không mở thêm trang nào.`;
+    $("ask-q").value = "";
+  } catch (err) { $("ask-state").textContent = `Lỗi: ${err.message}`; }
+  $("ask-btn").disabled = false;
+});
+$("ask-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("ask-btn").click(); } });
 
 /* ------------------------------------------------------------------ album ảnh */
 let albumUrls = [];
@@ -492,7 +519,7 @@ $("restore").addEventListener("change", async (e) => {
   } catch (err) { toast(err.message); }
   e.target.value = "";
 });
-$("wipe").addEventListener("click", () => { if (confirm("Xóa toàn bộ lịch sử trong trình duyệt này? Không thể hoàn tác.")) { jobs = []; persist(); album.clearAll().catch(() => {}); currentJob = null; $("result-card").hidden = true; toast("Đã xóa lịch sử"); } });
+$("wipe").addEventListener("click", () => { if (confirm("Xóa toàn bộ lịch sử trong trình duyệt này? Không thể hoàn tác.")) { jobs = []; persist(); album.clearAll().catch(() => {}); clearCorpora().catch(() => {}); corpora.clear(); currentJob = null; $("result-card").hidden = true; toast("Đã xóa lịch sử"); } });
 
 /* ------------------------------------------------------------------ khởi động */
 applyDefaults();

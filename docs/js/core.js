@@ -459,18 +459,29 @@ const medianOf = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; 
 const numStr = (v) => String(+String(v).replace(",", ".")).replace(/^0+(?=\d)/, "");
 
 /**
+ * Tổng hợp giá từ các tài liệu (mỗi tài liệu có doc.price = { value, source }): ưu tiên giá đọc chắc chắn, loại giá lệch hẳn
+ * mặt bằng (dưới 30% hoặc trên 350% trung vị). Trả về { entries: [{value, source, flag}], values (giá dùng để thống kê), sure, outliers }.
+ */
+export function priceSummary(docs) {
+  const raw = docs.map((d) => ({ value: d.price ? d.price.value : null, source: d.price ? d.price.source : null }));
+  const withValue = raw.filter((x) => x.value), sure = withValue.filter((x) => isConfidentPrice(x.source));
+  const base = sure.length >= 3 ? sure : withValue, med = medianOf(base.map((x) => x.value));
+  const flagOf = (x) => (!x.value || base.length < 4 ? null : x.value < med * 0.3 ? "low" : x.value > med * 3.5 ? "high" : null);
+  const entries = raw.map((x) => ({ ...x, flag: flagOf(x) }));
+  return { entries, values: raw.filter((x) => x.value && !flagOf(x) && base.includes(x)).map((x) => x.value), sure: sure.length, outliers: entries.filter((e) => e.flag).length };
+}
+
+/**
  * Rút thông tin sản phẩm từ nhiều trang đã tải: nhóm ngành, tên, model, hãng, thông số, mục đích, bảo hành, giá.
  * pages: [{ url, html }]. Chỉ dùng trang đúng sản phẩm (cụm 2 từ liên tiếp). Mỗi giá trị kèm số trang nhắc tới.
  */
 export function buildDiscovery(pages, queryTokens, subject = "") {
   const used = [];
-  for (const p of pages) {
-    if (!p || !p.html) continue;
-    const text = htmlToText(p.html);
-    const rel = phraseRelevance(queryTokens, stripAccents(text));
+  for (const d of pages) {
+    if (!d || !d.sentences) continue; // chỉ nhận "tài liệu" đã xử lý một lần (xem corpus.js), không nhận HTML thô
+    const rel = phraseRelevance(queryTokens, d.norm);
     if (rel < 0.5) continue;
-    const title = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(p.html) || [, ""])[1]).replace(/\s+/g, " ").trim();
-    used.push({ url: p.url, domain: domainOf(p.url), title, text, rel, html: p.html, pseudo: !!p.pseudo, site: siteTokensOf(p.html, p.url), ld: p.pseudo ? [] : jsonLdProducts(p.html) });
+    used.push({ url: d.url, domain: d.domain, title: d.title, text: d.text, rel, pseudo: !!d.pseudo, site: d.site, ld: d.ld || [], price: d.price });
   }
   const tally = (extract, keyFn = (v) => normKey(String(v))) => {
     const map = new Map();
@@ -494,16 +505,13 @@ export function buildDiscovery(pages, queryTokens, subject = "") {
   const materials = tally((u) => { const n = " " + stripAccents(u.text) + " "; return MATERIALS.filter((w) => n.includes(` ${stripAccents(w)} `)); }, (v) => stripAccents(v)).filter((e) => e.count >= 2).slice(0, 4);
   const names = [...new Map(used.slice().sort((a, b) => b.rel - a.rel).map((u) => [normKey(cleanTitle(u.title)), cleanTitle(u.title)]).filter(([k]) => k.length >= 6)).values()].slice(0, 3);
   // Giá: mỗi trang một giá (ưu tiên dữ liệu có cấu trúc), loại giá lệch hẳn mặt bằng (thường là phụ kiện, voucher, giá sai).
-  const priced = used.map((u) => ({ u, ...extractPrice(u.html, u.text, null, u.pseudo) }));
-  const withValue = priced.filter((x) => x.value), sure = withValue.filter((x) => isConfidentPrice(x.source));
-  const base = sure.length >= 3 ? sure : withValue;
-  const med = medianOf(base.map((x) => x.value));
-  const flagOf = (x) => (!x.value || base.length < 4 ? null : x.value < med * 0.3 ? "low" : x.value > med * 3.5 ? "high" : null);
-  const items = priced.map((x) => ({ url: x.u.url, domain: x.u.domain, title: x.u.title.slice(0, 100), price: x.value, price_source: x.source, price_flag: flagOf(x) }));
-  const prices = priced.filter((x) => x.value && !flagOf(x) && base.includes(x)).map((x) => x.value);
+  // Giá: mỗi trang một giá (ưu tiên dữ liệu có cấu trúc), loại giá lệch hẳn mặt bằng (thường là phụ kiện, voucher, giá sai).
+  const ps = priceSummary(used);
+  const items = used.map((u, i) => ({ url: u.url, domain: u.domain, title: u.title.slice(0, 100), price: ps.entries[i].value, price_source: ps.entries[i].source, price_flag: ps.entries[i].flag }));
+  const prices = ps.values, sure = { length: ps.sure };
   return {
     subject, category: detectCategory(subject || queryTokens.join(" ")),
-    read: pages.filter((p) => p && p.html).length, total: used.length,
+    read: pages.filter((d) => d && d.sentences && !d.pseudo).length, total: used.length,
     pages: items.slice(0, 40).map(({ url, domain, title }) => ({ url, domain, title })), items: items.slice(0, 150),
     names, models: models.slice(0, 4), brands: brands.slice(0, 6), mah: mah.slice(0, 4), volt: volt.slice(0, 4), purposes: purposes.slice(0, 3),
     warranty: warranty.slice(0, 3), specs, materials,
