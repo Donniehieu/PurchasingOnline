@@ -59,7 +59,7 @@ function makeProgress(el, steps) {
   };
 }
 const PREPARE_STEPS = [{ id: "ocr", label: "Đọc ảnh, điền tên/model/từ khóa" }, { id: "album", label: "Lấy ảnh vào album từ Google Hình ảnh (làm trước)" }, { id: "google", label: "Tìm trên Google, mở hết link của từng trang" }, { id: "analyze", label: "Phân tích dữ liệu, dựng câu hỏi" }];
-const RUN_STEPS = [{ id: "album", label: "Lấy ảnh vào album (nếu chưa có)" }, { id: "suppliers", label: "Tìm nhà cung cấp bán đúng sản phẩm" }, { id: "contacts", label: "Thu thập liên hệ NCC" }, { id: "topics", label: "Trả lời từng chủ đề: tìm bài bằng \"câu hỏi + tên sản phẩm\", bổ sung đáp án" }, { id: "extra", label: "Trả lời từ khóa/câu hỏi bạn bổ sung" }, { id: "refs", label: "Đọc và tóm tắt bài viết tham khảo" }, { id: "compose", label: "Xếp hạng NCC, đề xuất, tổng hợp" }];
+const RUN_STEPS = [{ id: "album", label: "Lấy ảnh vào album (nếu chưa có)" }, { id: "suppliers", label: "Tìm nhà cung cấp bán đúng sản phẩm" }, { id: "topics", label: "Trả lời từng chủ đề: tìm bài bằng \"câu hỏi + tên sản phẩm\", bổ sung đáp án" }, { id: "extra", label: "Trả lời từ khóa/câu hỏi bạn bổ sung" }, { id: "refs", label: "Đọc và tóm tắt bài viết tham khảo" }, { id: "compose", label: "Xếp hạng NCC, đề xuất, tổng hợp" }];
 
 /** Báo tiến trình crawl của Google: "Tìm sản phẩm: trang 2/3, đọc link 4/10". */
 function crawlEvents(prog) {
@@ -140,17 +140,19 @@ $("request-form").addEventListener("submit", async (e) => {
   beginRun("Đang tìm hiểu sản phẩm trên Google");
   if (files.length) await album.addUploads(job.id, files);
   corpora.set(job.id, new Corpus());
+  let proceed = false;
   const prog = makeProgress($("progress"), PREPARE_STEPS), ctx = makeCtx(job, prog, corpora.get(job.id)); ctx.files = files;
   try {
     await flow.prepare(job, ctx);
     prog.skipPending(); prog.finish();
     $("query").value = job.query || ""; $("product-code").value = job.product_code || ""; $("search-text").value = job.search_text || "";
-    persist(); showWizard(job);
+    persist(); proceed = true;
   } catch (err) {
     job.status = err instanceof CancelledError ? "stopped" : "error"; job.error = err.message; addLog(job, `Lỗi: ${err.message}`);
     prog.fail(prog.active || "ocr", err.message); showError(err.message); persist();
   }
   endRun();
+  if (proceed) await runJob(job);
 });
 
 /* ------------------------------------------------------------------ wizard: từng câu hỏi một, trả lời xong tự sang câu kế */
@@ -198,11 +200,11 @@ function renderSummary() {
   $("wiz-summary").innerHTML = `<h4>Đã trả lời ${cards.length}/${cards.length} câu</h4><ol class="sum">${cards.map((c, i) => `<li><b>${esc(c.title)}:</b> ${esc(answerLabel(c, wiz.answers[c.id]))} <a href="#" data-jump="${i}">sửa</a></li>`).join("")}</ol>
     <div class="actions"><button type="button" id="confirm-btn">Xác nhận và tìm nhà cung cấp</button></div><div id="cards-error" class="error"></div>`;
   document.querySelectorAll("[data-jump]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); wiz.idx = +a.dataset.jump; $("wizard").hidden = false; $("wiz-summary").hidden = true; renderStep(); }));
-  $("confirm-btn").addEventListener("click", confirmAnswers);
+  $("confirm-btn").addEventListener("click", () => { try { core.applyAnswers(wiz.job, wiz.answers); } catch (err) { $("cards-error").textContent = err.message; return; } runJob(wiz.job); }); // yêu cầu cũ còn ở trạng thái chờ xác nhận
 }
-async function confirmAnswers() {
-  const job = wiz.job;
-  try { core.applyAnswers(job, wiz.answers); } catch (err) { $("cards-error").textContent = err.message; return; }
+/** Chạy giai đoạn 2 ngay sau khi tìm hiểu, không hỏi xác nhận thông số: tìm đúng theo từ khóa người dùng nhập. */
+async function runJob(job) {
+  job.query = job.query || job.search_text; job.spec = job.spec && Object.keys(job.spec).length ? job.spec : { mah: "", volt: "", extra: [], brand: "", material: "", budget: null, warranty: null, priority: "balanced", vat_required: true };
   job.status = "queued"; $("wizard-card").hidden = true; persist();
   beginRun("Đang tìm nhà cung cấp và tìm hiểu sản phẩm");
   const prog = makeProgress($("progress"), RUN_STEPS), ctx = makeCtx(job, prog, await corpusOf(job));

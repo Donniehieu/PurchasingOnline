@@ -51,7 +51,7 @@ export class Crawler {
     if (this.failed.has(url)) return { doc: null, fresh: false };
     let doc = null;
     try { doc = makeDoc({ url, html: await this.loadHtml(url) }); } catch (e) { if (e instanceof CancelledError) throw e; doc = null; }
-    if (!doc) { this.failed.add(url); return { doc: null, fresh: true }; }
+    if (!doc) { this.failed.add(url); return { doc: null, fresh: false }; } // trang hỏng: bỏ qua ngay, không chờ, không thử lại
     this.fetched++; this.corpus.add(doc); return { doc, fresh: true };
   }
   async visit(url) { return (await this.visitInfo(url)).doc; }

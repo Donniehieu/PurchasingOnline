@@ -17,6 +17,8 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.ra
 export const spaced = (...parts) => parts.map((p) => String(p || "").trim()).filter(Boolean).join(" ");
 /** Từ khóa kiểm tra bài đúng sản phẩm: chỉ 5 từ đầu của tên (tên dài kiểu quảng cáo "... phù hợp mọi nhu cầu" làm lọc sai). */
 const relTokens = (text) => core.queryKeywords(text).slice(0, 5);
+/** Từ khóa tìm kiếm đúng như người dùng nhập (không thêm bớt chữ): dùng cho mọi lượt tìm NCC và câu hỏi. */
+const keyOf = (job) => job.search_text || spaced(job.query, job.product_code);
 const albumQuery = (job) => spaced(job.query, job.product_code);
 const MAX_ROUNDS = 2, MAX_CUSTOM_SEARCHES = 4;
 
@@ -116,43 +118,6 @@ export function buildOutputs(job) {
 }
 
 const hasContact = (c) => !!(c && (c.phones?.length || c.emails?.length || c.zalo?.length));
-/**
- * Liên hệ và VAT của NCC. Trang sản phẩm đã cho đủ số điện thoại/email và VAT thì KHÔNG mở thêm trang Liên hệ của website đó;
- * chỉ website còn thiếu mới thử lần lượt vài đường dẫn, dừng ngay khi đủ. Trang đã có trong kho dùng lại, trang lỗi không thử lại.
- */
-export async function enrichContacts(job, crawler, step) {
-  const missing = (s) => !hasContact(s.contacts) || s.vat == null;
-  const origins = [...new Set(job.suppliers.filter((s) => s.site_url && missing(s)).map((s) => s.site_url))];
-  const merged = new Map();
-  let i = 0;
-  for (const origin of origins) {
-    i++; step("contacts", "start", `${i}/${origins.length}: ${new URL(origin).hostname}`, i / origins.length);
-    const group = job.suppliers.filter((s) => s.site_url === origin);
-    for (const path of ["/lien-he", "/contact", "/lien-he.html", "/contact-us", "/"]) {
-      const { doc, fresh } = await crawler.visitInfo(origin + path);
-      if (doc) {
-        const c = doc.page && doc.page.contacts, v = core.detectVat(doc.text);
-        const found = merged.get(origin) || {};
-        if (hasContact(c) && !found.contacts) { found.contacts = c; found.contactUrl = doc.url; }
-        if (v.vat != null && found.vat == null) { found.vat = v.vat; found.vatUrl = doc.url; found.vatEvidence = v.evidence; }
-        merged.set(origin, found);
-        if ((found.contacts || group.every((s) => hasContact(s.contacts))) && (found.vat != null || group.every((s) => s.vat != null))) break;
-      }
-      if (fresh) await crawler.wait(0.4);
-    }
-  }
-  for (const s of job.suppliers) {
-    const f = merged.get(s.site_url); if (!f) continue;
-    if (f.contacts) {
-      const c = s.contacts || {}, extra = f.contacts;
-      const pick = (a = [], b = [], n = 4) => [...new Set([...a, ...b])].slice(0, n);
-      s.contacts = { ...c, phones: pick(c.phones, extra.phones), emails: pick(c.emails, extra.emails), zalo: pick(c.zalo, extra.zalo), messenger: pick(c.messenger, extra.messenger), facebook: pick(c.facebook, extra.facebook), zalo_guess: c.zalo_guess && extra.zalo_guess, website: c.website || extra.website };
-      s.contact_source = s.contact_source || f.contactUrl;
-    }
-    if (s.vat == null && f.vat != null) { s.vat = f.vat; s.vat_source = f.vatUrl; s.vat_evidence = f.vatEvidence; }
-  }
-}
-
 const MAX_OPEN_PER_QUESTION = 6; // mỗi câu hỏi mở tối đa 6 bài MỚI (bài đã mở rồi thì dùng luôn, không tính)
 
 function loadStore(job) {
@@ -194,7 +159,7 @@ export async function findAnswers(store, entry, crawler, { product, maxPages = 2
  * Bài đã mở không mở lại, bài lỗi bỏ qua. Trả về kho đáp án.
  */
 export async function answerQuestions(job, crawler, { step = () => {}, log = () => {}, maxPages = 2 } = {}) {
-  const product = spaced(job.query, job.product_code), store = loadStore(job);
+  const product = keyOf(job), store = loadStore(job);
   store.prime(crawler.corpus.list()); // đếm chữ lặp ở nhiều bài (menu, chân trang) trước khi chấm
   let saved = 0; for (const d of crawler.corpus.list()) saved += store.ingest(d);
   const entries = store.list();
@@ -218,10 +183,10 @@ export async function answerQuestions(job, crawler, { step = () => {}, log = () 
  */
 export async function run(job, ctx) {
   const { crawler, step, log } = ctx;
-  const product = spaced(job.query, job.product_code);
+  const product = keyOf(job);
   const guard = async (id, fn) => { try { await fn(); } catch (e) { if (e instanceof CancelledError) throw e; log(`${id}: ${e.message}`); step(id, "error", e.message); } };
   try {
-    job.keywords = core.searchKeywords(job);
+    job.keywords = keyOf(job);
     // Ảnh trước: có đủ tên + model thì lấy ảnh Google Hình ảnh vào album trước khi trả lời các câu hỏi
     await guard("album", async () => {
       if (job.album_label) { step("album", "skip", "Đã lấy ảnh ở bước đầu"); return; }
@@ -235,7 +200,7 @@ export async function run(job, ctx) {
     await guard("suppliers", async () => {
       step("suppliers", "start", `Tìm NCC bán "${product}", ${job.cfg.pages} trang`);
       await crawler.wait();
-      const res = await crawler.google(spaced(job.keywords, "giá mua"), job.cfg.pages, { label: "Tìm NCC" });
+      const res = await crawler.google(job.keywords, job.cfg.pages, { label: "Tìm NCC" });
       addPseudo(crawler, res.items, res.read);
       job.sites_searched = [...new Set([...(job.sites_searched || []), ...res.items.map((i) => i.url)])].slice(0, 200);
       const b = buildSuppliers(job, crawler.corpus.list({ real: true })); // gồm cả các trang đã đọc ở giai đoạn 1
@@ -243,8 +208,6 @@ export async function run(job, ctx) {
       res.errors.forEach((e) => log(`Google lỗi: ${e}`));
       step("suppliers", "done", `${b.suppliers.length} trang bán đúng sản phẩm, ${b.others.length} trang bị loại; ${statsText(crawler)}`);
     });
-    if (job.suppliers.length) await guard("contacts", async () => { await enrichContacts(job, crawler, step); step("contacts", "done", "Đã thu thập liên hệ trên trang sản phẩm và trang Liên hệ của NCC"); });
-    else step("contacts", "skip", "Chưa có NCC");
 
     // Chủ đề đã chọn và câu hỏi gõ thêm: trả lời từng câu, đáp án tích lũy từ nhiều bài, chỉ tìm bài mới cho câu còn thiếu
     job.research = {}; job.custom_answers = [];
@@ -288,7 +251,7 @@ export async function run(job, ctx) {
  * bằng "câu hỏi + tên sản phẩm". Bài mới cũng bổ sung đáp án cho các câu hỏi khác; đáp án cũ giữ nguyên. Trả về { question, snippets, pages, searched, opened }.
  */
 export async function askMore(job, question, crawler, { allowSearch = true, maxPages = 2 } = {}) {
-  const product = spaced(job.query, job.product_code), store = loadStore(job);
+  const product = keyOf(job), store = loadStore(job);
   store.prime(crawler.corpus.list());
   for (const d of crawler.corpus.list()) store.ingest(d); // bài chưa chấm (nếu có)
   const e = store.addCustom(question, crawler.corpus.list()); // chấm toàn bộ kho cho câu hỏi mới

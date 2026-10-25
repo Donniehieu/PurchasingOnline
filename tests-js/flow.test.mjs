@@ -85,19 +85,3 @@ test("cấu hình mặc định giới hạn: trang 1-5, ảnh 1-20, chờ 1-15 
   assert.equal(flow.defaultConfig({}).album_n, 3);
 });
 
-test("liên hệ và VAT: trang sản phẩm đã đủ thì không mở trang Liên hệ; còn thiếu thì mở, lấy VAT kèm nguồn", async () => {
-  const { Crawler } = await import("../docs/js/crawl.js"), opened = [];
-  const crawler = new Crawler({ getDelay: () => 0, serp: async () => ({ results: [] }), loadHtml: async (url) => {
-    opened.push(url);
-    if (url === "https://b.vn/lien-he") return "<html><head><title>Liên hệ</title></head><body><p>Hotline 0901 234 567. Chúng tôi có xuất hóa đơn VAT cho mọi đơn hàng của doanh nghiệp.</p></body></html>";
-    throw new Error("404");
-  } });
-  const job = { suppliers: [
-    { name: "A", site_url: "https://a.vn", url: "https://a.vn/p", vat: true, contacts: { phones: ["0901111111"], emails: [], zalo: [] } },
-    { name: "B", site_url: "https://b.vn", url: "https://b.vn/p", vat: null, contacts: { phones: [], emails: [], zalo: [] } },
-  ] };
-  await flow.enrichContacts(job, crawler, () => {});
-  assert.deepEqual(opened, ["https://b.vn/lien-he"], "chỉ NCC còn thiếu mới bị mở thêm trang");
-  assert.equal(job.suppliers[1].vat, true); assert.equal(job.suppliers[1].vat_source, "https://b.vn/lien-he"); assert.match(job.suppliers[1].vat_evidence, /hóa đơn VAT/);
-  assert.equal(job.suppliers[1].contact_source, "https://b.vn/lien-he"); assert.ok(job.suppliers[1].contacts.phones.length >= 1);
-});

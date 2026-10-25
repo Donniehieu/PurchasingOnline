@@ -58,6 +58,12 @@
 - [x] Test: 44 test JS đạt (thêm test đủ 2 bài, tóm tắt, VAT, bỏ qua trang Liên hệ khi đã đủ)
 - [ ] Chưa chạy với Google thật; VAT chỉ đọc được khi trang có chữ về hóa đơn
 
+### Bỏ xác nhận thông số, bỏ bước liên hệ, bỏ qua trang hỏng
+- [x] Sau bước tìm hiểu chạy thẳng tìm NCC và trả lời, không hỏi 10 câu xác nhận thông số (yêu cầu cũ đang chờ xác nhận vẫn mở được)
+- [x] Bỏ bước mở trang Liên hệ của NCC; liên hệ và VAT chỉ lấy từ trang sản phẩm đã đọc
+- [x] Trang hỏng: bỏ qua ngay, không chờ, không thử lại (trước đây ở bước mở link Google vẫn chờ sau trang lỗi)
+- [x] Mọi lượt tìm NCC và câu hỏi dùng đúng từ khóa người dùng nhập (không thêm "giá mua", không thêm thông số)
+
 ### Chưa chắc / còn lại
 - [ ] **Chưa chạy thử với Google thật trong trình duyệt**: mở tab nền, đọc kết quả, phân trang, Google Hình ảnh; chỉ thử với dữ liệu mẫu. Google có thể chặn (403, xác minh), app không vượt qua
 - [ ] Trang bán hàng không có dữ liệu sản phẩm có cấu trúc (JSON-LD, thẻ giá) và không có nút mua sẽ bị loại khỏi bảng; Shopee, TikTok Shop vẽ giá bằng JavaScript nên dễ không đọc được giá
