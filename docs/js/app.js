@@ -523,7 +523,7 @@ function renderTable(job) {
       <td data-col="name">${safeUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" title="Mở website">↗</a> ` : ""}${editable(s, "name", s.name)}</td>
       <td data-col="product">${editable(s, "product_name", s.product_name || s.title || job.query)}</td>
       <td data-col="qty">${editable(s, "quantity", String(s.quantity ?? job.quantity))}</td>
-      <td data-col="price">${editable(s, "price", s.price ? String(s.price) : "")}${s.vat_included ? '<div class="muted">(đã gồm VAT)</div>' : ""}</td>
+      <td data-col="price">${editable(s, "price", s.price ? String(s.price) : "")}${s.vat_included ? '<div class="muted">(đã gồm VAT)</div>' : ""}${s.price && s.price_source && !core.isConfidentPrice(s.price_source) ? '<div class="muted warn" title="Giá đoán từ chữ trên trang, có thể là phụ kiện hoặc khuyến mãi">ước lượng, mở link để kiểm tra</div>' : ""}</td>
       <td data-col="vat">${vatSel}</td>
       <td data-col="info"><div class="info-line">${esc(core.supplierInfo(s))}</div>${s.note ? `<div class="muted">${esc(s.note)}</div>` : ""}<button type="button" class="secondary small" data-info="${esc(s.id)}">Sửa thông tin</button></td>
       <td data-col="date">${editable(s, "date", shortDate(s.date))}</td>
@@ -706,7 +706,7 @@ $("advice-last").addEventListener("click", () => { if (!lastAdvice) { toast("Ch�
 
 function renderAdvice(adv, data) {
   const point = (p) => `<li>${esc(p.text)}${p.url ? ` <a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">[nguồn]</a>` : ""}</li>`;
-  const picks = (list) => (list && list.length ? `<div class="picks">${list.map((i) => `<a class="pick" href="${esc(safeUrl(i.url))}" target="_blank" rel="noopener"><b>${esc(money(i.price))}</b>${i.fit ? `<span class="badge ${i.fit === "Trong ngân sách" ? "high" : ""}">${esc(i.fit)}</span>` : ""}<span class="t">${esc(i.title || i.domain)}</span><span class="muted">${esc(i.domain)}</span></a>`).join("")}</div>` : "");
+  const picks = (list) => (list && list.length ? `<div class="picks">${list.map((i) => `<a class="pick" href="${esc(safeUrl(i.url))}" target="_blank" rel="noopener"><b>${esc(money(i.price))}</b>${i.fit ? `<span class="badge ${i.fit === "Trong ngân sách" ? "high" : i.fit === "Nghi sai giá" ? "bad" : ""}">${esc(i.fit)}</span>` : ""}<span class="t">${esc(i.title || i.domain)}</span><span class="muted">${esc(i.domain)}</span><span class="muted note ${i.sure ? "" : "warn"}">${esc(i.note || "")}</span></a>`).join("")}</div>` : "");
   $("adv-result").hidden = false;
   $("adv-result").innerHTML = `<h3 class="first">Tư vấn: ${esc(adv.query)}</h3>
     ${adv.sections.map((s) => `<div class="block"><h4>${esc(s.heading)}</h4>${s.points.length ? `<ul class="points">${s.points.map(point).join("")}</ul>` : ""}${picks(s.picks)}</div>`).join("")}

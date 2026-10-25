@@ -140,12 +140,13 @@ export function buildAdvice(input, discovery, research) {
   const price = [];
   if (discovery.price) {
     const p = discovery.price;
-    price.push({ text: `Mặt bằng giá trên web: thấp nhất ${vnd(p.min)}, trung vị ${vnd(p.median)}, cao nhất ${vnd(p.max)} (${p.count} mức giá).` });
+    price.push({ text: `Mặt bằng giá trên web: thấp nhất ${vnd(p.min)}, trung vị ${vnd(p.median)}, cao nhất ${vnd(p.max)} (${p.count} mức giá, trong đó ${p.confident ?? 0} giá đọc từ dữ liệu hoặc chữ "giá" của trang${p.outliers ? `; đã loại ${p.outliers} giá lệch hẳn mặt bằng, thường là phụ kiện hoặc voucher` : ""}).` });
+    price.push({ text: "Giá chỉ để tham khảo: một trang có thể có nhiều phiên bản, khuyến mãi hoặc giá theo thời điểm, hãy mở trang để xem giá hiện tại." });
     if (budget) {
-      const ratio = budget / p.median, inBudget = discovery.items.filter((i) => i.price && i.price <= budget).length;
+      const ok = (i) => i.price && !i.price_flag, ratio = budget / p.median, inBudget = discovery.items.filter((i) => ok(i) && i.price <= budget).length;
       price.push({ text: ratio < 0.6 ? `Ngân sách thấp hơn nhiều so với mức phổ biến (${Math.round(ratio * 100)}% trung vị): dễ gặp hàng kém chất lượng hoặc chỉ mua được phụ kiện, nên kiểm tra kỹ.`
         : ratio <= 1.2 ? `Ngân sách phù hợp với mặt bằng giá (${Math.round(ratio * 100)}% trung vị).` : `Ngân sách cao hơn mức phổ biến (${Math.round(ratio * 100)}% trung vị): có thể cân nhắc bản cao cấp, chính hãng hoặc mua số lượng để đàm phán chiết khấu.` });
-      price.push({ text: `${inBudget}/${discovery.items.filter((i) => i.price).length} trang có giá nằm trong ngân sách.` });
+      price.push({ text: `${inBudget}/${discovery.items.filter(ok).length} trang có giá nằm trong ngân sách.` });
     }
   } else price.push({ text: "Các trang đã đọc không có giá rõ ràng, hãy mở trang nguồn hoặc hỏi báo giá NCC." });
   price.push(...fmt(first("price", 2)));
@@ -165,8 +166,11 @@ export function buildAdvice(input, discovery, research) {
   brandPts.push(...fmt(first("brand_pros", 2)));
   sections.push({ heading: "4. Hãng sản xuất", points: brandPts });
 
-  const picks = discovery.items.filter((i) => i.price).map((i) => ({ ...i, fit: budget ? (i.price <= budget ? "Trong ngân sách" : `Vượt ${Math.round((i.price / budget - 1) * 100)}%`) : "" }));
-  picks.sort((a, b) => (budget ? Math.abs(a.price - budget) - Math.abs(b.price - budget) : a.price - b.price));
+  const sure = (i) => !i.price_flag && ["jsonld", "meta", "itemprop", "label"].includes(i.price_source);
+  const noteOf = (i) => (i.price_flag ? "Giá lệch hẳn mặt bằng, có thể là phụ kiện, voucher hoặc giá sai" : sure(i) ? "Giá đọc từ trang" : i.price_source === "snippet" ? "Giá lấy từ mô tả tìm kiếm, chưa mở trang" : "Giá đoán từ chữ trên trang, hãy mở link kiểm tra");
+  const picks = discovery.items.filter((i) => i.price).map((i) => ({ ...i, note: noteOf(i), sure: sure(i), fit: i.price_flag ? "Nghi sai giá" : budget ? (i.price <= budget ? "Trong ngân sách" : `Vượt ${Math.round((i.price / budget - 1) * 100)}%`) : "" }));
+  // Giá đáng tin lên trước, giá nghi sai xuống cuối; trong mỗi nhóm gần ngân sách (hoặc rẻ) lên trước.
+  picks.sort((a, b) => (a.price_flag ? 1 : 0) - (b.price_flag ? 1 : 0) || (b.sure ? 1 : 0) - (a.sure ? 1 : 0) || (budget ? Math.abs(a.price - budget) - Math.abs(b.price - budget) : a.price - b.price));
   sections.push({ heading: "5. Gợi ý trang để xem (đúng sản phẩm, có giá)", points: picks.length ? [] : [{ text: "Chưa có trang nào có giá rõ ràng." }], picks: picks.slice(0, 6) });
 
   const careful = [...fmt(first("buy", 3)), ...fmt(first("risks", 1))];

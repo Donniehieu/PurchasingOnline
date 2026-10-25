@@ -134,6 +134,12 @@
 - [ ] Safari: chưa thử (cần macOS và Xcode để chuyển tiện ích)
 - [ ] 10 trang × nhiều engine mất vài phút vì mở tab thật; có thể giảm bằng ô "Số trang kết quả mỗi engine"
 
+## Sửa lỗi: giá lấy sai
+- [x] Trước đây lấy số NHỎ NHẤT giống giá trên trang hoặc trong đoạn mô tả kết quả tìm kiếm, nên dính voucher, phí ship, phụ kiện (VD máy hút bụi ra 50.000 đ)
+- [x] Giờ mỗi trang một giá, ưu tiên JSON-LD, thẻ meta/itemprop, rồi số sau chữ "giá", cuối cùng mới là số xuất hiện nhiều nhất; đoạn mô tả tìm kiếm chỉ nhận số sau chữ "giá"
+- [x] Loại giá lệch hẳn mặt bằng (dưới 30% hoặc trên 350% trung vị) khỏi khoảng giá, đánh dấu "Nghi sai giá"; mỗi gợi ý ghi nguồn giá; bảng NCC ghi "ước lượng" khi giá chỉ đoán
+- [ ] Giá vẫn chỉ để tham khảo: trang có nhiều phiên bản, khuyến mãi, hoặc vẽ giá bằng JavaScript thì có thể lệch; nên mở link kiểm tra
+
 ## Chưa làm / cần bạn quyết định
 - [ ] Card dựng theo quy tắc, chưa dùng AI. Có thể soạn card bằng Claude khi có ANTHROPIC_API_KEY để gợi ý sát sản phẩm hơn
 - [ ] Tìm kiếm ảnh ngược (reverse image search). Hiện ảnh chỉ được mô tả bằng Claude khi có ANTHROPIC_API_KEY

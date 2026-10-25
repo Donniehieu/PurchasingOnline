@@ -133,6 +133,31 @@ test("ngân sách đã nhập ở tab Tư vấn thành lựa chọn đầu tiên
   const noWeb = core.buildCards({ query: "áo điều hòa", quantity: 2, advice_budget: 1450000 }, null, "", null);
   assert.ok(!noWeb.some((c) => c.id === "budget")); // không có dữ liệu web thì không tạo card ngân sách
 });
+test("giá bán: ưu tiên dữ liệu có cấu trúc, không lấy số nhỏ nhất (voucher, phí ship, phụ kiện)", () => {
+  const noise = "Giảm 50.000đ cho đơn đầu tiên. Phí vận chuyển 55.000đ. Ốp lưng 99.000đ. Giá: 4.990.000đ.";
+  const ld = `<html><head><title>Máy hút bụi X</title><script type="application/ld+json">{"@type":"Product","offers":{"@type":"Offer","price":"4590000","priceCurrency":"VND"}}</script></head><body>${noise}</body></html>`;
+  assert.deepEqual(core.extractPrice(ld, core.htmlToText(ld)), { value: 4590000, source: "jsonld" });
+  const plain = `<html><body>${noise}</body></html>`;
+  assert.deepEqual(core.extractPrice(plain, core.htmlToText(plain)), { value: 4990000, source: "label" });
+  const meta = `<html><head><meta property="product:price:amount" content="1.290.000"></head><body>${noise}</body></html>`;
+  assert.deepEqual(core.extractPrice(meta, core.htmlToText(meta)), { value: 1290000, source: "meta" });
+  const usd = `<html><head><script type="application/ld+json">{"offers":{"price":"199","priceCurrency":"USD"}}</script></head><body>Giá 2.000.000đ</body></html>`;
+  assert.equal(core.extractPrice(usd, core.htmlToText(usd)).value, 2000000);
+  const nolabel = "<p>Tặng voucher 50.000đ, bộ lọc 120.000đ, sản phẩm 3.200.000đ, trả góp từ 3.200.000đ</p>";
+  assert.deepEqual(core.extractPrice(nolabel, core.htmlToText(nolabel)), { value: 3200000, source: "text" }); // số xuất hiện nhiều nhất
+  assert.deepEqual(core.extractPrice("", "Máy hút bụi giá 3.500.000đ rẻ nhất", null, true), { value: 3500000, source: "snippet" });
+  assert.equal(core.extractPrice("", "Từ 50.000đ phụ kiện", null, true).value, null); // đoạn mô tả không có chữ "giá" thì không đoán
+  assert.equal(core.isConfidentPrice("jsonld"), true); assert.equal(core.isConfidentPrice("text"), false);
+});
+test("khoảng giá loại giá lệch hẳn mặt bằng (phụ kiện, voucher) và đánh dấu", () => {
+  const mk = (n, price) => ({ url: `https://s${n}.vn/p`, html: `<html><head><title>Máy hút bụi cầm tay ${n}</title></head><body>Máy hút bụi cầm tay chính hãng. Giá: ${price}đ</body></html>` });
+  const d = core.buildDiscovery([mk(1, "3.200.000"), mk(2, "3.500.000"), mk(3, "2.900.000"), mk(4, "3.800.000"), mk(5, "95.000"), mk(6, "60.000.000")], core.queryKeywords("máy hút bụi"), "máy hút bụi cầm tay");
+  const flagged = d.items.filter((i) => i.price_flag).map((i) => i.price_flag).sort();
+  assert.deepEqual(flagged, ["high", "low"]); assert.equal(d.price.outliers, 2); assert.equal(d.price.min, 2900000); assert.equal(d.price.max, 3800000); assert.equal(d.price.confident, 6);
+  const adv = knowledge.buildAdvice({ query: "máy hút bụi", budget: 3300000 }, d, {});
+  const picks = adv.sections[4].picks; assert.ok(picks[picks.length - 1].price_flag && picks[picks.length - 2].price_flag); assert.equal(picks[0].fit, "Trong ngân sách");
+  assert.match(JSON.stringify(adv.sections[1]), /loại 2 giá lệch/);
+});
 test("từ khóa không lặp thông số đã có", () => {
   assert.equal(core.searchKeywords({ query: "áo điều hòa pin 20000mAh", spec: { mah: "20000", volt: "18" } }), "áo điều hòa pin 20000mAh 18V");
 });

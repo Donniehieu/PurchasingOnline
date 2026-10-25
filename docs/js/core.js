@@ -29,7 +29,7 @@ export function parseUrls(text) {
 }
 
 /* ------------------------------------------------------------------ trích xuất trang NCC */
-const PRICE_MIN = 50_000, PRICE_MAX = 20_000_000;
+const PRICE_MIN = 50_000, PRICE_MAX = 200_000_000;
 const GENERIC = new Set(["gia", "mua", "cho", "va", "loai", "tot", "re", "nhat", "ban", "hang", "chinh"]);
 const toInt = (raw) => parseInt(String(raw).replace(/[.,]/g, ""), 10);
 
@@ -109,6 +109,62 @@ export function extractContacts(html, pageUrl, text) {
   return c;
 }
 
+/* ------------------------------------------------------------------ giá bán của trang */
+export const PRICE_SOURCES = {
+  jsonld: "đọc từ dữ liệu có cấu trúc của trang (JSON-LD)", meta: "đọc từ thẻ giá của trang", itemprop: "đọc từ thẻ giá của trang",
+  label: "đọc từ chữ đứng sau từ \"giá\" trên trang", text: "đoán từ chữ trên trang, có thể là giá phụ kiện hoặc khuyến mãi", snippet: "lấy từ đoạn mô tả trong kết quả tìm kiếm, chưa mở trang",
+};
+const CONFIDENT = new Set(["jsonld", "meta", "itemprop", "label"]);
+export const isConfidentPrice = (source) => CONFIDENT.has(source);
+/** "1.190.000", "1,190,000", "1190000.00", 1190000 -> số nguyên đồng. Không đọc được thì NaN. */
+export function parsePriceNumber(v) {
+  if (typeof v === "number") return Math.round(v);
+  const s = String(v ?? "").trim();
+  if (/^\d+(\.\d{1,2})?$/.test(s)) return Math.round(+s);
+  const d = s.replace(/[^\d]/g, ""); return d ? +d : NaN;
+}
+function jsonLdPrices(html) {
+  const out = [];
+  const walk = (n) => {
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (!n || typeof n !== "object") return;
+    for (const o of [].concat(n.offers || [])) {
+      if (!o || typeof o !== "object") continue;
+      if (o.priceCurrency && String(o.priceCurrency).toUpperCase() !== "VND") continue;
+      for (const k of ["price", "lowPrice"]) if (o[k] != null) { const p = parsePriceNumber(o[k]); if (p >= 1000) out.push(p); }
+    }
+    for (const v of Object.values(n)) if (v && typeof v === "object") walk(v);
+  };
+  for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) { try { walk(JSON.parse(m[1].trim())); } catch { /* bỏ qua khối lỗi */ } }
+  return out;
+}
+/**
+ * Giá bán của một trang, theo thứ tự tin cậy: dữ liệu có cấu trúc (JSON-LD, thẻ meta, itemprop) -> số đứng ngay sau chữ "giá"
+ * -> số xuất hiện nhiều nhất trên trang. Không lấy số nhỏ nhất vì đó thường là voucher, phí vận chuyển hoặc phụ kiện.
+ * pseudo = true (đoạn mô tả kết quả tìm kiếm): chỉ nhận số đứng sau chữ "giá", nguồn "snippet".
+ * Trả về { value, source } hoặc { value: null, source: null }.
+ */
+export function extractPrice(html, text, tags = null, pseudo = false) {
+  const inRange = (p) => Number.isFinite(p) && p >= PRICE_MIN && p <= PRICE_MAX;
+  if (!pseudo) {
+    const ld = jsonLdPrices(html).filter(inRange); if (ld.length) return { value: ld[0], source: "jsonld" };
+    const t = tags || metaTags(html);
+    const metaVal = parsePriceNumber(metaContent(t, "product:price:amount", "og:price:amount", "product:price"));
+    if (inRange(metaVal)) return { value: metaVal, source: "meta" };
+    for (const m of html.matchAll(/<[^>]*itemprop=["']price["'][^>]*>/gi)) {
+      const c = /content=["']([^"']+)["']/i.exec(m[0]); const p = c ? parsePriceNumber(c[1]) : NaN; if (inRange(p)) return { value: p, source: "itemprop" };
+    }
+  }
+  const labelled = [...text.matchAll(/giá[^0-9]{0,30}?(\d{1,3}(?:[.,]\d{3})+)\s*(?:đ|₫|vnđ|vnd)/gi)].map((m) => toInt(m[1])).filter(inRange);
+  if (labelled.length) return { value: labelled[0], source: pseudo ? "snippet" : "label" };
+  if (pseudo) return { value: null, source: null };
+  const all = [...text.matchAll(/(\d{1,3}(?:[.,]\d{3})+)\s*(?:đ|₫|vnđ|vnd)/gi)].map((m) => toInt(m[1])).filter(inRange);
+  if (!all.length) return { value: null, source: null };
+  const freq = new Map(); all.forEach((p) => freq.set(p, (freq.get(p) || 0) + 1));
+  const best = [...freq.entries()].sort((a, b) => b[1] - a[1] || all.indexOf(a[0]) - all.indexOf(b[0]))[0][0];
+  return { value: best, source: "text" };
+}
+
 /** Đọc HTML một trang NCC. Trả về null nếu không đúng sản phẩm. */
 export function parsePage(html, url, tokens, productCode = "") {
   const tags = metaTags(html);
@@ -119,7 +175,7 @@ export function parsePage(html, url, tokens, productCode = "") {
   if (productCode) relevance = Math.min(relevance, new RegExp(`\\b${stripAccents(productCode).trim()}\\b`).test(norm) ? 1 : 0.5);
   if (relevance === 0) return null;
 
-  const prices = findPrices(text);
+  const found = extractPrice(html, text, tags);
   const mah = [...text.matchAll(/(\d{1,3}(?:[.,]\d{3})+|\d{4,6})\s*m\s?ah/gi)].map((m) => toInt(m[1]));
   const volt = /\b(\d{1,2})\s*V(?:DC)?\b/.exec(text);
   const war = /bảo\s*hành[^.\n]{0,25}?(\d{1,2})\s*(tháng|năm)/i.exec(text);
@@ -129,7 +185,7 @@ export function parsePage(html, url, tokens, productCode = "") {
   const domain = domainOf(url);
   return {
     name: domain, title: (title || domain).slice(0, 120), product_name: cleanTitle(title || domain), url, description: metaContent(tags, "og:description", "description").slice(0, 240),
-    date: pageDate(html, tags, text), price: prices.length ? Math.min(...prices) : null, vat,
+    date: pageDate(html, tags, text), price: found.value, price_source: found.source, vat,
     vat_included: /đã\s*(bao\s*gồm\s*|gồm\s*)?vat/i.test(text), mah: mah[0] ?? null, volt: volt ? +volt[1] : null,
     warranty_months: war ? +war[1] * (war[2].toLowerCase() === "năm" ? 12 : 1) : null,
     relevance: Math.round(relevance * 100) / 100, contacts: extractContacts(html, url, text), note: "",
@@ -365,7 +421,7 @@ export function buildDiscovery(pages, queryTokens, subject = "") {
     const rel = phraseRelevance(queryTokens, stripAccents(text));
     if (rel < 0.5) continue;
     const title = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(p.html) || [, ""])[1]).replace(/\s+/g, " ").trim();
-    used.push({ url: p.url, domain: domainOf(p.url), title, text, rel });
+    used.push({ url: p.url, domain: domainOf(p.url), title, text, rel, html: p.html, pseudo: !!p.pseudo });
   }
   const tally = (extract, keyFn = (v) => normKey(String(v))) => {
     const map = new Map();
@@ -387,15 +443,21 @@ export function buildDiscovery(pages, queryTokens, subject = "") {
   const specs = SPEC_DEFS.map((d) => ({ id: d.id, label: d.label, unit: d.unit, values: tally((u) => [...u.text.matchAll(d.re)].map((m) => numStr(m[1])).filter((v) => +v > 0), (v) => v).slice(0, 4) })).filter((s) => s.values.length && s.values[0].count >= 2);
   const materials = tally((u) => { const n = " " + stripAccents(u.text) + " "; return MATERIALS.filter((w) => n.includes(` ${stripAccents(w)} `)); }, (v) => stripAccents(v)).filter((e) => e.count >= 2).slice(0, 4);
   const names = [...new Map(used.slice().sort((a, b) => b.rel - a.rel).map((u) => [normKey(cleanTitle(u.title)), cleanTitle(u.title)]).filter(([k]) => k.length >= 6)).values()].slice(0, 3);
-  const items = used.map((u) => { const p = findPrices(u.text); return { url: u.url, domain: u.domain, title: u.title.slice(0, 100), price: p.length ? Math.min(...p) : null }; });
-  const prices = used.flatMap((u) => findPrices(u.text));
+  // Giá: mỗi trang một giá (ưu tiên dữ liệu có cấu trúc), loại giá lệch hẳn mặt bằng (thường là phụ kiện, voucher, giá sai).
+  const priced = used.map((u) => ({ u, ...extractPrice(u.html, u.text, null, u.pseudo) }));
+  const withValue = priced.filter((x) => x.value), sure = withValue.filter((x) => isConfidentPrice(x.source));
+  const base = sure.length >= 3 ? sure : withValue;
+  const med = medianOf(base.map((x) => x.value));
+  const flagOf = (x) => (!x.value || base.length < 4 ? null : x.value < med * 0.3 ? "low" : x.value > med * 3.5 ? "high" : null);
+  const items = priced.map((x) => ({ url: x.u.url, domain: x.u.domain, title: x.u.title.slice(0, 100), price: x.value, price_source: x.source, price_flag: flagOf(x) }));
+  const prices = priced.filter((x) => x.value && !flagOf(x) && base.includes(x)).map((x) => x.value);
   return {
     subject, category: detectCategory(subject || queryTokens.join(" ")),
     read: pages.filter((p) => p && p.html).length, total: used.length,
     pages: items.slice(0, 40).map(({ url, domain, title }) => ({ url, domain, title })), items: items.slice(0, 150),
     names, models: models.slice(0, 4), brands: brands.slice(0, 6), mah: mah.slice(0, 4), volt: volt.slice(0, 4), purposes: purposes.slice(0, 3),
     warranty: warranty.slice(0, 3), specs, materials,
-    price: prices.length ? { min: Math.min(...prices), max: Math.max(...prices), median: medianOf(prices), count: prices.length, sorted: [...prices].sort((a, b) => a - b) } : null,
+    price: prices.length ? { min: Math.min(...prices), max: Math.max(...prices), median: medianOf(prices), count: prices.length, confident: sure.length, outliers: items.filter((i) => i.price_flag).length, sorted: [...prices].sort((a, b) => a - b) } : null,
   };
 }
 
