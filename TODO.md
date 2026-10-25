@@ -140,6 +140,10 @@
 - [x] Loại giá lệch hẳn mặt bằng (dưới 30% hoặc trên 350% trung vị) khỏi khoảng giá, đánh dấu "Nghi sai giá"; mỗi gợi ý ghi nguồn giá; bảng NCC ghi "ước lượng" khi giá chỉ đoán
 - [ ] Giá vẫn chỉ để tham khảo: trang có nhiều phiên bản, khuyến mãi, hoặc vẽ giá bằng JavaScript thì có thể lệch; nên mở link kiểm tra
 
+## Sửa lỗi: "No tab with id" khi mở trang kết quả
+- [x] Tab nền bị đóng hoặc bị trình duyệt thay giữa chừng (Memory Saver, lỡ đóng) làm engine báo lỗi: tắt tự loại bỏ cho tab đọc và tự thử lại bằng tab mới tối đa 3 lần, báo rõ nguyên nhân nếu vẫn lỗi
+- [ ] Chưa tái hiện được lỗi trên máy này (chỉ suy ra nguyên nhân từ thông báo), cần bạn thử lại sau khi tải lại tiện ích 1.2.3
+
 ## Chưa làm / cần bạn quyết định
 - [ ] Card dựng theo quy tắc, chưa dùng AI. Có thể soạn card bằng Claude khi có ANTHROPIC_API_KEY để gợi ý sát sản phẩm hơn
 - [ ] Tìm kiếm ảnh ngược (reverse image search). Hiện ảnh chỉ được mô tả bằng Claude khi có ANTHROPIC_API_KEY

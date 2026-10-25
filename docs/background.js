@@ -94,9 +94,12 @@ function readPage(mode) {
   return { title: document.title, html: document.documentElement.outerHTML };
 }
 
-async function renderPage(url, mode) {
-  if (!/^https?:\/\//i.test(url)) throw new Error("Chỉ mở được link http/https");
+const TAB_GONE = /No tab with id|Tabs cannot be edited|tab was closed|The tab was closed|Cannot access|Frame with ID/i;
+
+async function renderOnce(url, mode) {
   const tab = await api.tabs.create({ url, active: false });
+  // Chrome (Memory Saver) có thể loại bỏ tab nền và đổi mã tab giữa chừng: tắt tính năng đó cho tab này.
+  try { await api.tabs.update(tab.id, { autoDiscardable: false }); } catch { /* trình duyệt không hỗ trợ */ }
   const started = Date.now();
   try {
     let last = null;
@@ -123,4 +126,19 @@ async function renderPage(url, mode) {
   } finally {
     try { await api.tabs.remove(tab.id); } catch { /* tab đã đóng */ }
   }
+}
+
+/** Mở trang trong tab nền và đọc. Tab bị đóng hoặc bị thay giữa chừng (bạn lỡ đóng, trình duyệt loại bỏ tab) thì thử lại bằng tab mới, tối đa 3 lần. */
+async function renderPage(url, mode) {
+  if (!/^https?:\/\//i.test(url)) throw new Error("Chỉ mở được link http/https");
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try { return await renderOnce(url, mode); }
+    catch (err) {
+      lastError = err;
+      if (!TAB_GONE.test(String(err && err.message))) throw err;
+      await sleep(800 * attempt);
+    }
+  }
+  throw new Error(`Tab đọc trang bị đóng giữa chừng 3 lần liên tiếp (${lastError.message}). Đừng đóng các tab nền đang mở, và tắt tiết kiệm bộ nhớ (Memory Saver) cho tiện ích nếu có.`);
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mua hàng tự động",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "minimum_chrome_version": "110",
   "description": "Tìm NCC trên Cốc Cốc/DuckDuckGo, đọc giá, điền form duyệt báo giá, crawl ảnh đối chiếu. Chạy trong trình duyệt của bạn.",
   "action": { "default_title": "Mở Mua hàng tự động" },
