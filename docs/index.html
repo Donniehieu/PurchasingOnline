@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mua hàng tự động</title>
+<meta name="description" content="Công cụ hỗ trợ quy trình mua hàng: so sánh NCC, form duyệt báo giá, đàm phán, thuyết phục sếp. Chạy hoàn toàn trên trình duyệt.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div class="bar">
+  <span class="brand">Mua hàng tự động</span>
+  <nav>
+    <button data-tab="new" class="active">Yêu cầu mới</button>
+    <button data-tab="history">Lịch sử tìm kiếm</button>
+    <button data-tab="edits">Lịch sử điều chỉnh</button>
+    <button data-tab="settings">Cài đặt</button>
+  </nav>
+  <span class="spacer"></span>
+  <button class="secondary small" id="theme-btn" type="button">Chế độ tối</button>
+</div></header>
+
+<main>
+<!-- ============ YÊU CẦU MỚI ============ -->
+<div id="tab-new">
+  <section class="card">
+    <form id="request-form">
+      <div class="row">
+        <div><label for="query">Tên sản phẩm cần mua</label><input type="text" id="query" placeholder="VD: áo điều hòa pin 20000mAh 18V"></div>
+        <div><label for="product-code">Mã / model (tùy chọn)</label><input type="text" id="product-code" placeholder="VD: GIFV F20, Yamako Hero Light"></div>
+      </div>
+      <div class="row">
+        <div><label for="quantity">Số lượng</label><input type="number" id="quantity" min="1" value="1"></div>
+        <div><label for="purpose">Mục đích sử dụng</label><input type="text" id="purpose" placeholder="VD: công nhân làm ngoài trời"></div>
+        <div><label for="images">Ảnh sản phẩm (đọc cả chữ trong ảnh, cần khóa Anthropic)</label><input type="file" id="images" accept="image/*" multiple></div>
+      </div>
+      <label>Tìm hiểu thêm về sản phẩm (tick để thêm từ khóa tìm kiếm, cần engine có khóa)</label>
+      <div class="chips" id="topics"></div>
+      <label for="extra-keywords">Từ khóa tìm kiếm thêm (tùy chọn)</label>
+      <input type="text" id="extra-keywords" placeholder="VD: chính hãng, xuất hóa đơn VAT, giao hàng toàn quốc">
+      <label>Engine tìm kiếm</label>
+      <div class="engines" id="engines">Đang tải...</div>
+      <p class="muted">Engine mờ là chưa có khóa: vào tab <a href="#" data-goto="settings">Cài đặt</a> để nhập. Không dùng engine thì nhập link NCC bên dưới hoặc thêm NCC thủ công trong bảng.</p>
+      <label for="seed-urls">Link NCC / website (tùy chọn, mỗi dòng một link)</label>
+      <textarea id="seed-urls" rows="3" placeholder="https://..."></textarea>
+      <div class="actions">
+        <label class="button secondary">Nhập link từ Excel/CSV<input type="file" id="link-file" accept=".xlsx,.csv,.txt" hidden></label>
+        <span class="muted" id="link-status"></span>
+      </div>
+      <div class="actions"><button type="submit" id="submit-btn">Tạo yêu cầu và xác nhận thông tin</button></div>
+    </form>
+  </section>
+
+  <section class="card" id="cards-card" hidden>
+    <h3 class="first">Xác nhận thông tin sản phẩm trước khi tìm</h3>
+    <p class="muted">Chọn đáp án đúng. Chọn "Khác" để nhập riêng. Chưa xác nhận thì app chưa tìm kiếm.</p>
+    <div id="cards"></div>
+    <div class="actions"><button type="button" id="confirm-btn">Xác nhận và tìm kiếm</button></div>
+    <div id="cards-error" class="error"></div>
+  </section>
+
+  <section class="card" id="status-card" hidden>
+    <h3 class="first">Tiến trình</h3>
+    <div id="status-text" class="muted"></div><div class="log" id="log"></div><div id="error" class="error"></div>
+  </section>
+
+  <section class="card" id="result-card" hidden>
+    <h3 class="first">Bảng so sánh NCC</h3>
+    <p class="muted">Bấm vào ô để sửa, thay đổi được tự lưu, chấm điểm lại và cập nhật file Excel. Giữ chuột kéo để xem trái/phải/lên/xuống.</p>
+    <div class="notice" id="manual-notice" hidden></div>
+    <div class="toolbar">
+      <input type="search" id="filter-text" placeholder="Lọc theo tên, ghi chú...">
+      <select id="filter-status"><option value="all">Tất cả NCC</option><option value="recommended">Chỉ khuyến nghị</option><option value="eligible">Đủ điều kiện</option><option value="excluded">Bị loại</option><option value="priced">Có giá</option></select>
+      <details class="cols"><summary>Ẩn/hiện cột</summary><div class="menu" id="col-menu"></div></details>
+      <button type="button" class="secondary" id="add-supplier">+ Thêm NCC</button>
+      <span class="saved" id="save-state"></span>
+    </div>
+    <div class="table-wrap" id="table-wrap"><div id="result-table"></div></div>
+
+    <h3>Giá và tỷ lệ so sánh</h3>
+    <div class="stats" id="price-stats"></div>
+    <div id="price-bars" style="margin-top:12px"></div>
+
+    <div id="research-wrap" hidden><h3>Kiến thức sản phẩm (từ web)</h3><div id="research"></div></div>
+
+    <h3>Kịch bản đàm phán với NCC</h3><div id="negotiation"></div>
+    <h3>Luận điểm thuyết phục sếp</h3><div id="persuasion"></div>
+    <div class="actions"><button type="button" class="secondary" id="copy-persuasion">Sao chép luận điểm</button>
+      <button type="button" class="secondary" onclick="window.print()">In trang</button></div>
+
+    <h3>Xuất file và gửi sếp</h3>
+    <div class="actions">
+      <button type="button" id="download">Xuất form Excel (.xlsx)</button>
+      <button type="button" class="secondary" id="export-links">Xuất link NCC (.xlsx)</button>
+    </div>
+    <div class="row"><div><label for="boss-email">Email sếp (tùy chọn)</label>
+      <input type="email" id="boss-email" placeholder="Để trống: chỉ xuất file xlsx"></div></div>
+    <div class="actions"><button type="button" id="send-btn" class="secondary">Soạn email cho sếp</button></div>
+    <p class="muted" id="send-status">Trang web không tự gửi email. Nút này tải file xlsx và mở email nháp trong ứng dụng thư của bạn để bạn tự đính kèm file và bấm gửi. Không có email thì chỉ tải file.</p>
+  </section>
+</div>
+
+<!-- ============ LỊCH SỬ TÌM KIẾM ============ -->
+<div id="tab-history" hidden>
+  <section class="card">
+    <h3 class="first">Lịch sử theo sản phẩm</h3>
+    <p class="muted">Bấm vào phiếu sản phẩm để xem các chỉ tiêu tổng hợp. Bấm "Đóng" để thu lại. Dữ liệu lưu trong trình duyệt này.</p>
+    <div class="actions" style="margin-top:0"><button type="button" class="secondary" id="export-history">Xuất tổng hợp (.xlsx)</button>
+      <input type="search" id="history-filter" placeholder="Lọc theo tên sản phẩm" style="max-width:280px"></div>
+    <div id="history" style="margin-top:14px"></div>
+  </section>
+</div>
+
+<!-- ============ LỊCH SỬ ĐIỀU CHỈNH ============ -->
+<div id="tab-edits" hidden>
+  <section class="card">
+    <h3 class="first">Lịch sử điều chỉnh form</h3>
+    <div class="toolbar">
+      <input type="search" id="edit-filter" placeholder="Lọc theo sản phẩm, NCC, trường...">
+      <select id="edit-field"><option value="">Mọi trường</option></select>
+      <button type="button" class="secondary" id="export-edits">Xuất (.xlsx)</button>
+      <details class="cols"><summary>Ẩn/hiện cột</summary><div class="menu" id="edit-col-menu"></div></details>
+    </div>
+    <div class="table-wrap" style="cursor:auto;user-select:text"><div id="edits-table"></div></div>
+  </section>
+</div>
+
+<!-- ============ CÀI ĐẶT ============ -->
+<div id="tab-settings" hidden>
+  <section class="card">
+    <h3 class="first">Khóa API và cấu hình</h3>
+    <div class="notice">Trang này chạy hoàn toàn trên trình duyệt. Khóa và dữ liệu chỉ lưu trong trình duyệt của bạn (localStorage), không gửi lên máy chủ của trang. Không dùng chung máy hoặc để người khác mở trình duyệt này khi đã nhập khóa.</div>
+
+    <h3>Cách app tải trang NCC</h3>
+    <p class="muted">Trình duyệt chỉ đọc trực tiếp được những website cho phép (CORS). Nhiều website chặn, khi đó cần một proxy. Tôi không dùng proxy công cộng mặc định vì kiểm tra thấy các dịch vụ miễn phí không ổn định hoặc đòi khóa. Cách đáng tin cậy là tự triển khai Cloudflare Worker miễn phí của bạn (có sẵn mã trong thư mục <code>tools/</code>).</p>
+    <div class="row"><div><label>Địa chỉ proxy của bạn (mẫu, dùng {url} cho link cần tải)</label><input type="text" id="set-proxy" placeholder="https://ten-ban.workers.dev/?url={url}"></div></div>
+    <label class="chip" style="width:fit-content"><input type="checkbox" id="set-proxy-ok"> Tôi đồng ý gửi link NCC và từ khóa qua proxy này</label>
+    <details class="guide"><summary>Hướng dẫn triển khai Cloudflare Worker (khoảng 5 phút)</summary>
+      <ol>
+        <li>Đăng ký tài khoản miễn phí tại <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">cloudflare.com</a>.</li>
+        <li>Vào <b>Workers &amp; Pages → Create → Create Worker</b>, đặt tên, bấm Deploy.</li>
+        <li>Bấm <b>Edit code</b>, xóa mã mẫu, dán toàn bộ nội dung file <code>tools/cors-worker.js</code> trong repository, sửa dòng <code>ALLOWED_ORIGIN</code> thành địa chỉ trang GitHub Pages của bạn, bấm Deploy.</li>
+        <li>Sao chép địa chỉ Worker (dạng <code>https://ten.xxx.workers.dev</code>), dán vào ô trên và thêm <code>/?url={url}</code>.</li>
+        <li>Tick ô đồng ý, bấm <b>Lưu cài đặt</b>, rồi <b>Thử proxy</b>.</li>
+      </ol>
+      <p class="muted">Mã Worker chưa được tôi chạy thử trên Cloudflare, hãy thử bằng nút bên dưới.</p>
+    </details>
+    <div class="actions"><button type="button" class="secondary" id="test-proxy">Thử proxy</button><span class="muted" id="proxy-result"></span></div>
+
+    <h3>Google (Custom Search API)</h3>
+    <details class="guide"><summary>Hướng dẫn lấy khóa Google (đọc kỹ cảnh báo)</summary>
+      <p class="error">Cảnh báo: Google đã đóng Custom Search JSON API với khách hàng mới (ngừng hẳn từ 01/01/2027). Dự án mới thường bị lỗi 403 dù làm đúng các bước.</p>
+      <ol>
+        <li>Vào <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>, tạo Project mới.</li>
+        <li><b>APIs &amp; Services → Library</b>, tìm <b>Custom Search API</b>, bấm Enable.</li>
+        <li><b>Credentials → Create credentials → API key</b>, sao chép khóa vào ô bên dưới. Nên giới hạn khóa theo địa chỉ trang web của bạn (HTTP referrer).</li>
+        <li>Vào <a href="https://programmablesearchengine.google.com/" target="_blank" rel="noopener">programmablesearchengine.google.com</a>, tạo công cụ tìm kiếm và sao chép <b>Search engine ID</b>.</li>
+      </ol>
+    </details>
+    <div class="row">
+      <div><label>Google API key</label><input type="password" id="set-google-key" autocomplete="off"></div>
+      <div><label>Search engine ID (cx)</label><input type="text" id="set-google-cx" autocomplete="off"></div>
+    </div>
+    <div class="actions"><button type="button" class="secondary" data-test="google">Thử kết nối Google</button><span class="muted" data-result="google"></span></div>
+
+    <h3>Brave Search (qua proxy của bạn)</h3>
+    <details class="guide"><summary>Hướng dẫn lấy khóa Brave</summary>
+      <ol>
+        <li>Vào <a href="https://brave.com/search/api/" target="_blank" rel="noopener">brave.com/search/api</a>, tạo tài khoản, chọn gói <b>Search</b>.</li>
+        <li>Theo các nguồn tôi tìm được, gói mới tính theo lượng dùng, có khoảng 5 USD tín dụng mỗi tháng (khoảng 1.000 lượt) và có thể cần thẻ. Hãy xác nhận trên trang giá của Brave.</li>
+        <li>Tạo khóa ở mục <b>API Keys</b>, dán vào ô bên dưới.</li>
+        <li>Brave chặn gọi trực tiếp từ trình duyệt (tôi đã thử và bị chặn CORS), nên cần cấu hình proxy ở trên.</li>
+      </ol>
+    </details>
+    <div class="row"><div><label>Brave API key</label><input type="password" id="set-brave-key" autocomplete="off"></div></div>
+    <div class="actions"><button type="button" class="secondary" data-test="brave">Thử kết nối Brave</button><span class="muted" data-result="brave"></span></div>
+
+    <h3>Anthropic (nhận diện ảnh và đọc chữ trong ảnh)</h3>
+    <details class="guide"><summary>Hướng dẫn lấy khóa Anthropic</summary>
+      <ol><li>Vào <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>, tạo tài khoản, nạp tín dụng.</li>
+      <li>Mục <b>API Keys</b>, tạo khóa (bắt đầu bằng sk-ant-), dán vào ô dưới. Khóa nằm trong trình duyệt của bạn, hãy đặt hạn mức chi tiêu thấp.</li></ol>
+    </details>
+    <div class="row"><div><label>Anthropic API key</label><input type="password" id="set-anthropic-key" autocomplete="off"></div></div>
+    <div class="actions"><button type="button" class="secondary" data-test="anthropic">Thử kết nối Anthropic</button><span class="muted" data-result="anthropic"></span></div>
+
+    <h3>Email sếp mặc định</h3>
+    <div class="row"><div><label>Email sếp</label><input type="text" id="set-boss"></div></div>
+    <div class="actions"><button type="button" id="save-settings">Lưu cài đặt</button><span class="muted" id="settings-status"></span></div>
+
+    <h3>Sao lưu dữ liệu</h3>
+    <p class="muted">Lịch sử nằm trong trình duyệt này. Xóa dữ liệu trình duyệt sẽ mất lịch sử, nên hãy sao lưu định kỳ.</p>
+    <div class="actions">
+      <button type="button" class="secondary" id="backup">Tải bản sao lưu (.json)</button>
+      <label class="button secondary">Khôi phục từ file<input type="file" id="restore" accept=".json" hidden></label>
+      <button type="button" class="secondary danger" id="wipe">Xóa toàn bộ lịch sử</button>
+    </div>
+  </section>
+</div>
+</main>
+
+<div class="modal-bg" id="contact-modal"><div class="modal" id="contact-body"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="vendor/exceljs.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,6 +1,46 @@
 # Mua hàng tự động
 
-Web app hỗ trợ quy trình mua hàng: nhập tên sản phẩm hoặc upload ảnh, xác nhận thông tin bằng question card, app tìm NCC trên web, điền form duyệt báo giá (Excel), gợi ý NCC tốt nhất, soạn kịch bản đàm phán và luận điểm thuyết phục sếp.
+Hỗ trợ quy trình mua hàng: nhập tên sản phẩm hoặc ảnh, xác nhận bằng question card, so sánh NCC, điền form duyệt báo giá (Excel), gợi ý NCC tốt nhất, soạn kịch bản đàm phán và luận điểm thuyết phục sếp.
+
+Repository có **hai bản**:
+
+| Bản | Thư mục | Chạy ở đâu | Tải trang NCC |
+|---|---|---|---|
+| **Web tĩnh (GitHub Pages)** | `docs/` | Trình duyệt, không cần máy chủ | Trực tiếp nếu website cho phép, hoặc qua proxy của bạn |
+| Bản Python (Flask) | `app.py`, `purchasing/` | Máy của bạn | Server tải trang, không bị chặn CORS |
+
+## Cài đặt qua GitHub Pages (bản web tĩnh)
+
+1. Đẩy mã lên GitHub (nhánh `main`).
+2. Vào repository → **Settings → Pages**.
+3. Mục **Build and deployment**: Source chọn **Deploy from a branch**, Branch chọn **main**, thư mục **/docs**, bấm **Save**.
+4. Đợi 1-2 phút, trang chạy tại `https://TEN_BAN.github.io/TEN_REPO/` (ở repository này: `https://donniehieu.github.io/PurchasingOnline/`).
+5. Mở trang, vào tab **Cài đặt** để nhập khóa và proxy (xem bên dưới).
+
+Lưu ý quan trọng của bản web tĩnh:
+- GitHub Pages chỉ phục vụ file tĩnh, nên mọi xử lý chạy trong trình duyệt. **Dữ liệu và khóa API chỉ lưu trong trình duyệt của bạn** (localStorage), nên hãy dùng nút sao lưu ở tab Cài đặt.
+- Trình duyệt chỉ đọc trực tiếp được website nào cho phép (CORS). Thử thực tế: `vuabaoho.com` đọc được, `kenkovn.com` và `baoholaodongmienbac.com` thì không. NCC không đọc được vẫn hiện trong bảng để bạn mở link và nhập tay.
+- Để đọc được nhiều website hơn và dùng Brave, hãy triển khai Cloudflare Worker miễn phí của bạn từ `tools/cors-worker.js` (hướng dẫn ngay trong tab Cài đặt). Mã Worker chưa được chạy thử trên Cloudflare. Các proxy công cộng miễn phí khi thử đều không dùng được (hết thời gian hoặc đòi khóa).
+- Không gửi được email trực tiếp. Nút "Soạn email" tải file xlsx và mở email nháp để bạn tự đính kèm file.
+- Repository để **Private** thì GitHub Pages cần gói trả phí; repository Public thì ai cũng mở được trang (không có dữ liệu của bạn vì nó nằm trong trình duyệt).
+
+Chạy thử bản web tĩnh trên máy:
+
+```bash
+python -m http.server 8080 --directory docs
+```
+
+Trên Windows nếu trình duyệt báo lỗi MIME của file .js, dùng một máy chủ tĩnh khác (ví dụ `npx serve docs`).
+
+Chạy test lõi JavaScript:
+
+```bash
+node --test tests-js/core.test.mjs
+```
+
+---
+
+# Bản Python (Flask)
 
 ## Chạy trên máy
 
