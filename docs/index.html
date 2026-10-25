@@ -13,6 +13,7 @@
   <span class="brand">Mua hàng tự động</span>
   <nav>
     <button data-tab="new" class="active">Yêu cầu mới</button>
+    <button data-tab="advice">Tư vấn</button>
     <button data-tab="history">Lịch sử tìm kiếm</button>
     <button data-tab="edits">Lịch sử điều chỉnh</button>
     <button data-tab="settings">Cài đặt</button>
@@ -35,8 +36,7 @@
         <div><label for="purpose">Mục đích sử dụng</label><input type="text" id="purpose" placeholder="VD: công nhân làm ngoài trời"></div>
         <div><label for="images">Ảnh sản phẩm (đọc cả chữ trong ảnh, cần khóa Anthropic)</label><input type="file" id="images" accept="image/*" multiple></div>
       </div>
-      <label>Tìm hiểu thêm về sản phẩm (tick để thêm từ khóa tìm kiếm, cần engine có khóa)</label>
-      <div class="chips" id="topics"></div>
+      <label class="chip" style="margin-top:10px;width:fit-content"><input type="checkbox" id="research-on" checked> Tìm hiểu sản phẩm theo ngành hàng (giá, hãng, ưu nhược điểm, công nghệ, lưu ý khi mua)</label>
       <label for="extra-keywords">Từ khóa tìm kiếm thêm (tùy chọn)</label>
       <input type="text" id="extra-keywords" placeholder="VD: chính hãng, xuất hóa đơn VAT, giao hàng toàn quốc">
       <label>Engine tìm kiếm</label>
@@ -56,6 +56,7 @@
   <section class="card" id="cards-card" hidden>
     <h3 class="first">Xác nhận thông tin sản phẩm trước khi tìm</h3>
     <p class="muted">Chọn đáp án đúng. Chọn "Khác" để nhập riêng. Chưa xác nhận thì app chưa tìm kiếm.</p>
+    <div id="cards-sources"></div>
     <div id="cards"></div>
     <div class="actions"><button type="button" id="confirm-btn">Xác nhận và tìm kiếm</button></div>
     <div id="cards-error" class="error"></div>
@@ -112,6 +113,26 @@
   </section>
 </div>
 
+<!-- ============ TƯ VẤN ============ -->
+<div id="tab-advice" hidden>
+  <section class="card">
+    <h3 class="first">Tư vấn chọn sản phẩm</h3>
+    <p class="muted">Chưa biết nên mua loại nào? Nhập một trong các thông tin dưới đây. App crawl các engine đã tick ở tab "Yêu cầu mới" (tối đa 10 trang mỗi engine), rồi tổng hợp mặt bằng giá, loại và công nghệ, hãng, lưu ý khi mua. Đây là tổng hợp từ web theo quy tắc, không phải tư vấn của chuyên gia.</p>
+    <form id="advice-form">
+      <div class="row">
+        <div><label for="adv-query">Tên sản phẩm (tùy chọn)</label><input type="text" id="adv-query" placeholder="VD: máy hút bụi cầm tay"></div>
+        <div><label for="adv-budget">Ngân sách tối đa mỗi cái (đồng, tùy chọn)</label><input type="text" id="adv-budget" inputmode="numeric" placeholder="VD: 1500000"></div>
+      </div>
+      <label for="adv-need">Nhu cầu sử dụng</label>
+      <textarea id="adv-need" rows="2" placeholder="VD: dọn nhà 60m2, có thú cưng, dùng hằng ngày"></textarea>
+      <label for="adv-images">Ảnh sản phẩm (tùy chọn, đọc tên từ ảnh cần khóa Anthropic)</label>
+      <input type="file" id="adv-images" accept="image/*" multiple>
+      <div class="actions"><button type="submit" id="adv-btn">Tư vấn cho tôi</button><span class="muted" id="adv-state"></span></div>
+    </form>
+  </section>
+  <section class="card" id="adv-result" hidden></section>
+</div>
+
 <!-- ============ LỊCH SỬ TÌM KIẾM ============ -->
 <div id="tab-history" hidden>
   <section class="card">
@@ -145,7 +166,8 @@
 
     <h3>Tìm kiếm không cần khóa (tiện ích Cốc Cốc/Chrome)</h3>
     <p class="muted">Khi cài làm tiện ích, app dùng Cốc Cốc và DuckDuckGo mà không cần khóa API, đọc được cả trang cần JavaScript (Shopee, TikTok Shop) bằng cách mở tab nền, và không bị chặn CORS nên không cần proxy. Cốc Cốc mở một tab nền như bạn tự tìm, mỗi lượt vài giây.</p>
-    <div class="actions"><button type="button" class="secondary" data-test="coccoc">Thử Cốc Cốc</button><span class="muted" data-result="coccoc"></span>
+    <div class="actions"><button type="button" class="secondary" data-test="googleweb">Thử Google</button><span class="muted" data-result="googleweb"></span>
+      <button type="button" class="secondary" data-test="coccoc">Thử Cốc Cốc</button><span class="muted" data-result="coccoc"></span>
       <button type="button" class="secondary" data-test="duckduckgo">Thử DuckDuckGo</button><span class="muted" data-result="duckduckgo"></span></div>
 
     <h3>Cách app tải trang NCC khi chạy dạng trang web thường</h3>

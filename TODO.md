@@ -98,6 +98,30 @@
 - [ ] **Chưa chạy thử bên trong Cốc Cốc/Chrome thật**: chưa kiểm chứng `background.js` mở tab nền, trích link Cốc Cốc, và crawl ảnh. Dùng nút "Thử Cốc Cốc", "Thử DuckDuckGo" trong tab Cài đặt để kiểm tra
 - [ ] Ảnh album không nằm trong file sao lưu .json (chỉ lưu trong trình duyệt)
 
+## Đợt cập nhật: question card dựa trên dữ liệu crawl
+- [x] Thêm bước "tìm hiểu trên web" trước khi hỏi: tìm, đọc tối đa 8 trang, chỉ giữ trang đúng sản phẩm (cụm 2 từ liên tiếp)
+- [x] Rút tên gọi, model (token in hoa có chữ lẫn số trong tiêu đề), dung lượng pin, điện áp, mục đích ("phù hợp/dành cho..."), khoảng giá, mỗi giá trị kèm số trang nhắc tới
+- [x] Card hiển thị lựa chọn từ web kèm "thấy ở n/N trang", chọn sẵn giá trị khi có từ 2 trang trở lên đồng ý; không có dữ liệu web thì mới dùng gợi ý chung và ghi rõ
+- [x] Hiện danh sách trang đã dùng để bạn kiểm tra nguồn; trang đã tải được dùng lại ở bước tìm NCC
+- [x] Hỗ trợ Chrome, Cốc Cốc, Edge, Brave (cùng mã Chromium, manifest yêu cầu Chrome 110 trở lên)
+- [x] Test: 11 test JS đạt, thử giao diện với 3 trang giả (card hiện 20.000 mAh thấy ở 3/3 trang, 18V, mục đích, khoảng giá)
+- [ ] Chưa thử trên Chrome thật. Mục đích lấy từ web còn nhiễu nên không tự chọn sẵn
+- [ ] Bản Flask (`purchasing/`) vẫn dùng card cũ, không có bước tìm hiểu này
+
+## Đợt cập nhật: card từ dữ liệu crawl, tìm hiểu theo ngành, tư vấn, Google, mobile
+- [x] Crawl tối đa 10 trang đầu mỗi engine (không đủ thì lấy hết), tối đa 30 trang mỗi lượt; log số trang theo engine
+- [x] Thêm engine Google qua trình duyệt (không cần khóa), thứ tự ưu tiên Google, Cốc Cốc, DuckDuckGo rồi các engine có khóa; nút "Thử Google" ở tab Cài đặt. Google hiện CAPTCHA thì báo lỗi, không vượt qua
+- [x] Card 5 đến 10 câu dựng từ dữ liệu crawl, luôn có model, số lượng, mục đích; card bổ sung chọn theo bằng chứng (pin, điện áp, công suất, dung tích, chất liệu, hãng, ngân sách, bảo hành, VAT, ưu tiên)
+- [x] Nhóm ngành gia dụng, thiết bị máy móc, tiêu dùng, khác; bộ câu hỏi tìm hiểu chung (giá, hãng, ưu nhược điểm hãng và sản phẩm, lưu ý khi mua, công nghệ, phân loại, ưu nhược điểm công nghệ, thay thế, rủi ro) và câu hỏi riêng của ngành
+- [x] Tab Tư vấn: tên sản phẩm/ảnh, ngân sách, nhu cầu, tổng hợp 6 phần và nút tạo yêu cầu
+- [x] Bảng NCC chấm điểm theo giá trực tiếp khi sản phẩm không có mAh, cờ vượt ngân sách, VAT bắt buộc hoặc không
+- [x] Giao diện mobile: thanh tab vuốt ngang, bảng thành thẻ xếp dọc, ô nhập 16px, nút cao 44px, không tràn ngang (đã thử khung 375x812)
+- [x] Test: 16 test JS, 15 test Python đạt; thử giao diện với 3 trang giả (10 card, 7/13 câu tìm hiểu có đáp án)
+- [ ] **Chưa thử với Google, Cốc Cốc, DuckDuckGo thật trong trình duyệt**: chất lượng nhận diện hãng, model, mục đích và câu trả lời tìm hiểu trên trang thật còn phải kiểm tra
+- [ ] Nhận diện hãng còn nhiễu (VD tiền tố model như GIFV bị coi là hãng); câu trả lời lọc bằng từ khóa nên có thể bỏ sót hoặc lệch
+- [ ] Tab Tư vấn đọc tên từ ảnh cần khóa Anthropic; chưa có đối chiếu ảnh với sản phẩm gợi ý
+- [ ] Chrome trên điện thoại không cài được tiện ích nên crawl bằng trình duyệt chỉ chạy trên máy tính
+
 ## Chưa làm / cần bạn quyết định
 - [ ] Card dựng theo quy tắc, chưa dùng AI. Có thể soạn card bằng Claude khi có ANTHROPIC_API_KEY để gợi ý sát sản phẩm hơn
 - [ ] Tìm kiếm ảnh ngược (reverse image search). Hiện ảnh chỉ được mô tả bằng Claude khi có ANTHROPIC_API_KEY

@@ -1,10 +1,24 @@
 # Mua hàng tự động
 
-## Cài làm tiện ích Cốc Cốc / Chrome (khuyến nghị)
+## Cài làm tiện ích Chrome / Cốc Cốc (khuyến nghị)
 
 Cách này không cần Python hay Flask. App chạy ngay trong trình duyệt của bạn nên: tìm được bằng **Cốc Cốc** và **DuckDuckGo** không cần khóa, đọc được cả trang cần JavaScript (Shopee, TikTok Shop), không bị chặn CORS, và crawl ảnh về album.
 
-1. Mở `coccoc://extensions` (Cốc Cốc) hoặc `chrome://extensions` (Chrome).
+Dùng được trên **Google Chrome** (từ bản 110), **Cốc Cốc**, Microsoft Edge và Brave (cùng nền Chromium, cùng một mã). Engine "Cốc Cốc" vẫn dùng được khi bạn cài tiện ích trên Chrome: tiện ích chỉ mở trang `coccoc.com` trong một tab nền, không cần cài trình duyệt Cốc Cốc.
+
+**Engine tìm kiếm** (thứ tự ưu tiên, tick sẵn): Google qua Chrome, Cốc Cốc, DuckDuckGo, rồi Brave API và Google API nếu bạn nhập khóa. Mỗi engine lấy tối đa **10 trang đầu** của kết quả (không đủ 10 thì lấy hết những gì có), tối đa 30 trang mỗi lượt. Nếu Google hiện trang xác minh (CAPTCHA), app báo lỗi để bạn tự mở google.com xác minh rồi thử lại, app không vượt qua bước đó.
+
+**Quy trình:**
+1. Nhập yêu cầu (tên/mã, số lượng, mục đích, ảnh).
+2. App crawl các engine, đọc các trang, nhận diện **nhóm ngành** (gia dụng, thiết bị máy móc, sản phẩm tiêu dùng, khác) và rút tên, model, hãng, dung lượng pin, điện áp, công suất, dung tích, chất liệu, bảo hành, mục đích, khoảng giá.
+3. Hiện **5 đến 10 question card** dựng từ chính dữ liệu đó, kèm "thấy ở n/N trang" và danh sách trang đã dùng. Luôn có: mã sản phẩm/model, số lượng, mục đích sử dụng. Các card còn lại (thông số, hãng, ngân sách, bảo hành, chất liệu, VAT, ưu tiên...) được chọn theo mức bằng chứng.
+4. Sau khi bạn xác nhận, app tìm NCC, chấm điểm, điền form, và **tìm hiểu sản phẩm theo ngành hàng**: giá cả, hãng sản xuất, ưu nhược điểm của hãng và sản phẩm, lưu ý khi mua, công nghệ sử dụng, phân loại, ưu nhược điểm từng công nghệ, thay thế và rủi ro, cộng các câu hỏi riêng của ngành (gia dụng: công suất, an toàn, bảo trì; máy móc: thông số, tiêu chuẩn, phụ tùng, chi phí vận hành; tiêu dùng: chất liệu, hàng giả, đổi trả, đối tượng). Câu trả lời là câu trích nguyên văn từ trang web kèm link nguồn, không phải AI viết lại.
+
+**Tab Tư vấn:** nhập tên sản phẩm và/hoặc ảnh, ngân sách, nhu cầu. App crawl rồi tổng hợp: mặt bằng giá và vị trí ngân sách của bạn, loại/công nghệ nên cân nhắc, hãng, các trang đúng sản phẩm gần ngân sách, lưu ý khi mua, và nút điền sẵn yêu cầu mua.
+
+**Điện thoại:** giao diện co giãn theo màn hình (bảng NCC thành thẻ xếp dọc, tab vuốt ngang). Lưu ý: Chrome trên điện thoại không cài được tiện ích, nên trên điện thoại bạn chỉ dùng được giao diện (xem lại lịch sử, sửa bảng, xuất file) khi mở bản chạy trên máy tính, hoặc bản trang web (GitHub Pages) với các engine có khóa; tính năng crawl bằng trình duyệt cần máy tính.
+
+1. Mở `chrome://extensions` (Chrome) hoặc `coccoc://extensions` (Cốc Cốc) hoặc `edge://extensions` (Edge).
 2. Bật **Chế độ nhà phát triển** (Developer mode) ở góc trên.
 3. Bấm **Tải tiện ích đã giải nén** (Load unpacked), chọn thư mục `docs` của dự án này.
 4. Bấm biểu tượng tiện ích **Mua hàng tự động** trên thanh công cụ để mở giao diện (ghim nó nếu không thấy).

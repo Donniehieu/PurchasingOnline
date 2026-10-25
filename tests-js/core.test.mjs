@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as core from "../docs/js/core.js";
+import * as knowledge from "../docs/js/knowledge.js";
 
 const sup = (name, price, mah = null, months = null, vat = null) => ({ name, price, mah, warranty_months: months, vat, vat_included: false, relevance: 1, url: "https://" + name, title: name, contacts: {} });
 
@@ -30,13 +31,83 @@ test("zalo suy từ số điện thoại được đánh dấu chưa xác nhận
   const c = core.extractContacts("", "https://shop.vn", "Gọi 0912 345 678");
   assert.equal(c.zalo_guess, true); assert.equal(c.phones[0], "0912345678");
 });
+const page = (title, body) => ({ url: `https://${title.split(" ")[0].toLowerCase()}.vn/p`, html: `<html><head><title>${title}</title></head><body>${body}</body></html>` });
+const SHIRT = [
+  page("Aodh Áo điều hòa YAMAKO GIFV F20 18V - Shop A", "<p>Áo điều hòa pin 20.000 mAh, 18V, công suất 30W. Sản phẩm phù hợp cho công nhân làm ngoài trời. Bảo hành 12 tháng. Giá: 1.190.000đ. Thương hiệu Yamako được nhiều người tin dùng.</p>"),
+  page("Bshop Áo điều hòa YAMAKO GIFV F20 - Shop B", "<p>Áo điều hòa pin 20000mAh điện áp 18V, công suất 30W, dành cho công nhân làm ngoài trời. Bảo hành 12 tháng. Giá 1.350.000đ. Hãng Yamako bảo hành tốt.</p>"),
+  page("Cshop Áo điều hòa Yamako - Shop C", "<p>Áo điều hòa pin 30000 mAh 12V. Giá 1.800.000đ</p>"),
+  page("Quạt cầm tay mini", "<p>Quạt cầm tay mini 5V pin 2000 mAh</p>"), // sai sản phẩm, phải bị bỏ
+];
+const SHIRT_TOKENS = core.queryKeywords("áo điều hòa");
+
+test("nhận diện nhóm ngành hàng theo cụm từ dài nhất", () => {
+  assert.equal(core.detectCategory("áo điều hòa pin 20000mAh"), "gia_dung");
+  assert.equal(core.detectCategory("máy khoan cầm tay Bosch"), "may_moc");
+  assert.equal(core.detectCategory("áo khoác nam"), "tieu_dung");
+  assert.equal(core.detectCategory("thứ gì đó lạ"), "chung");
+});
+test("tìm hiểu từ trang web: thông số, model, hãng, bảo hành, giá", () => {
+  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
+  assert.equal(d.read, 4); assert.equal(d.total, 3); assert.equal(d.category, "gia_dung");
+  assert.equal(d.mah[0].value, "20000"); assert.equal(d.mah[0].count, 2); assert.equal(d.volt[0].value, "18");
+  assert.ok(d.models.some((m) => m.value === "F20" && m.count === 2));
+  assert.ok(d.brands.some((b) => /yamako/i.test(b.value) && b.count >= 2));
+  assert.equal(d.warranty[0].value, "12"); assert.ok(d.specs.some((s) => s.id === "power" && s.values[0].value === "30"));
+  assert.ok(d.purposes[0].value.includes("công nhân")); assert.deepEqual([d.price.min, d.price.max], [1190000, 1800000]);
+});
+test("question card: 5 đến 10 câu, luôn có model, số lượng, mục đích; lựa chọn lấy từ dữ liệu crawl", () => {
+  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
+  const cards = core.buildCards({ query: "áo điều hòa", quantity: 5 }, null, "", d), ids = cards.map((c) => c.id);
+  assert.ok(cards.length >= 5 && cards.length <= 10, `số card ${cards.length}`);
+  for (const must of ["product", "model", "quantity", "purpose"]) assert.ok(ids.includes(must), must);
+  const by = Object.fromEntries(cards.map((c) => [c.id, c]));
+  assert.equal(by.mah.default, "20000"); assert.equal(by.volt.default, "18");
+  assert.ok(by.mah.options.some((o) => o.label.includes("thấy ở 2/3 trang")));
+  assert.ok(by.purpose.options.some((o) => o.label.includes("công nhân"))); assert.match(by.mah.evidence, /3 trang/);
+  assert.ok(ids.includes("brand") && ids.includes("budget"));
+  const none = core.buildCards({ query: "áo điều hòa", quantity: 5 }, null, "", null);
+  assert.ok(none.length >= 5 && none.length <= 10); assert.ok(!none.some((c) => c.id === "brand"));
+  assert.match(none.find((c) => c.id === "model").evidence, /gợi ý chung/);
+});
 test("question card nhận ra thông số trong tên và áp câu trả lời", () => {
   const cards = core.buildCards({ query: "quạt 20000mAh 18V", quantity: 5 }, null, "GIFV F20");
   const by = Object.fromEntries(cards.map((c) => [c.id, c]));
   assert.equal(by.mah.default, "20000"); assert.equal(by.volt.default, "18"); assert.ok(by.ocr);
-  const job = {}; core.applyAnswers(job, Object.fromEntries(cards.map((c) => [c.id, { value: c.default, custom: "" }])));
-  assert.equal(job.quantity, 5); assert.equal(job.spec.mah, "20000");
-  assert.throws(() => core.applyAnswers({}, { product: { value: "x" }, quantity: { value: "abc" } }), /Số lượng/);
+  const job = { questions: cards }; core.applyAnswers(job, Object.fromEntries(cards.map((c) => [c.id, { value: c.default, custom: "" }])));
+  assert.equal(job.quantity, 5); assert.equal(job.spec.mah, "20000"); assert.equal(job.spec.vat_required, true);
+  assert.throws(() => core.applyAnswers({ questions: cards }, { product: { value: "x" }, quantity: { value: "abc" } }), /Số lượng/);
+});
+test("câu trả lời card bổ sung (ngân sách, hãng, thông số) vào spec, từ khóa và văn bản thông số", () => {
+  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
+  const cards = core.buildCards({ query: "áo điều hòa", quantity: 3 }, null, "", d);
+  const answers = Object.fromEntries(cards.map((c) => [c.id, { value: c.default, custom: "" }]));
+  answers.budget = { value: "1500000", custom: "" }; answers.brand = { value: "Yamako", custom: "" }; answers.vat = { value: "no", custom: "" };
+  const job = { questions: cards, ocr_text: "", extra_keywords: "" }; core.applyAnswers(job, answers);
+  assert.equal(job.spec.budget, 1500000); assert.equal(job.spec.brand, "Yamako"); assert.equal(job.spec.vat_required, false);
+  assert.match(core.specText(job.spec), /ngân sách tối đa 1\.500\.000 đ/); assert.match(core.searchKeywords(job), /Yamako/);
+  const r = core.scoreSuppliers([sup("a.vn", 1000000, null, 12, true), sup("b.vn", 2000000, null, 12, true)], true, job.spec.budget);
+  assert.equal(r.find((x) => x.name === "b.vn").over_budget, true); assert.equal(r.find((x) => x.name === "a.vn").recommended, true); // không có mAh thì so giá trực tiếp
+});
+test("tìm hiểu theo ngành: kế hoạch câu hỏi, câu trả lời có nguồn, hãng, giá", () => {
+  const plan = knowledge.planKnowledge("áo điều hòa", "gia_dung");
+  const ids = plan.questions.map((q) => q.id);
+  for (const id of ["price", "brands", "brand_pros", "pros", "buy", "using", "types", "tech", "power", "safety", "care"]) assert.ok(ids.includes(id), id);
+  assert.ok(plan.queries.length >= 3);
+  assert.ok(knowledge.planKnowledge("máy khoan", "may_moc").questions.some((q) => q.id === "standards"));
+  assert.ok(knowledge.planKnowledge("áo khoác", "tieu_dung").questions.some((q) => q.id === "fake"));
+  const pages = [...SHIRT, page("Dshop Áo điều hòa - lưu ý", "<p>Khi mua áo điều hòa cần lưu ý chọn đúng dung lượng pin và hãng Yamako chính hãng. Ưu điểm của áo điều hòa là mát ngay, nhược điểm là phải sạc pin thường xuyên. Công nghệ quạt gió kết hợp pin lithium cho thời gian dùng lâu hơn công nghệ cũ.</p>")];
+  const r = knowledge.answerKnowledge(plan, pages, SHIRT_TOKENS);
+  assert.ok(r.price.price && r.price.price.min === 1190000); assert.ok(r.brands.brands.some((b) => /yamako/i.test(b.value)));
+  assert.ok(r.buy.snippets.length && r.buy.snippets[0].url.startsWith("https://")); assert.ok(r.pros.snippets.some((s) => /nhược điểm/.test(s.text)));
+  assert.equal(r.price.group, "gia"); assert.equal(r.price.group_label, "Giá cả");
+});
+test("tư vấn theo ngân sách và nhu cầu từ dữ liệu crawl", () => {
+  const d = core.buildDiscovery(SHIRT, SHIRT_TOKENS, "áo điều hòa");
+  const plan = knowledge.planKnowledge("áo điều hòa", d.category), research = knowledge.answerKnowledge(plan, SHIRT, SHIRT_TOKENS);
+  const adv = knowledge.buildAdvice({ query: "áo điều hòa", need: "công nhân làm ngoài trời", budget: 1300000 }, d, research);
+  assert.equal(adv.sections.length, 6); const text = JSON.stringify(adv);
+  assert.match(text, /Trong ngân sách/); assert.match(text, /Vượt/); assert.match(text, /Mặt bằng giá/); assert.match(text, /Yamako/i);
+  assert.ok(adv.sections[4].picks.length >= 2);
 });
 test("từ khóa không lặp thông số đã có", () => {
   assert.equal(core.searchKeywords({ query: "áo điều hòa pin 20000mAh", spec: { mah: "20000", volt: "18" } }), "áo điều hòa pin 20000mAh 18V");

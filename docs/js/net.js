@@ -28,6 +28,16 @@ export async function coccocWeb(query, limit) {
   return links.map((l) => l.url).slice(0, limit * 4);
 }
 
+/** Tìm web bằng Google ngay trong trình duyệt (không cần khóa): mở tab nền như bạn tự tìm, lấy các link kết quả.
+ *  Nếu Google đòi xác minh (CAPTCHA) thì báo lỗi để bạn tự mở google.com xác minh, app không vượt qua bước này. */
+export async function googleWeb(query, limit) {
+  const { links, title } = await renderPage(`https://www.google.com/search?q=${encodeURIComponent(query)}&hl=vi&gl=vn&num=${Math.min(Math.max(limit, 10), 20)}&pws=0`, "links");
+  if (/sorry|unusual traffic|captcha/i.test(title || "")) throw new Error("Google yêu cầu xác minh. Hãy mở google.com trong trình duyệt, xác minh rồi thử lại");
+  const urls = links.map((l) => l.url).filter((u) => !/google\.|\/search\?|webcache|translate\.goog/i.test(u));
+  if (!urls.length) throw new Error("Không đọc được kết quả Google (có thể đang hiện trang đồng ý cookie hoặc xác minh)");
+  return urls.slice(0, limit * 4);
+}
+
 /** Tìm web bằng DuckDuckGo (bản HTML, không cần khóa). */
 export async function duckduckgoWeb(query, limit) {
   if (!isExt) throw new Error(EXT_ONLY);

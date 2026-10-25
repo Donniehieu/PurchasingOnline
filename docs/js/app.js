@@ -3,6 +3,7 @@ import * as core from "./core.js";
 import { downloadEdits, downloadHistory, downloadJob, downloadLinks, readLinkFile } from "./excel.js";
 import * as net from "./net.js";
 import * as album from "./album.js";
+import * as knowledge from "./knowledge.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -34,9 +35,19 @@ function withTimeout(ms = 15000) { const c = new AbortController(); setTimeout((
 // Các sàn vẽ giá bằng JavaScript: fetch chỉ ra khung rỗng nên phải để trình duyệt thật mở trang.
 const RENDER_DOMAINS = ["shopee.vn", "tiki.vn", "lazada.vn", "tiktok.com", "sendo.vn"];
 
+// Bộ nhớ tạm trong phiên: trang đã tải ở bước tìm hiểu được dùng lại ở bước tìm NCC, khỏi mở lại (nhất là tab nền).
+const htmlCache = new Map();
+async function fetchHtml(url) {
+  if (htmlCache.has(url)) return htmlCache.get(url);
+  const html = await fetchHtmlUncached(url);
+  if (htmlCache.size >= 30) htmlCache.delete(htmlCache.keys().next().value);
+  htmlCache.set(url, html);
+  return html;
+}
+
 /** Tải HTML. Tiện ích: fetch trực tiếp (không bị CORS), trang cần JavaScript hoặc fetch lỗi thì mở tab nền.
  *  Trang web thường: thử trực tiếp (chỉ được nếu website cho phép CORS), không được thì dùng proxy của người dùng. */
-async function fetchHtml(url) {
+async function fetchHtmlUncached(url) {
   if (net.isExt) {
     if (!RENDER_DOMAINS.some((d) => core.domainOf(url).endsWith(d))) {
       try { const r = await fetch(url, { signal: withTimeout() }); if (r.ok) { const t = await r.text(); if (t.length > 2000) return t; } } catch { /* mở tab nền */ }
@@ -64,6 +75,7 @@ const SEARCHERS = {
     if (!r.ok) throw new Error(httpHint(r.status));
     return filterDomains(((await r.json()).items || []).map((i) => i.link), n);
   },
+  async googleweb(q, n) { return filterDomains(await net.googleWeb(q, n), n); },
   async coccoc(q, n) { return filterDomains(await net.coccocWeb(q, n), n); },
   async duckduckgo(q, n) { return filterDomains(await net.duckduckgoWeb(q, n), n); },
   async brave(q, n) {
@@ -77,20 +89,25 @@ function httpHint(status) {
   return `HTTP ${status}: ` + ({ 400: "yêu cầu không hợp lệ, kiểm tra khóa và ID", 401: "khóa không đúng", 403: "khóa chưa được cấp quyền hoặc hết hạn mức", 422: "khóa sai định dạng", 429: "hết hạn mức tạm thời" }[status] || "lỗi từ nhà cung cấp");
 }
 function engineStatus() {
+  // Thứ tự = thứ tự ưu tiên: các engine chạy bằng trình duyệt (không cần khóa) đứng trước, tick sẵn.
   return [
-    { id: "coccoc", label: "Cốc Cốc (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Cốc Cốc/Chrome", recommended: true },
-    { id: "duckduckgo", label: "DuckDuckGo (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Cốc Cốc/Chrome", recommended: true },
+    { id: "googleweb", label: "Google qua Chrome (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Chrome/Cốc Cốc", recommended: true },
+    { id: "coccoc", label: "Cốc Cốc (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Chrome/Cốc Cốc", recommended: true },
+    { id: "duckduckgo", label: "DuckDuckGo (không cần khóa)", available: net.isExt, reason: "Chỉ chạy khi cài làm tiện ích Chrome/Cốc Cốc", recommended: true },
     { id: "google", label: "Google (Custom Search API)", available: !!(settings.google_key && settings.google_cx), reason: "Chưa nhập Google API key và Search engine ID (tab Cài đặt)" },
     { id: "brave", label: net.isExt ? "Brave Search API" : "Brave Search API (qua proxy)", available: !!(settings.brave_key && (net.isExt || proxyReady())), reason: "Cần Brave API key (và proxy nếu không chạy dạng tiện ích)" },
   ];
 }
-async function searchEngines(engines, query, per) {
-  const lists = [], errors = {};
-  for (const e of engines) { try { lists.push(await SEARCHERS[e](query, per)); } catch (err) { errors[e] = err.message; lists.push([]); } }
+const PAGES_PER_ENGINE = 10, MAX_PAGES = 30;
+/** Mỗi engine lấy tối đa `per` trang đầu (không đủ thì lấy hết những gì có). Kết quả xen kẽ theo thứ tự engine, bỏ link trùng. */
+async function searchEngines(engines, query, per = PAGES_PER_ENGINE) {
+  const lists = [], errors = {}, counts = {};
+  for (const e of engines) { try { const l = (await SEARCHERS[e](query, per)).slice(0, per); lists.push(l); counts[e] = l.length; } catch (err) { errors[e] = err.message; lists.push([]); counts[e] = 0; } }
   const merged = [], seen = new Set();
   for (let i = 0; i < Math.max(0, ...lists.map((l) => l.length)); i++) for (const l of lists) if (l[i] && !seen.has(l[i])) { seen.add(l[i]); merged.push(l[i]); }
-  return { urls: merged, errors };
+  return { urls: merged, errors, counts };
 }
+const countsText = (counts) => Object.entries(counts).map(([e, n]) => `${e}: ${n}`).join(", ");
 async function pool(items, worker, size = 4) {
   const out = new Array(items.length); let next = 0;
   await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => { while (next < items.length) { const i = next++; out[i] = await worker(items[i]); } }));
@@ -122,7 +139,7 @@ function log(job, msg) { job.log.push(`${new Date().toLocaleTimeString("vi-VN")}
 async function createJob(form, images) {
   const job = {
     id: uid(), status: "awaiting_confirmation", created: nowIso(), query: form.query, product_code: form.product_code, quantity: form.quantity,
-    purpose: form.purpose, engines: form.engines, seed_urls: form.seed_urls, topics: form.topics, extra_keywords: form.extra_keywords, crawl_images: form.crawl_images,
+    purpose: form.purpose, engines: form.engines, seed_urls: form.seed_urls, topics: [], research_on: form.research_on, extra_keywords: form.extra_keywords, crawl_images: form.crawl_images,
     images: images.map((i) => i.name), suggested_name: null, ocr_text: "", questions: [], answers: {}, spec: {}, keywords: null, errors: {}, log: [],
     suppliers: [], research: {}, sites_searched: [], edits: [], price_stats: null, analysis: { negotiation: [], persuasion: { title: "", sections: [], points: [], closing: "" } }, error: null,
   };
@@ -134,9 +151,35 @@ async function createJob(form, images) {
     if (job.ocr_text) log(job, `Chữ đọc được trong ảnh: ${job.ocr_text.slice(0, 120)}`);
     if (!job.suggested_name && !job.ocr_text) log(job, "Chưa đọc được ảnh (cần Anthropic API key trong tab Cài đặt), hãy nhập tên sản phẩm");
   }
-  job.questions = core.buildCards(job, job.suggested_name, job.ocr_text);
+  job.status = "researching"; job.discovery = null;
   jobs.unshift(job); persist();
   return job;
+}
+
+/** Tìm hiểu sản phẩm trên web trước khi hỏi: tìm, đọc vài trang, rút tên/model/thông số/mục đích, rồi mới dựng question card. */
+async function prepareCards(job) {
+  const subject = job.query || job.suggested_name || job.product_code;
+  const engines = job.engines.filter((e) => engineStatus().find((s) => s.id === e)?.available);
+  if (subject && (engines.length || job.seed_urls.length)) {
+    try {
+      log(job, `Đang tìm hiểu "${subject}" trên web để đưa ra lựa chọn phù hợp...`);
+      let urls = [...job.seed_urls];
+      if (engines.length) {
+        const res = await searchEngines(engines, `${subject} ${job.product_code}`.trim());
+        urls = [...new Set([...urls, ...res.urls])];
+        log(job, `Số trang lấy được theo engine (tối đa ${PAGES_PER_ENGINE} mỗi engine): ${countsText(res.counts)}`);
+        for (const [e, m] of Object.entries(res.errors)) log(job, `Engine ${e} lỗi: ${m}`);
+      }
+      urls = urls.slice(0, MAX_PAGES);
+      log(job, `Đang đọc ${urls.length} trang...`);
+      const pages = await pool(urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } });
+      job.discovery = core.buildDiscovery(pages, core.queryKeywords(subject), subject);
+      const d = job.discovery;
+      log(job, `Đọc được ${d.read}/${urls.length} trang, ${d.total} trang đúng sản phẩm, nhóm ngành: ${core.CATEGORIES[d.category].label}` + (d.price ? `, giá thấy trên web ${money(d.price.min)} đến ${money(d.price.max)}` : ""));
+    } catch (e) { log(job, `Không tìm hiểu được trên web: ${e.message}`); }
+  } else log(job, "Chưa có engine hoặc link NCC nên không tìm hiểu trước trên web, dùng gợi ý chung");
+  job.questions = core.buildCards(job, job.suggested_name, job.ocr_text, job.discovery);
+  job.status = "awaiting_confirmation"; log(job, "Chờ bạn xác nhận thông tin sản phẩm");
 }
 
 async function runJob(job) {
@@ -148,8 +191,9 @@ async function runJob(job) {
     let searched = [];
     if (engines.length) {
       log(job, `Tìm trên engine: ${engines.join(", ")}`);
-      const res = await searchEngines(engines, `${job.keywords} giá mua`, 8);
-      searched = res.urls; job.errors = res.errors;
+      const res = await searchEngines(engines, `${job.keywords} giá mua`);
+      searched = res.urls.slice(0, MAX_PAGES); job.errors = res.errors;
+      log(job, `Số trang lấy được theo engine: ${countsText(res.counts)}`);
       for (const [e, m] of Object.entries(res.errors)) log(job, `Engine ${e} lỗi: ${m}`);
     } else if (job.engines.length) log(job, "Engine đã chọn chưa cấu hình khóa, chỉ dùng link nhập tay");
     const seeds = job.seed_urls, urls = [...new Set([...seeds, ...searched])];
@@ -171,7 +215,10 @@ async function runJob(job) {
       const res = await album.crawlAlbum(job.id, job.keywords);
       log(job, res.error ? `Album: ${res.error}` : `Album: thêm ${res.added.length} ảnh (đã thử ${res.tried} link ảnh)`);
     }
-    if (job.topics.length && engines.length) { log(job, `Nghiên cứu chủ đề: ${job.topics.join(", ")}`); job.research = await research(job, engines); }
+    if (job.research_on !== false) {
+      log(job, "Đang tìm hiểu sản phẩm theo nhóm ngành hàng (giá, hãng, ưu nhược điểm, công nghệ, lưu ý khi mua)...");
+      try { await researchJob(job, engines, urls); } catch (e) { log(job, `Không tìm hiểu được thêm: ${e.message}`); }
+    }
     buildOutputs(job);
     job.status = "done";
     log(job, found.length ? "Đã xếp hạng NCC và lập kịch bản" : "Chưa có NCC nào. Bấm '+ Thêm NCC' để nhập tay hoặc thêm link ở yêu cầu sau");
@@ -182,24 +229,28 @@ function placeholder(url, reason) {
   return { id: uid(), name: core.domainOf(url) || "NCC", title: url, url, description: "", date: null, price: null, vat: null, vat_included: false, mah: null, volt: null,
     warranty_months: null, relevance: 1, contacts: {}, note: `Không đọc tự động được (${reason}). Hãy mở link và nhập tay.`, unreadable: true };
 }
-async function research(job, engines) {
-  const out = {}, tokens = core.queryKeywords(job.query);
-  for (const id of job.topics.filter((t) => core.TOPICS[t])) {
-    const topic = core.TOPICS[id], query = `${job.query} ${topic.keywords} ${job.extra_keywords}`.trim();
-    const { urls } = await searchEngines(engines, query, 3), snippets = [];
-    await pool(urls.slice(0, 3), async (url) => {
-      try {
-        const html = await fetchHtml(url), text = core.htmlToText(html);
-        if (core.phraseRelevance(tokens, core.stripAccents(text)) < 0.5) return;
-        core.snippetsFrom(text, topic.pattern, tokens).forEach((t) => snippets.push({ text: t, url }));
-      } catch { /* bỏ qua trang lỗi */ }
-    });
-    out[id] = { label: topic.label, query, snippets: snippets.slice(0, 4) };
+/** Tìm hiểu sản phẩm theo nhóm ngành: tìm thêm 3 lượt (giá/hãng, ưu nhược điểm/công nghệ, lưu ý khi mua), đọc các trang rồi
+ *  trả lời bộ câu hỏi của ngành bằng câu trích từ trang (kèm nguồn). Dùng lại các trang đã tải ở bước tìm NCC. */
+async function researchProduct(subject, engines, knownUrls = [], seeds = []) {
+  const plan = knowledge.planKnowledge(subject, core.detectCategory(subject));
+  let urls = [...knownUrls, ...seeds];
+  for (const q of plan.queries) {
+    if (!engines.length) break;
+    const res = await searchEngines(engines, q.query, 6);
+    urls.push(...res.urls);
   }
-  return out;
+  urls = [...new Set(urls)].slice(0, MAX_PAGES + 18);
+  const pages = await pool(urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } });
+  return { plan, research: knowledge.answerKnowledge(plan, pages, core.queryKeywords(subject)), pages, read: pages.filter(Boolean).length, total: urls.length };
+}
+async function researchJob(job, engines, knownUrls) {
+  const r = await researchProduct(job.query, engines, knownUrls, job.seed_urls);
+  job.research = r.research; job.knowledge_plan = { category: r.plan.category, label: r.plan.categoryLabel };
+  const answered = Object.values(r.research).filter((x) => x.snippets.length || x.brands?.length).length;
+  log(job, `Nhóm ngành ${r.plan.categoryLabel}: đọc ${r.read}/${r.total} trang, trả lời được ${answered}/${Object.keys(r.research).length} câu hỏi tìm hiểu`);
 }
 function buildOutputs(job) {
-  job.suppliers = core.scoreSuppliers(job.suppliers);
+  job.suppliers = core.scoreSuppliers(job.suppliers, job.spec?.vat_required !== false, job.spec?.budget || null);
   job.price_stats = core.priceStats(job.suppliers);
   job.analysis = core.buildInsights(job.suppliers, job.quantity, { product: job.query, spec: core.specText(job.spec), purpose: job.purpose, research: job.research });
 }
@@ -227,7 +278,7 @@ function removeSupplier(job, id) {
 }
 
 /* ------------------------------------------------------------------ giao diện: tab, giao diện sáng/tối */
-const TABS = ["new", "history", "edits", "settings"];
+const TABS = ["new", "advice", "history", "edits", "settings"];
 function showTab(name) {
   TABS.forEach((t) => ($("tab-" + t).hidden = t !== name));
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
@@ -245,7 +296,6 @@ function renderEngines() {
   $("engines").innerHTML = engineStatus().map((e) => `<label class="chip ${e.available ? "" : "off"}" title="${esc(e.available ? "" : e.reason)}">
     <input type="checkbox" name="engines" value="${e.id}" ${e.available ? (e.recommended || !net.isExt ? "checked" : "") : "disabled"}> ${esc(e.label)}${e.available ? "" : e.recommended ? " (cần cài tiện ích)" : " (chưa cấu hình)"}</label>`).join("");
 }
-$("topics").innerHTML = Object.entries(core.TOPICS).map(([id, t]) => `<label class="chip"><input type="checkbox" name="topics" value="${id}"> ${esc(t.label)}</label>`).join("");
 $("link-file").addEventListener("change", async (e) => {
   const file = e.target.files[0]; if (!file) return;
   try {
@@ -265,14 +315,15 @@ $("request-form").addEventListener("submit", async (e) => {
   const form = {
     query, product_code: code, quantity, purpose: $("purpose").value.trim(), extra_keywords: $("extra-keywords").value.trim(),
     engines: [...document.querySelectorAll('input[name="engines"]:checked')].map((c) => c.value), seed_urls: core.parseUrls($("seed-urls").value),
-    topics: [...document.querySelectorAll('input[name="topics"]:checked')].map((c) => c.value),
+    research_on: $("research-on").checked,
     crawl_images: $("crawl-images").checked,
   };
   try {
     const images = await Promise.all(files.map(fileToImage));
     const job = await createJob(form, images);
     if (files.length) await album.addUploads(job.id, files);
-    currentJobId = job.id; currentJob = job; showCards(job);
+    currentJobId = job.id; currentJob = job; $("status-card").hidden = false;
+    await prepareCards(job); persist(); renderStatus(job); showCards(job);
   } catch (err) { showError(err.message); }
   $("submit-btn").disabled = false;
 });
@@ -281,7 +332,11 @@ function showError(msg) { $("status-card").hidden = false; $("error").textConten
 /* ------------------------------------------------------------------ question card */
 function showCards(job) {
   $("cards-card").hidden = false; $("cards-error").textContent = ""; $("confirm-btn").disabled = false;
-  $("cards").innerHTML = job.questions.map((card) => `<div class="block q-card"><div class="q-title">${esc(card.title)}</div><div class="muted">${esc(card.question)}</div>
+  const d = job.discovery;
+  $("cards-sources").innerHTML = d && d.total ? `<div class="notice">Đã tìm hiểu trên web: đọc ${d.read} trang, ${d.total} trang đúng sản phẩm.${d.price ? ` Giá thấy trên web ${esc(money(d.price.min))} đến ${esc(money(d.price.max))}.` : ""}
+    <details><summary>Các trang đã dùng</summary><ul class="points">${d.pages.map((p) => `<li><a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">${esc(p.domain)}</a> · ${esc(p.title)}</li>`).join("")}</ul></details></div>`
+    : '<div class="notice">Chưa đọc được trang web nào về sản phẩm này nên các lựa chọn dưới đây chỉ là gợi ý chung.</div>';
+  $("cards").innerHTML = job.questions.map((card) => `<div class="block q-card"><div class="q-title">${esc(card.title)}</div><div class="muted">${esc(card.question)}</div>${card.evidence ? `<div class="muted">${esc(card.evidence)}</div>` : ""}
     ${card.options.map((o) => `<label class="opt"><input type="radio" name="card-${esc(card.id)}" value="${esc(o.value)}" ${o.value === card.default ? "checked" : ""}> ${esc(o.label)}</label>`).join("")}
     <input type="text" class="custom" data-custom="${esc(card.id)}" placeholder="Nhập nội dung khác"></div>`).join("");
   document.querySelectorAll("#cards input[type=radio]").forEach((r) => r.addEventListener("change", () => r.closest(".q-card").querySelector(".custom").classList.toggle("show", r.value === core.CUSTOM && r.checked)));
@@ -379,7 +434,7 @@ function renderTable(job) {
     const cls = s.recommended ? "recommended" : s.eligible ? "" : "excluded";
     const vatNow = s.vat === true ? "Có" : s.vat === false ? "Không" : "Chưa rõ";
     const vatSel = `<select data-edit="vat" data-id="${esc(s.id)}" data-orig="${vatNow}">${["Có", "Không", "Chưa rõ"].map((o) => `<option ${o === vatNow ? "selected" : ""}>${o}</option>`).join("")}</select>`;
-    const status = s.recommended ? "★ Khuyến nghị" : s.eligible ? "Đủ điều kiện" : esc(s.reason);
+    const status = (s.recommended ? "★ Khuyến nghị" : s.eligible ? "Đủ điều kiện" : esc(s.reason)) + (s.over_budget ? " · vượt ngân sách" : "");
     return `<tr class="${cls}" data-id="${esc(s.id)}">
       <td data-col="name">${safeUrl(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" title="Mở website">↗</a> ` : ""}${editable(s, "name", s.name)}</td>
       <td data-col="price">${editable(s, "price", s.price ? String(s.price) : "")}${s.vat_included ? '<div class="muted">(đã gồm VAT)</div>' : ""}</td>
@@ -391,6 +446,7 @@ function renderTable(job) {
       <td data-col="del"><button type="button" class="secondary small danger" data-del="${esc(s.id)}" title="Xóa NCC này">✕</button></td></tr>`;
   }).join("");
   $("result-table").innerHTML = `<table><thead><tr>${COLUMNS.map((c) => `<th data-col="${c.key}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+  document.querySelectorAll("#result-table td[data-col]").forEach((td) => { td.dataset.label = COLUMNS.find((c) => c.key === td.dataset.col)?.label || ""; }); // nhãn cho giao diện điện thoại
   document.querySelectorAll("[data-contact]").forEach((b) => b.addEventListener("click", () => openContact(b.dataset.contact)));
   document.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
     const s = job.suppliers.find((x) => x.id === b.dataset.del); if (!s || !confirm(`Xóa NCC "${s.name}" khỏi bảng?`)) return;
@@ -425,11 +481,18 @@ function renderPrice(job) {
   const max = Math.max(...priced.map((s) => s.price)), min = priced[0].price;
   $("price-bars").innerHTML = priced.map((s) => `<div class="bar-row"><div class="bar-label" title="${esc(s.name)}">${esc(s.name)}</div><div class="bar-track"><div class="bar-fill ${s.recommended ? "best" : ""}" style="width:${(s.price / max * 100).toFixed(1)}%"></div></div><div class="bar-value">${money(s.price)} · ${(s.price / min * 100).toFixed(0)}%</div></div>`).join("") + '<p class="muted">Tỷ lệ % tính theo NCC có giá thấp nhất (100%).</p>';
 }
+const snippetList = (snippets) => (snippets.length ? `<ul class="points">${snippets.map((s) => `<li>${esc(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`).join("")}</ul>` : '<p class="muted">Chưa tìm được câu trả lời rõ ràng trên các trang đã đọc.</p>');
+function researchBlock(r) {
+  const brands = r.brands && r.brands.length ? `<div class="chips">${r.brands.map((b) => `<span class="chip static">${esc(b.value)} · ${b.count} trang</span>`).join("")}</div>` : "";
+  const price = r.price ? `<div class="chips"><span class="chip static">Thấp nhất ${esc(money(r.price.min))}</span><span class="chip static">Trung vị ${esc(money(r.price.median))}</span><span class="chip static">Cao nhất ${esc(money(r.price.max))}</span></div>` : "";
+  return `<div class="block"><h4>${esc(r.label)}</h4><div class="muted">${esc(r.query)}</div>${price}${brands}${snippetList(r.snippets)}</div>`;
+}
 function renderResearch(job) {
-  const keys = Object.keys(job.research || {}); $("research-wrap").hidden = !keys.length;
-  $("research").innerHTML = keys.map((k) => { const r = job.research[k];
-    const items = r.snippets.length ? r.snippets.map((s) => `<li>${esc(s.text)} <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">[nguồn]</a></li>`).join("") : "<li class='muted'>Không trích được câu phù hợp.</li>";
-    return `<div class="block"><h4>${esc(r.label)}</h4><div class="muted">Từ khóa: ${esc(r.query)}</div><ul class="points">${items}</ul></div>`; }).join("");
+  const entries = Object.entries(job.research || {}); $("research-wrap").hidden = !entries.length;
+  const info = job.knowledge_plan ? `<p class="muted">Nhóm ngành nhận diện: <b>${esc(job.knowledge_plan.label)}</b>. Câu trả lời là câu trích nguyên văn từ các trang đã crawl, hãy mở nguồn để kiểm tra.</p>` : "";
+  const groups = new Map();
+  for (const [, r] of entries) { const g = r.group_label || r.label; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
+  $("research").innerHTML = info + [...groups].map(([g, list]) => `<details class="guide" open><summary>${esc(g)}</summary>${list.map(researchBlock).join("")}</details>`).join("");
 }
 const list = (title, items) => (items && items.length ? `<h4>${title}</h4><ul class="points">${items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
 function renderAnalysis(job) {
@@ -465,6 +528,48 @@ function openContact(id) {
 }
 $("contact-modal").addEventListener("click", (e) => { if (e.target.id === "contact-modal") $("contact-modal").classList.remove("show"); });
 
+/* ------------------------------------------------------------------ tư vấn: tên sản phẩm / ảnh, ngân sách, nhu cầu */
+function renderAdvice(adv) {
+  const point = (p) => `<li>${esc(p.text)}${p.url ? ` <a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">[nguồn]</a>` : ""}</li>`;
+  const picks = (list) => (list && list.length ? `<div class="picks">${list.map((i) => `<a class="pick" href="${esc(safeUrl(i.url))}" target="_blank" rel="noopener"><b>${esc(money(i.price))}</b>${i.fit ? `<span class="badge ${i.fit === "Trong ngân sách" ? "high" : ""}">${esc(i.fit)}</span>` : ""}<span class="t">${esc(i.title || i.domain)}</span><span class="muted">${esc(i.domain)}</span></a>`).join("")}</div>` : "");
+  $("adv-result").hidden = false;
+  $("adv-result").innerHTML = `<h3 class="first">Tư vấn: ${esc(adv.query)}</h3>
+    ${adv.sections.map((s) => `<div class="block"><h4>${esc(s.heading)}</h4>${s.points.length ? `<ul class="points">${s.points.map(point).join("")}</ul>` : ""}${picks(s.picks)}</div>`).join("")}
+    <div class="actions"><button type="button" id="adv-to-request">Tạo yêu cầu mua từ tư vấn này</button></div>
+    <p class="muted">Tổng hợp tự động từ ${adv.domains.length} website. Hãy mở nguồn để kiểm tra và xin báo giá chính thức từ NCC.</p>`;
+  $("adv-to-request").addEventListener("click", () => {
+    $("query").value = adv.query; $("purpose").value = adv.need || ""; showTab("new"); $("query").focus(); toast("Đã điền sẵn vào yêu cầu mới, kiểm tra rồi bấm Tạo yêu cầu");
+  });
+}
+$("advice-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const query = $("adv-query").value.trim(), need = $("adv-need").value.trim(), files = [...$("adv-images").files];
+  const budget = parseInt($("adv-budget").value.replace(/\D/g, ""), 10) || null, state = $("adv-state");
+  const engines = [...document.querySelectorAll('input[name="engines"]:checked')].map((c) => c.value).filter((id) => engineStatus().find((s) => s.id === id)?.available);
+  if (!query && !need && !files.length) { state.textContent = "Nhập tên sản phẩm, nhu cầu hoặc chọn ảnh"; return; }
+  if (!engines.length) { state.textContent = "Chưa có engine nào dùng được: cài làm tiện ích Chrome/Cốc Cốc hoặc nhập khóa ở tab Cài đặt"; return; }
+  $("adv-btn").disabled = true; $("adv-result").hidden = true;
+  try {
+    let subject = query;
+    if (!subject && files.length) {
+      state.textContent = "Đang đọc ảnh...";
+      try { subject = (await analyzeImages(await Promise.all(files.map(fileToImage)))).keyword; } catch (err) { state.textContent = `Không đọc được ảnh: ${err.message}`; }
+      if (!subject && !need) { state.textContent = "Chưa đọc được tên sản phẩm từ ảnh (cần khóa Anthropic ở tab Cài đặt). Hãy nhập tên sản phẩm hoặc nhu cầu."; return; }
+    }
+    subject = subject || need;
+    state.textContent = `Đang crawl tối đa ${PAGES_PER_ENGINE} trang mỗi engine cho "${subject}"...`;
+    const res = await searchEngines(engines, subject);
+    const urls = res.urls.slice(0, MAX_PAGES);
+    const pages = await pool(urls, async (url) => { try { return { url, html: await fetchHtml(url) }; } catch { return null; } });
+    const discovery = core.buildDiscovery(pages, core.queryKeywords(subject), subject);
+    state.textContent = `Đọc ${discovery.read}/${urls.length} trang, đang tìm hiểu thêm về ngành hàng...`;
+    const r = await researchProduct(subject, engines, urls);
+    renderAdvice(knowledge.buildAdvice({ query: subject, need, budget }, discovery, r.research));
+    state.textContent = Object.keys(res.errors).length ? `Một số engine lỗi: ${Object.entries(res.errors).map(([k, v]) => `${k} (${v})`).join("; ")}` : "";
+  } catch (err) { state.textContent = `Lỗi: ${err.message}`; }
+  $("adv-btn").disabled = false;
+});
+
 /* ------------------------------------------------------------------ xuất file, soạn email */
 $("download").addEventListener("click", () => currentJob && downloadJob(currentJob));
 $("export-links").addEventListener("click", () => currentJob && downloadLinks(currentJob));
@@ -480,7 +585,7 @@ $("send-btn").addEventListener("click", async () => {
 });
 
 /* ------------------------------------------------------------------ lịch sử tìm kiếm */
-const jobLabel = { done: "Hoàn tất", error: "Lỗi", awaiting_confirmation: "Chờ xác nhận", running: "Đang chạy", queued: "Đang chờ" };
+const jobLabel = { done: "Hoàn tất", error: "Lỗi", researching: "Đang tìm hiểu", awaiting_confirmation: "Chờ xác nhận", running: "Đang chạy", queued: "Đang chờ" };
 const chips = (items, fmt) => (items.length ? `<div class="chips">${items.map((i) => `<span class="chip static">${fmt(i)}</span>`).join("")}</div>` : '<span class="muted">Chưa có</span>');
 function groupBody(g) {
   const change = g.price_change_pct == null ? "Chưa đủ dữ liệu" : (g.price_change_pct > 0 ? "+" : "") + g.price_change_pct + "%";
@@ -566,6 +671,7 @@ document.querySelectorAll("[data-test]").forEach((btn) => btn.addEventListener("
   out.textContent = "Đang thử..."; btn.disabled = true;
   try {
     if (service === "google") { if (!(settings.google_key && settings.google_cx)) throw new Error("Cần lưu cả Google API key và Search engine ID trước"); await SEARCHERS.google("quạt", 1); }
+    else if (service === "googleweb") { const urls = await net.googleWeb("quạt mini", 5); if (!urls.length) throw new Error("Mở được Google nhưng không đọc được link nào"); }
     else if (service === "coccoc") { const urls = await net.coccocWeb("quạt mini", 5); if (!urls.length) throw new Error("Mở được Cốc Cốc nhưng không đọc được link nào"); }
     else if (service === "duckduckgo") { const urls = await net.duckduckgoWeb("quạt mini", 5); if (!urls.length) throw new Error("DuckDuckGo không trả link nào"); }
     else if (service === "brave") { if (!settings.brave_key) throw new Error("Chưa lưu Brave API key"); if (!net.isExt && !proxyReady()) throw new Error("Brave chặn gọi trực tiếp từ trình duyệt, cần cấu hình proxy trước"); await SEARCHERS.brave("quạt", 1); }
@@ -590,5 +696,5 @@ $("wipe").addEventListener("click", () => { if (confirm("Xóa toàn bộ lịch 
 
 buildColMenu(); renderEngines();
 // Yêu cầu bị dở dang khi tải lại trang (đang chạy) được đánh dấu lỗi để người dùng tạo lại.
-jobs.forEach((j) => { if (["running", "queued"].includes(j.status)) { j.status = "error"; j.error = "Bị gián đoạn khi tải lại trang"; } });
+jobs.forEach((j) => { if (["running", "queued", "researching"].includes(j.status)) { j.status = "error"; j.error = "Bị gián đoạn khi tải lại trang"; } });
 persist();

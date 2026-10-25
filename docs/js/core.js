@@ -155,13 +155,15 @@ export const TOPICS = {
 
 /* ------------------------------------------------------------------ chấm điểm */
 export const WEIGHTS = { price: 0.40, warranty: 0.25, vat: 0.20, relevance: 0.15 };
-export function scoreSuppliers(items, requireVat = true) {
-  const ppk = (i) => (i.price && i.mah ? i.price / (i.mah / 1000) : null);
+/** Chấm điểm NCC. Sản phẩm có pin: so giá trên 1.000 mAh; sản phẩm khác: so đơn giá trực tiếp. budget: giá tối đa mỗi cái (nếu có). */
+export function scoreSuppliers(items, requireVat = true, budget = null) {
+  const byMah = items.some((i) => i.price && i.mah);
+  const ppk = (i) => (i.price && (byMah ? i.mah : true) ? i.price / (byMah ? i.mah / 1000 : 1) : null);
   const ppks = items.map(ppk).filter(Boolean);
   const best = ppks.length ? Math.min(...ppks) : null;
   const scored = items.map((item) => {
-    const row = { ...item }; for (const k of ["recommended", "eligible", "reason", "score"]) delete row[k];
-    row.eligible = true; row.reason = "";
+    const row = { ...item }; for (const k of ["recommended", "eligible", "reason", "score", "over_budget"]) delete row[k];
+    row.eligible = true; row.reason = ""; row.over_budget = !!(budget && item.price && item.price > budget);
     if (requireVat && item.vat === false) return Object.assign(row, { eligible: false, reason: "Không có hóa đơn VAT", score: 0 });
     const p = ppk(item);
     const priceScore = p && best ? best / p : 0.5;
@@ -295,56 +297,209 @@ export function rfqText(job, s) {
   return `Kính gửi ${s.name},\n\nCông ty chúng tôi cần mua: ${job.query}${spec ? ` (${spec})` : ""}, số lượng ${job.quantity}.\nMục đích sử dụng: ${job.purpose || "chưa nêu"}.\n\nXin anh/chị vui lòng gửi báo giá gồm:\n- Đơn giá chưa VAT và đã VAT\n- Thông số kỹ thuật, model, xuất xứ\n- Thời gian bảo hành, chính sách đổi trả\n- Thời gian giao hàng, phí vận chuyển\n- Chiết khấu theo số lượng\n- Hiệu lực báo giá\n\nXin cảm ơn và mong sớm nhận phản hồi.`;
 }
 
-/* ------------------------------------------------------------------ question card */
+/* ------------------------------------------------------------------ nhóm ngành hàng */
+export const CATEGORIES = {
+  gia_dung: { label: "Gia dụng", words: ["quat", "noi", "may giat", "tu lanh", "dieu hoa", "bep", "lo vi song", "lo nuong", "may hut bui", "may loc", "binh nuoc nong", "may xay", "am dun", "ban ui", "may say", "robot hut bui", "noi chien", "may loc nuoc", "may loc khong khi", "den ban", "quat dieu hoa", "may lam mat"] },
+  may_moc: { label: "Thiết bị, máy móc, vật tư công nghiệp", words: ["may khoan", "may cat", "may nen khi", "may han", "may bom", "dong co", "bang tai", "xe nang", "may phat dien", "may tien", "cnc", "may phay", "may mai", "may cua", "may nghien", "may do", "bao ho", "bao ho lao dong", "giay bao ho", "gang tay bao ho", "mu bao ho", "van", "bom", "may cong cu", "may phun ap luc", "may bao"] },
+  tieu_dung: { label: "Sản phẩm tiêu dùng", words: ["ao", "quan", "giay", "dep", "dien thoai", "laptop", "may tinh", "tai nghe", "my pham", "dong ho", "balo", "tui", "sach", "do choi", "kem", "sua", "nuoc hoa", "kinh", "ao khoac", "may anh", "ban phim", "chuot", "loa", "sac du phong", "op lung"] },
+  chung: { label: "Sản phẩm khác", words: [] },
+};
+/** Nhóm ngành theo cụm từ khớp dài nhất trong tên sản phẩm (VD "áo điều hòa" thuộc gia dụng vì "điều hòa" dài hơn "áo"). */
+export function detectCategory(text) {
+  const norm = " " + stripAccents(String(text)).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ") + " ";
+  let best = "chung", bestLen = 0;
+  for (const [id, c] of Object.entries(CATEGORIES)) for (const w of c.words) if (w.length > bestLen && norm.includes(` ${w} `)) { best = id; bestLen = w.length; }
+  return best;
+}
+
+/* ------------------------------------------------------------------ tìm hiểu sản phẩm từ các trang web đã đọc */
+const MAH_RE = /(\d{1,3}(?:[.,]\d{3})+|\d{4,6})\s*m\s?ah/gi;
+const PURPOSE_RE = /(?:dùng cho|phù hợp (?:cho|với)|dành cho|thích hợp (?:cho|với))\s+([^.,;:()\n|]{8,80})/gi;
+const UNIT_TOKEN = /^\d+[A-Z]{0,3}$/; // 18V, 20000MAH, 5W... không phải model
+const BRAND_STOP = new Set(["VAT", "LED", "USB", "MAH", "NEW", "HOT", "PRO", "MAX", "MINI", "SALE", "SHOP", "COMBO", "FREESHIP", "CHINH", "HANG", "GIA", "RE", "TOT", "GIAO", "NHANH", "SIZE", "SET", "CAO", "CAP", "VIET", "NAM", "LOAI", "CHAT", "LUONG", "QUA", "TANG", "BAO", "HANH", "THANG", "ONLINE", "OFFICIAL", "STORE", "LIVE", "DEAL", "TOP", "BEST"]);
+const SPEC_DEFS = [
+  { id: "power", label: "Công suất", unit: "W", re: /(\d{1,5}(?:[.,]\d+)?)\s*(?:W|watt)\b/g },
+  { id: "hp", label: "Công suất động cơ", unit: "HP", re: /(\d{1,3}(?:[.,]\d)?)\s*HP\b/g },
+  { id: "capacity", label: "Dung tích", unit: "lít", re: /(\d{1,4}(?:[.,]\d+)?)\s*(?:lít|L)\b/g },
+  { id: "weight", label: "Khối lượng / tải trọng", unit: "kg", re: /(\d{1,5}(?:[.,]\d+)?)\s*kg\b/gi },
+  { id: "screen", label: "Kích thước màn hình", unit: "inch", re: /(\d{1,2}(?:[.,]\d)?)\s*(?:inch|")/gi },
+  { id: "storage", label: "Bộ nhớ", unit: "GB", re: /(\d{1,4})\s*GB\b/g },
+];
+const MATERIALS = ["cotton", "polyester", "inox", "nhôm", "thép", "nhựa", "da", "gỗ", "vải", "kaki", "lưới", "thủy tinh", "sứ", "silicon", "cao su"];
+
+/** Các mã model trong một tiêu đề: token in hoa có cả chữ lẫn số (F20, SQ331), bỏ đơn vị như 18V. */
+export function titleModels(title) {
+  const out = [];
+  for (const m of String(title).matchAll(/\b(?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{2,14}\b/g)) if (!UNIT_TOKEN.test(m[0])) out.push(m[0]);
+  return out;
+}
+const cleanTitle = (t) => String(t).split(/\s[|\-–—]\s/)[0].replace(/\s+/g, " ").trim().slice(0, 80);
+/** Hãng nhắc trong tiêu đề (từ IN HOA như YAMAKO) và trong câu "thương hiệu X", "hãng X". */
+export function brandsIn(title, text, queryTokens = []) {
+  const skip = new Set(queryTokens.map((t) => t.toUpperCase()));
+  const found = new Set();
+  for (const m of String(title).matchAll(/\b\p{Lu}{3,12}\b/gu)) { const k = stripAccents(m[0]).toUpperCase(); if (!BRAND_STOP.has(k) && !skip.has(k) && !/\d/.test(m[0])) found.add(m[0]); }
+  for (const m of String(text).slice(0, 30000).matchAll(/(?:thương hiệu|hãng|nhãn hiệu|nhà sản xuất)\s*[:\-]?\s*(\p{Lu}[\p{L}0-9&-]{1,18})/gu)) { const k = stripAccents(m[1]).toUpperCase(); if (!BRAND_STOP.has(k) && !skip.has(k)) found.add(m[1]); }
+  return [...found];
+}
+const medianOf = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
+const numStr = (v) => String(+String(v).replace(",", ".")).replace(/^0+(?=\d)/, "");
+
+/**
+ * Rút thông tin sản phẩm từ nhiều trang đã tải: nhóm ngành, tên, model, hãng, thông số, mục đích, bảo hành, giá.
+ * pages: [{ url, html }]. Chỉ dùng trang đúng sản phẩm (cụm 2 từ liên tiếp). Mỗi giá trị kèm số trang nhắc tới.
+ */
+export function buildDiscovery(pages, queryTokens, subject = "") {
+  const used = [];
+  for (const p of pages) {
+    if (!p || !p.html) continue;
+    const text = htmlToText(p.html);
+    const rel = phraseRelevance(queryTokens, stripAccents(text));
+    if (rel < 0.5) continue;
+    const title = ((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(p.html) || [, ""])[1]).replace(/\s+/g, " ").trim();
+    used.push({ url: p.url, domain: domainOf(p.url), title, text, rel });
+  }
+  const tally = (extract, keyFn = (v) => normKey(String(v))) => {
+    const map = new Map();
+    for (const u of used) {
+      const seenHere = new Set();
+      for (const v of extract(u)) {
+        const key = keyFn(v); if (!key || seenHere.has(key)) continue; seenHere.add(key);
+        const e = map.get(key) || { value: String(v), count: 0 }; e.count++; map.set(key, e);
+      }
+    }
+    return [...map.values()].sort((a, b) => b.count - a.count);
+  };
+  const mah = tally((u) => [...u.text.matchAll(MAH_RE)].map((m) => toInt(m[1])).filter((v) => v >= 1000 && v <= 100000));
+  const volt = tally((u) => [...u.text.matchAll(/\b(\d{1,2})\s*V(?:DC)?\b/g)].map((m) => +m[1]).filter((v) => v >= 3 && v <= 48));
+  const models = tally((u) => titleModels(u.title));
+  const brands = tally((u) => brandsIn(u.title, u.text, queryTokens), (v) => stripAccents(v));
+  const purposes = tally((u) => [...u.text.slice(0, 20000).matchAll(PURPOSE_RE)].map((m) => m[1].trim()));
+  const warranty = tally((u) => { const m = /bảo\s*hành[^.\n]{0,25}?(\d{1,2})\s*(tháng|năm)/i.exec(u.text); return m ? [+m[1] * (m[2].toLowerCase() === "năm" ? 12 : 1)] : []; });
+  const specs = SPEC_DEFS.map((d) => ({ id: d.id, label: d.label, unit: d.unit, values: tally((u) => [...u.text.matchAll(d.re)].map((m) => numStr(m[1])).filter((v) => +v > 0), (v) => v).slice(0, 4) })).filter((s) => s.values.length && s.values[0].count >= 2);
+  const materials = tally((u) => { const n = " " + stripAccents(u.text) + " "; return MATERIALS.filter((w) => n.includes(` ${stripAccents(w)} `)); }, (v) => stripAccents(v)).filter((e) => e.count >= 2).slice(0, 4);
+  const names = [...new Map(used.slice().sort((a, b) => b.rel - a.rel).map((u) => [normKey(cleanTitle(u.title)), cleanTitle(u.title)]).filter(([k]) => k.length >= 6)).values()].slice(0, 3);
+  const items = used.map((u) => { const p = findPrices(u.text); return { url: u.url, domain: u.domain, title: u.title.slice(0, 100), price: p.length ? Math.min(...p) : null }; });
+  const prices = used.flatMap((u) => findPrices(u.text));
+  return {
+    subject, category: detectCategory(subject || queryTokens.join(" ")),
+    read: pages.filter((p) => p && p.html).length, total: used.length,
+    pages: items.map(({ url, domain, title }) => ({ url, domain, title })), items,
+    names, models: models.slice(0, 4), brands: brands.slice(0, 6), mah: mah.slice(0, 4), volt: volt.slice(0, 4), purposes: purposes.slice(0, 3),
+    warranty: warranty.slice(0, 3), specs, materials,
+    price: prices.length ? { min: Math.min(...prices), max: Math.max(...prices), median: medianOf(prices), count: prices.length, sorted: [...prices].sort((a, b) => a - b) } : null,
+  };
+}
+
+/* ------------------------------------------------------------------ question card (5 đến 10 câu, dựng từ dữ liệu crawl) */
 const uniq = (opts) => { const seen = new Set(); return opts.filter((o) => (seen.has(o.value) ? false : seen.add(o.value))); };
 const mahLabel = (v) => `${Number(v).toLocaleString("vi-VN")} mAh`;
-export function buildCards(req, suggestedName = null, ocrText = "") {
+const vnd = (v) => `${Math.round(v).toLocaleString("vi-VN")} đ`;
+export const MAX_CARDS = 10;
+/**
+ * Dựng card. Bốn card luôn có: tên sản phẩm, mã/model, số lượng, mục đích. Các card còn lại (tối đa 6) được chọn từ
+ * dữ liệu crawl theo độ nhiều bằng chứng: thông số xuất hiện ở nhiều trang, hãng, ngân sách, bảo hành, chất liệu...
+ * Mỗi lựa chọn kèm "thấy ở n/N trang". Không có dữ liệu web thì dùng gợi ý chung và ghi rõ.
+ */
+export function buildCards(req, suggestedName = null, ocrText = "", discovery = null) {
   const query = (req.query || "").trim(), code = (req.product_code || "").trim(), purpose = (req.purpose || "").trim();
   const quantity = req.quantity || 1, custom = { value: CUSTOM, label: "Khác (nhập bên dưới)" };
-  const cards = [];
+  const total = discovery ? discovery.total : 0, d = total ? discovery : null;
+  const web = (list, fmt = (v) => v) => (d ? list.map((e) => ({ value: String(e.value), label: `${fmt(e.value)} (thấy ở ${e.count}/${total} trang)`, count: e.count })) : []);
+  const evidence = (list) => (list.length ? `Gợi ý lấy từ ${total} trang web đã đọc.` : total ? "Các trang đã đọc không nêu rõ mục này, đây là gợi ý chung." : "Chưa đọc được trang web nào, đây là gợi ý chung.");
+  const none = (label) => ({ value: "", label });
+
   const names = [];
   if (query) names.push({ value: query, label: `Đúng: ${query}` });
   if (suggestedName && suggestedName.toLowerCase() !== query.toLowerCase()) names.push({ value: suggestedName, label: `Theo ảnh: ${suggestedName}` });
+  if (d) for (const n of d.names) names.push({ value: n, label: `Theo web: ${n}` });
   if (!names.length && code) names.push({ value: code, label: `Dùng mã: ${code}` });
   names.push(custom);
-  cards.push({ id: "product", title: "Tên sản phẩm", question: "Sản phẩm bạn cần mua có đúng là như này không?", options: uniq(names), default: names[0].value });
-  const models = code ? [{ value: code, label: `Đúng: ${code}` }] : [];
-  models.push({ value: "", label: "Không rõ, để app tự tìm" }, custom);
-  cards.push({ id: "model", title: "Mã / model", question: "Sản phẩm có mã hoặc model cụ thể không?", options: uniq(models), default: code || "" });
-  const fm = /(\d{4,6})\s*m\s?ah/i.exec(query)?.[1], fv = /\b(\d{1,2})\s*v(?:dc)?\b/i.exec(query)?.[1];
-  const mah = [...(fm ? [{ value: fm, label: mahLabel(fm) }] : []), ...["10000", "20000", "30000", "50000"].map((v) => ({ value: v, label: mahLabel(v) })), { value: "", label: "Không quan trọng" }, custom];
-  cards.push({ id: "mah", title: "Dung lượng pin", question: "Dung lượng pin cần là bao nhiêu mAh?", options: uniq(mah), default: fm || "" });
-  const volt = [...(fv ? [{ value: fv, label: `${fv}V` }] : []), ...["12", "15", "18", "24", "28"].map((v) => ({ value: v, label: `${v}V` })), { value: "", label: "Không quan trọng" }, custom];
-  cards.push({ id: "volt", title: "Điện áp", question: "Điện áp cần là bao nhiêu volt?", options: uniq(volt), default: fv || "" });
+  const webModels = web(d ? d.models : []);
+  const models = [...(code ? [{ value: code, label: `Đúng: ${code}` }] : []), ...webModels, none("Không rõ, để app tự tìm"), custom];
+  const webPurposes = web(d ? d.purposes : []);
+  const purposeOpts = webPurposes.length ? webPurposes : ["Dùng cho công việc, sản xuất", "Dùng trong gia đình, văn phòng", "Làm quà tặng, kinh doanh lại"].map((p) => ({ value: p, label: p }));
   const qty = [{ value: String(quantity), label: `${quantity} cái` }, ...[1, 10, 50, 100, 150].map((q) => ({ value: String(q), label: `${q} cái` })), custom];
-  cards.push({ id: "quantity", title: "Số lượng", question: "Bạn cần mua bao nhiêu cái?", options: uniq(qty), default: String(quantity) });
-  const purposes = [...(purpose ? [{ value: purpose, label: `Đúng: ${purpose}` }] : []),
-    ...["Công nhân làm ngoài trời (8 giờ trở lên mỗi ngày)", "Đi xe máy hoặc làm việc văn phòng", "Làm việc nặng, công trình xây dựng"].map((p) => ({ value: p, label: p })),
-    { value: "", label: "Chưa xác định" }, custom];
-  cards.push({ id: "purpose", title: "Mục đích sử dụng", question: "Sản phẩm dùng cho mục đích gì?", options: uniq(purposes), default: purpose || "" });
-  if (ocrText) cards.push({ id: "ocr", title: "Chữ đọc được trong ảnh", question: `Thêm chữ này vào từ khóa tìm kiếm? "${ocrText.slice(0, 120)}"`,
-    options: [{ value: "use", label: "Có, thêm vào từ khóa" }, { value: "skip", label: "Không, bỏ qua" }], default: "use" });
-  return cards;
+
+  const required = [
+    { id: "product", title: "Tên sản phẩm", question: "Sản phẩm bạn cần mua có đúng là như này không?", options: uniq(names), default: names[0].value, evidence: d ? `Có thêm tên gọi lấy từ ${total} trang web đã đọc.` : "" },
+    { id: "model", title: "Mã sản phẩm / model", question: "Sản phẩm có mã hoặc model cụ thể không?", options: uniq(models), default: code || "", evidence: evidence(webModels), required: true },
+    { id: "quantity", title: "Số lượng", question: "Bạn cần mua bao nhiêu cái?", options: uniq(qty), default: String(quantity), evidence: "", required: true },
+    { id: "purpose", title: "Mục đích sử dụng", question: "Sản phẩm dùng cho mục đích gì?", options: uniq([...(purpose ? [{ value: purpose, label: `Đúng: ${purpose}` }] : []), ...purposeOpts, none("Chưa xác định"), custom]), default: purpose || "", evidence: evidence(webPurposes), required: true },
+  ];
+
+  // Card bổ sung: mỗi ứng viên có điểm = độ nhiều bằng chứng; lấy tối đa (MAX_CARDS - 4) card điểm cao nhất.
+  const extras = [];
+  const specCard = (id, kind, title, question, list, fmt, fixed, meta = {}) => {
+    const opts = web(list, fmt);
+    if (fixed && !opts.some((o) => o.value === fixed)) opts.unshift({ value: fixed, label: `${fmt(fixed)} (theo tên bạn nhập)`, count: 1 });
+    const top = opts[0];
+    if (!top || (top.count < 2 && !fixed)) return;
+    extras.push({ score: top.count * 10 + (fixed ? 50 : 5), card: { id, kind, title, question, options: uniq([...opts, none("Không quan trọng"), custom]), default: fixed || "", evidence: evidence(opts), ...meta } });
+  };
+  const fm = /(\d{4,6})\s*m\s?ah/i.exec(query)?.[1], fv = /\b(\d{1,2})\s*v(?:dc)?\b/i.exec(query)?.[1];
+  const pickDefault = (list, fixed) => fixed || (list[0] && list[0].count >= 2 ? String(list[0].value) : "");
+  specCard("mah", "mah", "Dung lượng pin", "Dung lượng pin cần là bao nhiêu mAh?", d ? d.mah : [], mahLabel, pickDefault(d ? d.mah : [], fm));
+  specCard("volt", "volt", "Điện áp", "Điện áp cần là bao nhiêu volt?", d ? d.volt : [], (v) => `${v}V`, pickDefault(d ? d.volt : [], fv));
+  if (d) {
+    for (const s of d.specs) specCard(`spec_${s.id}`, "spec", s.label, `${s.label} cần là bao nhiêu (${s.unit})?`, s.values, (v) => `${v} ${s.unit}`, s.values[0].count >= 2 ? s.values[0].value : "", { spec: { id: s.id, label: s.label, unit: s.unit } });
+    if (d.materials.length >= 1) extras.push({ score: d.materials[0].count * 8, card: { id: "material", kind: "material", title: "Chất liệu", question: "Bạn muốn chất liệu nào?", options: uniq([...web(d.materials), none("Không quan trọng"), custom]), default: "", evidence: evidence(d.materials) } });
+    if (d.brands.length >= 1 && d.brands[0].count >= 2) extras.push({ score: d.brands[0].count * 9, card: { id: "brand", kind: "brand", title: "Hãng / thương hiệu", question: "Có hãng nào bạn muốn ưu tiên không?", options: uniq([...web(d.brands.filter((b) => b.count >= 2)), none("Không ưu tiên hãng"), custom]), default: "", evidence: evidence(d.brands) } });
+    if (d.price && d.price.count >= 3) {
+      const s = d.price.sorted, at = (q) => s[Math.min(s.length - 1, Math.floor(q * (s.length - 1)))];
+      const levels = [[at(0.25), "rẻ"], [at(0.5), "trung bình"], [at(0.75), "cao"], [s[s.length - 1], "cao nhất"]].map(([v, t]) => ({ value: String(Math.round(v)), label: `Tối đa ${vnd(v)} (mức ${t} trên web)` }));
+      extras.push({ score: 40, card: { id: "budget", kind: "budget", title: "Ngân sách mỗi sản phẩm", question: `Giá trên web từ ${vnd(d.price.min)} đến ${vnd(d.price.max)}. Bạn chấp nhận tối đa bao nhiêu mỗi cái?`, options: uniq([...levels, none("Không giới hạn"), custom]), default: "", evidence: `Dựa trên ${d.price.count} mức giá đọc từ ${total} trang web.` } });
+    }
+    if (d.warranty.length) extras.push({ score: d.warranty[0].count * 7, card: { id: "warranty", kind: "warranty", title: "Bảo hành tối thiểu", question: "Bạn cần bảo hành tối thiểu bao lâu?", options: uniq([...web(d.warranty, (v) => `Từ ${v} tháng`), none("Không yêu cầu"), custom]), default: "", evidence: evidence(d.warranty) } });
+  }
+  if (ocrText) extras.push({ score: 100, card: { id: "ocr", kind: "ocr", title: "Chữ đọc được trong ảnh", question: `Thêm chữ này vào từ khóa tìm kiếm? "${ocrText.slice(0, 120)}"`, options: [{ value: "use", label: "Có, thêm vào từ khóa" }, { value: "skip", label: "Không, bỏ qua" }], default: "use", evidence: "" } });
+  extras.push({ score: 20, card: { id: "vat", kind: "vat", title: "Hóa đơn VAT", question: "Có bắt buộc nhà cung cấp xuất hóa đơn VAT không?", options: [{ value: "yes", label: "Bắt buộc có VAT (loại NCC không xuất hóa đơn)" }, { value: "no", label: "Không bắt buộc" }], default: "yes", evidence: "Hóa đơn VAT thường là điều kiện để duyệt chi." } });
+  extras.push({ score: 15, card: { id: "priority", kind: "priority", title: "Ưu tiên khi chọn NCC", question: "Bạn ưu tiên điều gì nhất khi chọn nhà cung cấp?", options: [{ value: "balanced", label: "Cân bằng giá, bảo hành, VAT" }, { value: "price", label: "Giá rẻ nhất" }, { value: "warranty", label: "Bảo hành tốt nhất" }, { value: "trust", label: "Chính hãng, uy tín" }], default: "balanced", evidence: "" } });
+  const picked = extras.sort((a, b) => b.score - a.score).slice(0, MAX_CARDS - required.length).map((e) => e.card);
+  return [...required, ...picked];
 }
-/** Áp câu trả lời card vào job. Ném Error nếu không hợp lệ. */
+/** Áp câu trả lời card vào job. Ném Error nếu không hợp lệ. Card bổ sung được nhận ra qua card.kind trong job.questions. */
 export function applyAnswers(job, answers) {
   const val = (id) => { const a = answers[id] || {}; return a.value === CUSTOM ? String(a.custom || "").trim() : String(a.value ?? "").trim(); };
   const product = val("product"); if (!product) throw new Error("Nhập tên sản phẩm");
   const qty = val("quantity"); if (!/^\d+$/.test(qty) || +qty < 1) throw new Error("Số lượng phải là số nguyên dương");
-  const mah = val("mah"), volt = val("volt");
-  if (mah && !/^\d+$/.test(mah)) throw new Error("Dung lượng pin chỉ nhập số, ví dụ 20000");
-  if (volt && !/^\d+$/.test(volt)) throw new Error("Điện áp chỉ nhập số, ví dụ 18");
-  Object.assign(job, { query: product, product_code: val("model"), quantity: +qty, purpose: val("purpose"), spec: { mah, volt }, use_ocr: val("ocr") === "use", answers });
+  const spec = { mah: "", volt: "", extra: [], brand: "", material: "", budget: null, warranty: null, priority: "balanced", vat_required: true };
+  const digits = (id, label, hint) => { const v = val(id); if (v && !/^\d+$/.test(v)) throw new Error(`${label} chỉ nhập số, ví dụ ${hint}`); return v; };
+  for (const card of job.questions || []) {
+    if (card.kind === "mah") spec.mah = digits(card.id, "Dung lượng pin", "20000");
+    else if (card.kind === "volt") spec.volt = digits(card.id, "Điện áp", "18");
+    else if (card.kind === "spec") { const v = val(card.id); if (v && !/^\d+([.,]\d+)?$/.test(v)) throw new Error(`${card.title} chỉ nhập số`); if (v) spec.extra.push({ id: card.spec.id, label: card.spec.label, unit: card.spec.unit, value: v.replace(",", ".") }); }
+    else if (card.kind === "brand") spec.brand = val(card.id);
+    else if (card.kind === "material") spec.material = val(card.id);
+    else if (card.kind === "budget") { const v = digits(card.id, "Ngân sách", "1500000"); spec.budget = v ? +v : null; }
+    else if (card.kind === "warranty") { const v = digits(card.id, "Bảo hành", "12"); spec.warranty = v ? +v : null; }
+    else if (card.kind === "priority") spec.priority = val(card.id) || "balanced";
+    else if (card.kind === "vat") spec.vat_required = val(card.id) !== "no";
+  }
+  const ocr = (job.questions || []).some((c) => c.kind === "ocr") && val("ocr") === "use";
+  Object.assign(job, { query: product, product_code: val("model"), quantity: +qty, purpose: val("purpose"), spec, use_ocr: ocr, answers });
   return job;
 }
+const PRIORITY_LABELS = { price: "ưu tiên giá rẻ nhất", warranty: "ưu tiên bảo hành tốt", trust: "ưu tiên chính hãng, uy tín" };
 export function specText(spec) {
-  const p = []; if (spec?.mah) p.push(`${Number(spec.mah).toLocaleString("vi-VN")} mAh`); if (spec?.volt) p.push(`${spec.volt}V`);
+  const s = spec || {}, p = [];
+  if (s.mah) p.push(`${Number(s.mah).toLocaleString("vi-VN")} mAh`);
+  if (s.volt) p.push(`${s.volt}V`);
+  for (const e of s.extra || []) p.push(`${e.label} ${e.value} ${e.unit}`);
+  if (s.material) p.push(`chất liệu ${s.material}`);
+  if (s.brand) p.push(`hãng ${s.brand}`);
+  if (s.budget) p.push(`ngân sách tối đa ${vnd(s.budget)}/cái`);
+  if (s.warranty) p.push(`bảo hành từ ${s.warranty} tháng`);
+  if (PRIORITY_LABELS[s.priority]) p.push(PRIORITY_LABELS[s.priority]);
+  if (s.vat_required === false) p.push("không bắt buộc VAT");
   return p.join(", ") || "Không yêu cầu";
 }
 export function searchKeywords(job) {
-  const q = job.query.trim(), parts = [q], { mah, volt } = job.spec || {};
-  if (mah && !new RegExp(`\\b${mah}\\s*mah\\b`, "i").test(q)) parts.push(`${mah}mAh`);
-  if (volt && !new RegExp(`\\b${volt}\\s*v`, "i").test(q)) parts.push(`${volt}V`);
+  const q = job.query.trim(), parts = [q], s = job.spec || {}, has = (re) => re.test(q);
+  if (s.mah && !has(new RegExp(`\\b${s.mah}\\s*mah\\b`, "i"))) parts.push(`${s.mah}mAh`);
+  if (s.volt && !has(new RegExp(`\\b${s.volt}\\s*v`, "i"))) parts.push(`${s.volt}V`);
+  for (const e of (s.extra || []).slice(0, 2)) if (!q.includes(e.value)) parts.push(`${e.value}${e.unit}`);
+  if (s.brand && !stripAccents(q).includes(stripAccents(s.brand))) parts.push(s.brand);
   if (job.use_ocr && job.ocr_text) parts.push(job.ocr_text.slice(0, 80));
   if (job.extra_keywords) parts.push(job.extra_keywords.trim());
   return parts.filter(Boolean).join(" ");
