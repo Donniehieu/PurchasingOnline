@@ -7,7 +7,7 @@ import { esc, domainOf, clip } from "./lib/text.js";
 export function mountLinkInput(host, { submitLabel = "Đọc giá từ các link", withName = false, onSubmit, toast = () => {} } = {}) {
   host.innerHTML = `
     <div class="lk">
-      ${withName ? `<label class="lk-name">Tên sản phẩm cần báo giá <span class="muted small">(không bắt buộc, để trống thì lấy tên từ trang đầu tiên)</span><input type="text" class="lk-prod" maxlength="120" placeholder="Ví dụ: Mỏ lết 200mm Hybrid Lobster UM30XG"></label>` : ""}
+      ${withName ? `<label class="lk-name">Tên sản phẩm cần báo giá <span class="muted small">(không bắt buộc)</span><input type="text" class="lk-prod" maxlength="120" placeholder="Ví dụ: Mỏ lết 200mm Hybrid Lobster UM30XG"></label>` : ""}
       <textarea class="lk-text" rows="4" aria-label="Link nhà cung cấp" placeholder="Dán link NCC: mỗi dòng một link (có thể ghi chú tên NCC cùng dòng). Dán nhiều link một lần cũng được."></textarea>
       <div class="row">
         <button type="button" class="btn ghost lk-pick">Nạp file Excel / CSV / TXT</button>
@@ -15,7 +15,6 @@ export function mountLinkInput(host, { submitLabel = "Đọc giá từ các link
         <span class="lk-count muted small" aria-live="polite"></span>
         <button type="button" class="btn primary lk-go">${esc(submitLabel)}</button>
       </div>
-      <p class="muted small" style="margin:6px 0 0">File Excel: link nằm ở cột nào cũng được (ô siêu liên kết cũng đọc được), chữ cùng dòng được giữ làm ghi chú. Tối đa ${MAX_LINKS} link mỗi lần.</p>
     </div>`;
   const $ = (s) => host.querySelector(s);
   const text = $(".lk-text"), fileInput = $(".lk-file"), count = $(".lk-count"), go = $(".lk-go");

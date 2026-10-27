@@ -57,7 +57,7 @@ function renderCards(entry, need, answers) {
     </div>`).join("");
   return `<div class="card"><h2>Trả lời vài câu để chọn đúng <span class="count">${cards.length} câu hỏi${chosen ? " · đã lọc " + chosen + " đặc điểm" : ""}</span></h2>
     <div class="qcards">${body}</div>
-    <p class="muted small" style="margin:10px 0 0">Câu hỏi lấy từ chính các sản phẩm và NCC đã đọc cho từ khóa của bạn. Câu trả lời chỉ <b>lọc và xếp hạng</b> kết quả đã có (bấm lại để bỏ chọn), không dùng để tìm kiếm. ${chosen ? `<button type="button" class="chip" data-card-reset="1">Bỏ các lựa chọn đặc điểm</button>` : ""}</p></div>`;
+    </div>`;
 }
 
 /** need: { budgetMin, budgetMax, purpose, priority }; choice: khóa sản phẩm người dùng đã chọn ("" = chưa chọn). */
@@ -80,7 +80,7 @@ export function renderAdvice(entry, need = {}, choice = "", answers = {}) {
     step1 = `<div class="card"><h2>Bước 1: Chọn sản phẩm phù hợp <span class="count">${prod.candidates.length} sản phẩm</span></h2>
       ${intro}
       ${prod.candidates.length ? `<div class="pick-grid" style="margin-top:12px">${prod.candidates.slice(0, 9).map((c, i) => productCard(c, i, picked, entry.scenario === "explore")).join("")}</div>` : `<p class="muted">Chưa có đủ sản phẩm từ các trang đã đọc. Bấm “Tìm thêm dữ liệu mới” hoặc gõ rõ hơn mã model.</p>`}
-      <p class="muted small">Điểm gợi ý theo quy tắc cố định: khớp ngân sách, khớp mục đích, số NCC bán, dữ liệu đọc từ đúng trang${need.priority && need.priority !== "balanced" ? ", ưu tiên bạn chọn" : ""}. Không phải đánh giá chất lượng tuyệt đối.</p></div>`;
+      </div>`;
   }
 
   let step2 = "";
@@ -95,7 +95,7 @@ export function renderAdvice(entry, need = {}, choice = "", answers = {}) {
         ${top ? `<div class="why"><b>Đề xuất: ${esc(top.seller)}</b>${top.price != null ? ` — ${money(top.price)}` : ""}. ${esc(top.reasons.join("; ") || "Dữ liệu còn ít, nên hỏi báo giá")}.${adv.cheapest && adv.cheapest !== top ? ` Rẻ nhất: ${esc(adv.cheapest.seller)} (${money(adv.cheapest.price)}).` : ""}</div>` : ""}
         <div class="pick-grid" style="margin-top:12px">${adv.list.slice(0, 12).map(supplierCard).join("")}</div>
         ${prod.mode === "product" || prod.candidates.length > 1 ? `<p><button type="button" class="btn ghost sm" data-pick="">← Chọn sản phẩm khác</button></p>` : ""}
-        <p class="muted small">Điểm NCC theo quy tắc: giá so với các NCC, trong ngân sách, giá/thông số đọc từ đúng trang, VAT rõ ràng, có SĐT/email. Luôn xác nhận lại giá, tồn kho, bảo hành trực tiếp với NCC trước khi mua.</p></div>`;
+        </div>`;
     }
   }
   return head + renderCards(entry, need, answers) + step1 + step2;

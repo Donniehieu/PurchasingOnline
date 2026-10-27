@@ -125,7 +125,7 @@ function render(entry) {
   $("tab-tech").innerHTML = renderTech(entry, readNeed());
   // hàng tiêu dùng không phân tích công nghệ: ẩn tab
   $("tabTechBtn").hidden = entry.category !== "tech";
-  if (entry.category !== "tech" && !$("tab-tech").hidden) selectTab("summary");
+  if (entry.category !== "tech" && !$("tab-tech").hidden) selectTab("summary", { scroll: false });
   $("tabTechBtn").textContent = entry.category === "tech" ? "Công nghệ" : "";
   $("tab-images").innerHTML = renderImages(entry);
   $("tab-log").innerHTML = renderLog(entry);
@@ -133,11 +133,11 @@ function render(entry) {
   $("sources").hidden = !entry.sources.length;
 }
 
-function selectTab(name) {
+function selectTab(name, { scroll = true } = {}) {
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
   for (const p of document.querySelectorAll(".panel")) p.hidden = p.id !== "tab-" + name;
   const panel = $("tab-" + name);
-  if (panel && panel.getBoundingClientRect().top < 0) panel.scrollIntoView({ block: "start", behavior: "smooth" }); // đang kéo xuống sâu: đưa về đầu phần vừa chọn
+  if (scroll && panel && panel.getBoundingClientRect().top < 0) panel.scrollIntoView({ block: "start", behavior: "smooth" }); // đang kéo xuống sâu: đưa về đầu phần vừa chọn
 }
 // nút "Tìm thêm dữ liệu mới" trong kết quả: tìm thêm trang mới rồi gộp vào dữ liệu đang xem
 document.addEventListener("click", (e) => {
@@ -172,9 +172,7 @@ function onEvent(ev) {
 
 // Đang chạy: làm mờ dữ liệu phía sau, hiện vòng quay "Đang tìm kiếm, vui lòng chờ…" (có nút Dừng)
 function syncBusy() {
-  const on = !!runCtl && !$("result").hidden;
-  $("busy").hidden = !on;
-  $("result").classList.toggle("is-busy", on);
+  $("busy").hidden = !(runCtl && !pre);
 }
 function setBusyText(t) { $("busyText").textContent = t || ""; }
 $("busyStop").addEventListener("click", () => { pending = null; runCtl?.abort(); });
@@ -191,7 +189,6 @@ $("modeQuote").addEventListener("click", () => setMode("quote"));
 
 function setRunning(on) {
   syncBusy();
-  if (on) $("progress").hidden = false;
   $("btnGo").disabled = on;
   $("btnStop").hidden = !on;
   $("progress").querySelector(".live").classList.toggle("idle", !on);
@@ -204,7 +201,7 @@ async function run(text, { mode = "enrich", force = false, ocrText = "", scenari
   if (!input.text) { toast("Nhập tên hoặc mã sản phẩm trước"); $("q").focus(); return; }
   runCtl = new AbortController();
   $("errorBox").hidden = true;
-  if (!current || current.plan.query !== input.text) selectTab("summary"); // tìm sản phẩm mới: về tab đầu (tìm thêm cho cùng sản phẩm thì giữ tab đang xem)
+  if (!current || current.plan.query !== input.text) selectTab("summary", { scroll: false }); // tìm sản phẩm mới: về tab đầu (tìm thêm cho cùng sản phẩm thì giữ tab đang xem)
   current = null;
   initSteps();
   setRunning(true);
@@ -317,26 +314,8 @@ $("tab-advice").addEventListener("click", (e) => {
 // ---------- kịch bản theo kiểu dữ liệu nhập + thẻ câu hỏi TRƯỚC khi tìm ----------
 // Nhận diện chạy ngay trên máy (không gọi mạng). Đủ thông tin: tìm thẳng. Thiếu: hiện thẻ câu hỏi (trả lời hoặc bỏ qua).
 let pre = null; // { text, forcedType, analysis, hints, cards, answers }
-function intentHint() {
-  const text = $("q").value;
-  const el = $("intentHint");
-  if (!text.trim()) { el.hidden = true; return; }
-  const a = analyzeInput(text, { forcedType: pre?.forcedType });
-  const msg = {
-    url: "Có link: ứng dụng đọc thẳng trang đó rồi tìm các nhà cung cấp khác của đúng sản phẩm.",
-    model: `Có mã model ${a.signals.model}: tìm thẳng và dựng bảng NCC theo đúng tên/mã.`,
-    spec: "Đủ hãng và thông số: tìm thẳng và dựng bảng NCC theo đúng tên.",
-    branded: "Thiếu chi tiết: sẽ hỏi vài câu (bỏ qua được).",
-    generic: "Mới biết loại hàng: sẽ hỏi vài câu (bỏ qua được); bỏ qua thì chỉ xem giá và sản phẩm tương đương.",
-    need: "Mới có ngân sách/nhu cầu: sẽ hỏi loại sản phẩm bạn cần.",
-    vague: "Hơi ngắn: nhập thêm tên, hãng hoặc mã để tìm đúng hơn.",
-    pair: "Có hai sản phẩm: ứng dụng tìm từng sản phẩm một (sẽ hỏi tìm cái nào trước).",
-  }[a.scenario];
-  el.className = "intent-hint " + (a.mode === "full" ? "ok" : "ask");
-  el.textContent = msg || "";
-  el.hidden = !msg;
-}
-$("q").addEventListener("input", () => { pre = null; $("preCards").hidden = true; intentHint(); });
+function intentHint() { $("intentHint").hidden = true; }
+$("q").addEventListener("input", () => { pre = null; syncBusy(); $("preCards").hidden = true; intentHint(); });
 
 async function startSearch(text, { skipCards = false } = {}) {
   text = String(text ?? "").trim();
@@ -354,7 +333,7 @@ async function startSearch(text, { skipCards = false } = {}) {
     if (a.scenario !== "pair") run(text, { mode: $("mode").value, ocrText: ocrCtx, scenario: a.mode });
     return;
   }
-  $("preCards").hidden = true; pre = null;
+  $("preCards").hidden = true; pre = null; syncBusy();
   // đã từng trả lời cho từ khóa này: dùng lại thông tin đó để tìm bổ sung, không hỏi lại
   if (saved) {
     pending = { text, adds: saved.adds, baseKey: bk, typeId: saved.typeId, analysis: analyzeInput(withInfo(text, saved.adds)) };
@@ -383,11 +362,12 @@ function needSelected(c, need) {
 }
 
 const answered = (c) => (c.kind === "need" ? !!needSelected(c, readNeed()) : !!(pre.answers[c.id]?.value || pre.answers[c.id]?.custom));
-const NO_INFO = "chưa có (từ khóa giữ đúng chữ bạn gõ)";
+const NO_INFO = "";
 
 // Hỏi từng câu một: Quay lại / Bỏ qua / Tiếp. Câu trả lời điền vào từ khóa bổ sung (xem finishWizard).
 function renderPreCards() {
   if (!pre) return;
+  syncBusy();
   const total = pre.cards.length;
   if (!total) { finishWizard(); return; }
   const i = Math.min(pre.step, total - 1);
@@ -398,15 +378,13 @@ function renderPreCards() {
   const other = c.kind === "query" ? `<input type="text" class="pc-other" data-pcx="${esc(c.id)}" maxlength="40" placeholder="${c.options.length ? "Khác: tự nhập" : "Tự nhập"}" value="${esc(pre.answers[c.id]?.custom ?? "")}">` : "";
   const dots = pre.cards.map((x, k) => `<span class="wz-dot${k === i ? " cur" : answered(x) ? " done" : ""}" aria-hidden="true"></span>`).join("");
   const isPair = pre.analysis.scenario === "pair";
-  const busy = !isPair && runCtl ? "Đang tìm theo thông tin ban đầu… " : "";
   const last = i === total - 1;
-  const reuse = pre.recalled && i === 0 && !isPair ? `<div class="alert info" style="margin:0 0 10px">Đã điền lại câu trả lời ${pre.exact ? "lần trước của sản phẩm này" : "gần nhất cho loại hàng này"}: <b>${esc(wizardPreview())}</b>. <button type="button" class="chip" data-pc-all="1">Dùng lại và tìm bổ sung</button></div>` : "";
-  $("preCards").innerHTML = `<h2>Hỏi nhanh để tìm đúng sản phẩm <span class="count">câu ${i + 1}/${total} · ${esc(pre.analysis.label)}</span></h2>
-    <p class="muted small" style="margin:0 0 10px">${busy}${isPair ? "" : "Trả lời xong, ứng dụng tự tìm bổ sung theo từ khóa sinh từ chữ bạn gõ + thông tin trả lời + hãng đối thủ + công nghệ. "}Bỏ qua câu nào cũng được.</p>
+  const reuse = pre.recalled && i === 0 && !isPair ? `<div class="alert info" style="margin:0 0 10px">Đã điền lại: <b>${esc(wizardPreview())}</b> <button type="button" class="chip" data-pc-all="1">Dùng lại</button></div>` : "";
+  $("preCards").innerHTML = `<h2>Một vài câu hỏi <span class="count">${i + 1}/${total}</span></h2>
     ${reuse}
     <div class="wz-dots" role="presentation">${dots}</div>
     <div class="qcard"><div class="q-title"><span class="q-num">${i + 1}</span>${esc(c.title)}</div><div class="chips">${chips}</div>${other}</div>
-    <p class="pc-preview">${isPair ? "Sẽ tìm: " : "Thông tin thêm vào từ khóa: "}<b>${esc(wizardPreview())}</b></p>
+    ${wizardPreview() === NO_INFO ? "" : `<p class="pc-preview">${isPair ? "Sẽ tìm" : "Từ khóa thêm"}: <b>${esc(wizardPreview())}</b></p>`}
     <div class="row" style="margin-top:8px">
       <button type="button" class="btn ghost" data-pc-back="1" style="margin-left:0"${i === 0 ? " disabled" : ""}>Quay lại</button>
       <button type="button" class="btn ghost" data-pc-skip="1">Bỏ qua</button>
@@ -431,7 +409,7 @@ function stepWizard(delta) {
 function finishWizard() {
   const p = pre;
   $("preCards").hidden = true;
-  pre = null;
+  pre = null; syncBusy();
   if (!p) return;
   if (p.analysis.scenario === "pair") {
     // hai sản phẩm: tìm cái đã chọn (mặc định cái đầu), đủ thông tin nên dựng bảng NCC
@@ -484,7 +462,7 @@ $("preCards").addEventListener("click", async (e) => {
     if (c.kind === "query") delete pre.answers[c.id];
     stepWizard(1);
   } else if (e.target.closest("[data-pc-back]")) { if (pre.step > 0) { pre.step--; renderPreCards(); } }
-  else if (e.target.closest("[data-pc-cancel]")) { $("preCards").hidden = true; pre = null; }
+  else if (e.target.closest("[data-pc-cancel]")) { $("preCards").hidden = true; pre = null; syncBusy(); }
 });
 $("preCards").addEventListener("input", (e) => {
   const inp = e.target.closest("[data-pcx]");
@@ -562,7 +540,7 @@ async function addLinks(entry, items) {
   $("steps").innerHTML = `<li id="st-links" class="running"><b>Đọc link nhà cung cấp</b><small></small></li>`;
   entry.scenario = "full"; // người dùng đã chọn link: dựng bảng NCC ngay
   showResult(entry);
-  selectTab("table");
+  selectTab("table", { scroll: false });
   try {
     const o = runOptions();
     const st = await importLinks(entry, items, { api, store, emit: onEvent, signal: runCtl.signal, concurrency: o.concurrency });

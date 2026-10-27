@@ -303,9 +303,8 @@ dialog::backdrop { background: rgba(15, 18, 40, .55); -webkit-backdrop-filter: b
 .hint .how { padding-left: 20px; display: grid; gap: 4px; }
 #result { position: relative; display: grid; gap: 14px; }
 #result[hidden], .busy[hidden], #paneSearch[hidden], #paneQuote[hidden] { display: none; }
-#result.is-busy > :not(.busy) { filter: blur(3px); opacity: .45; pointer-events: none; user-select: none; transition: opacity .2s, filter .2s; }
-.busy { position: absolute; inset: 0; z-index: 20; display: flex; justify-content: center; align-items: flex-start; border-radius: var(--radius); pointer-events: auto; }
-.busy-box { position: sticky; top: 130px; margin-top: 30px; display: grid; gap: 8px; justify-items: center; text-align: center; padding: 20px 26px; max-width: min(92%, 380px); background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }
+.busy { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg) 62%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.busy-box { position: static; margin: 0; display: grid; gap: 8px; justify-items: center; text-align: center; padding: 20px 26px; max-width: min(92%, 380px); background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }
 .busy-box .muted { max-width: 100%; overflow-wrap: anywhere; }
 .spin { width: 38px; height: 38px; border-radius: 50%; border: 4px solid var(--accent-soft); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -331,3 +330,22 @@ body.noscroll { overflow: hidden; }
 .link-busy { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg) 60%, transparent); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
 .link-busy .busy-box { position: static; margin: 0; }
 .lb-nav.prev { grid-column: 1; grid-row: 2; } .lb-stage { grid-column: 2; grid-row: 2; } .lb-nav.next { grid-column: 3; grid-row: 2; }
+
+/* Hệ chữ thống nhất: H1 tên sản phẩm · H2 tiêu đề thẻ · H3 tiêu đề phụ · P1 nội dung · P2 (.small) chú thích · P3 (.tiny) nhãn nhỏ.
+   Khoảng cách theo bước 4/8/12/16/20px; mọi thẻ cùng một khung: tiêu đề H2 có đường kẻ chân, nội dung bên dưới. */
+:root { --fs-h1: clamp(1.4rem, 1.1rem + 1.3vw, 1.85rem); --fs-h2: 1.1rem; --fs-h3: .95rem; --fs-p1: .95rem; --fs-p2: .85rem; --fs-p3: .75rem; --gap: 16px; }
+body { font-size: var(--fs-p1); }
+h1 { font-size: var(--fs-h1); font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px; }
+h2 { font-size: var(--fs-h2); font-weight: 700; margin: 0 0 12px; }
+h3 { font-size: var(--fs-h3); font-weight: 650; margin: 16px 0 8px; letter-spacing: 0; }
+h3:first-child { margin-top: 0; }
+p { margin: 0 0 10px; }
+p:last-child { margin-bottom: 0; }
+.small { font-size: var(--fs-p2); } .tiny { font-size: var(--fs-p3); }
+main { gap: var(--gap); }
+.card { padding: 20px; }
+.card > h2 { padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.panel { gap: var(--gap); }
+#result { display: grid; gap: var(--gap); }
+.top-line { margin-bottom: 8px; }
+@media (max-width: 600px) { .card { padding: 16px; } }

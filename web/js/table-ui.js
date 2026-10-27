@@ -29,7 +29,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onA
   host.innerHTML = `
     <div class="card tbl-card">
       <details class="tbl-add">
-        <summary><b>Thêm link NCC có sẵn</b> <span class="muted small">dán một hoặc nhiều link, hoặc nạp file Excel → thêm dòng vào bảng, xuất Excel báo giá</span></summary>
+        <summary><b>Thêm link NCC có sẵn</b></summary>
         <div class="tbl-add-host"></div>
       </details>
       <div class="tbl-qstat"></div>
@@ -65,7 +65,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onA
       <div class="tbl-wrap" tabindex="0" role="region" aria-label="Bảng so sánh nhà cung cấp, kéo chuột hoặc cuộn để xem các cột">
         <table class="otbl"><thead><tr class="h"></tr><tr class="f"></tr></thead><tbody></tbody></table>
       </div>
-      <p class="muted small">Giữ chuột kéo trái/phải (hoặc cuộn) để xem các cột. Bấm tên cột để sắp xếp, dấu × để ẩn cột, nút “Cột” để hiện lại. Lọc giá: <code>&lt;3tr</code>, <code>&gt;2000000</code>, <code>2tr-3tr</code>. Lọc thông số kỹ thuật (cách nhau bằng dấu <code>;</code>, phải đúng hết): <code>inverter</code>, <code>công suất: 1500</code>, <code>công suất&gt;=1500</code>, <code>dung tích&lt;=6 lít</code>; số phải khớp trọn (1500 không khớp 15000). Xuất Excel theo đúng bảng đang xem (cột đang hiện, dòng đã lọc và sắp xếp).</p>
+      
       </div>
     </div>`;
 

@@ -73,7 +73,7 @@
           <button type="submit" id="btnGo" class="btn primary">Tìm hiểu</button>
         </div>
         <details class="opts">
-          <summary>Tùy chọn <span class="muted small">loại hàng · nhu cầu · cách dùng cache</span></summary>
+          <summary>Tùy chọn</summary>
           <div class="opts-grid">
             <label>Loại hàng
               <select id="cat">
@@ -89,14 +89,13 @@
               </select></label>
           </div>
           <details class="need" id="needBox">
-        <summary>Nhu cầu của bạn <span class="muted small">(không bắt buộc · dùng để gợi ý sản phẩm, NCC)</span></summary>
+        <summary>Nhu cầu của bạn <span class="muted small">(không bắt buộc)</span></summary>
         <div class="need-grid">
           <label>Mục đích sử dụng<input id="nPurpose" type="text" maxlength="80" placeholder="Ví dụ: gia đình 4 người, văn phòng, chơi game"></label>
           <label>Ngân sách từ<input id="nMin" type="text" inputmode="text" placeholder="3tr hoặc 3000000"></label>
           <label>Ngân sách đến<input id="nMax" type="text" inputmode="text" placeholder="5tr hoặc 5000000"></label>
           <label>Ưu tiên<select id="nPriority"><option value="balanced">Cân bằng</option><option value="cheap">Giá rẻ nhất</option><option value="quality">Chất lượng, công nghệ</option><option value="durable">Bền, bảo hành tốt</option></select></label>
         </div>
-        <p id="nHint" class="muted small" style="margin:6px 0 0">Tự điền từ câu bạn gõ (ví dụ “dưới 5 triệu cho gia đình 4 người”), bạn có thể sửa. Các ô này <b>không dùng để tìm kiếm</b>: từ khóa tìm luôn là đúng chữ bạn nhập.</p>
       </details>
         </details>
         <input type="file" id="file" accept="image/*" hidden>
@@ -105,7 +104,6 @@
     </div>
 
     <div id="paneQuote" hidden>
-      <p class="muted small" style="margin:12px 0 0">Đã có sẵn link các nhà cung cấp? Ứng dụng mở từng link, đọc giá, VAT, thông số, liên hệ rồi lập Bảng NCC để so sánh và xuất file Excel báo giá.</p>
       <div id="quoteHost"></div>
     </div>
   </section>
@@ -131,14 +129,6 @@
   </section>
 
   <section id="result" hidden>
-    <div id="busy" class="busy" hidden role="status" aria-live="polite">
-      <div class="busy-box">
-        <div class="spin" aria-hidden="true"></div>
-        <b>Đang tìm kiếm, vui lòng chờ…</b>
-        <span id="busyText" class="muted small"></span>
-        <button type="button" id="busyStop" class="btn ghost sm">Dừng</button>
-      </div>
-    </div>
     <div id="banner"></div>
     <article id="headline" class="card headline"></article>
     <article id="verdict" class="card verdict" hidden></article>
@@ -159,7 +149,6 @@
           <input id="askInput" type="text" maxlength="300" placeholder="Hỏi tiếp, ví dụ: bảo hành mấy năm?" enterkeyhint="send">
           <button class="btn primary" type="submit">Hỏi</button>
         </form>
-        <p class="muted small">Trả lời từ dữ liệu đã lưu, kèm nguồn. Câu hỏi tự do chỉ dùng dữ liệu này, không tìm web mới.</p>
       </div>
     </div>
     <section id="sources" class="card sources"></section>
@@ -324,6 +313,14 @@
     <div class="row end"><button type="button" id="camClose" class="btn ghost">Đóng</button><button type="button" id="camShot" class="btn primary">Chụp</button></div>
   </div>
 </dialog>
+  <div id="busy" class="busy" hidden role="status" aria-live="polite">
+    <div class="busy-box">
+      <div class="spin" aria-hidden="true"></div>
+      <b>Đang tìm kiếm, vui lòng chờ…</b>
+      <span id="busyText" class="muted small"></span>
+      <button type="button" id="busyStop" class="btn ghost sm">Dừng</button>
+    </div>
+  </div>
 <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Xem ảnh lớn">
   <div class="lb-bar">
     <span id="lbCap" class="lb-cap"></span>
@@ -344,7 +341,6 @@
     <div class="spin" aria-hidden="true"></div>
     <b>Đang mở trang, vui lòng chờ…</b>
     <span id="linkBusyText" class="muted small"></span>
-    <span class="muted small">Trang mở ở thẻ mới; nếu chưa thấy, hãy chờ vài giây.</span>
     <button type="button" id="linkBusyClose" class="btn ghost sm">Ẩn</button>
   </div>
 </div>

@@ -25,10 +25,8 @@ export const chips = (entry, ids, max = 3) => [...new Set(ids ?? [])].slice(0, m
 
 export function renderBanner(entry) {
   const out = [];
-  if (entry.ai?.mock) out.push(`<div class="alert warn"><b>Dữ liệu mẫu.</b> Chưa có khóa dịch vụ nên đang chạy thử với sản phẩm và hãng hư cấu — không dùng để mua hàng. Vào Cài đặt để nhập khóa Claude hoặc Gemini.</div>`);
-  if (entry.ai?.chrome) out.push(`<div class="alert info"><b>Nguồn: Google ${entry.ai.organic ? "(kết quả thường)" : "(tìm nâng cao)"} chạy trong Chrome của bạn</b> (miễn phí). Trang được đọc bằng IP của bạn, giãn cách vài giây, tự ngừng khi bị chặn. Hãy mở nguồn để kiểm tra thông tin.</div>`);
-  if (entry.ai?.free) out.push(`<div class="alert info"><b>Chế độ miễn phí.</b> Tìm bằng DuckDuckGo/Bing rồi tự đọc từng trang. Giá, ảnh, ưu/nhược điểm chỉ có khi trang cho đọc; hãng khác chỉ có giá và ảnh. Nhập khóa Gemini miễn phí ở Cài đặt (hoặc dùng Google trong Chrome) để có đủ ưu/nhược điểm và công nghệ.</div>`);
-  if (entry.scenario === "explore") out.push(`<div class="alert info"><b>Chưa đủ thông tin để tư vấn.</b> Dưới đây chỉ là cái nhìn chung về loại sản phẩm (ưu nhược điểm, công nghệ, khoảng giá tham khảo). Ứng dụng <b>chưa tư vấn chọn sản phẩm, nhà cung cấp hay so sánh báo giá</b> vì chưa biết chính xác bạn cần gì. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></div>`);
+  if (entry.ai?.mock) out.push(`<div class="alert warn"><b>Dữ liệu mẫu:</b> sản phẩm và hãng là hư cấu, không dùng để mua hàng.</div>`);
+  if (entry.scenario === "explore") out.push(`<div class="alert info">Chưa đủ thông tin để tư vấn chi tiết. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></div>`);
   if (entry.status === "partial") out.push(`<div class="alert info">Đã dừng giữa chừng — đang hiện phần dữ liệu thu được.</div>`);
   if (entry.status === "error") out.push(`<div class="alert err">Lần tìm này chưa hoàn tất. Dữ liệu bên dưới (nếu có) là phần thu được trước khi lỗi.</div>`);
   return out.join("");
@@ -87,7 +85,7 @@ export function renderSummary(entry) {
   return `
     ${entry.scenario === "explore" ? `<div class="card"><h2>Khoảng giá tham khảo</h2><p style="margin:0">${s.price.count ? (s.price.min !== s.price.max ? `${money(s.price.min)} – ${money(s.price.max)}` : money(s.price.median)) : "Chưa có"}</p><p class="muted small" style="margin:6px 0 0">Các giá thu được thuộc nhiều loại sản phẩm khác nhau nên không dùng để so sánh báo giá. Bổ sung thông tin để có giá và nhà cung cấp cụ thể. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></p></div>` : `<div class="card"><h2>Giá <span class="count">${s.price.count ? `trung bình ${money(s.price.median)}` : ""}</span></h2>
       ${priceRows ? `<ul class="items">${priceRows}</ul>` : `<p class="muted">${wait}</p>`}
-      ${s.price.dropped.length ? `<p class="muted small">Đã loại ${s.price.dropped.length} giá lệch hẳn mặt bằng (nghi phụ kiện hoặc nhầm).</p>` : ""}</div>`}
+    </div>`}
     <div class="card"><h2>Ưu điểm <span class="count">${s.pros.length}</span></h2>${itemList(entry, s.pros, "pros", wait)}</div>
     <div class="card"><h2>Nhược điểm <span class="count">${s.cons.length}</span></h2>${itemList(entry, s.cons, "cons", wait)}</div>
     ${s.usage.length ? `<div class="card"><h2>Cách dùng <span class="count">${s.usage.length}</span></h2><ol class="items">${s.usage.map((x) => `<li><span class="t">${esc(x.text)}</span> ${chips(entry, x.srcIds)}</li>`).join("")}</ol></div>` : ""}
@@ -98,11 +96,6 @@ export function renderSummary(entry) {
 }
 
 export function renderCompare(entry) {
-  const v = renderVerdict(entry);
-  return (v ? `<div class="card verdict">${v}</div>` : "") + renderCompareTable(entry);
-}
-
-function renderCompareTable(entry) {
   if (entry.scenario === "explore") {
     const names = entry.alternatives.map((a) => esc([a.brand, a.model || a.name].filter(Boolean).join(" "))).filter(Boolean);
     return `<div class="card"><h2>Chưa đủ thông tin để so sánh</h2><p style="margin:0 0 8px">Ứng dụng chưa so sánh giá hay xếp hạng vì chưa biết chính xác sản phẩm bạn cần.${names.length ? " Một số hãng/sản phẩm cùng loại thường gặp:" : ""}</p>${names.length ? `<div class="chips">${names.map((n) => `<span class="badge">${n}</span>`).join("")}</div>` : ""}<p class="muted small" style="margin:10px 0 0">Bổ sung hãng, mã hoặc thông số để so sánh cụ thể. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></p></div>`;
@@ -127,7 +120,6 @@ function renderCompareTable(entry) {
     <h2>So sánh ${rec.rows.length} sản phẩm ${tech ? "(giá · ưu/nhược · công nghệ)" : "(giá · ưu/nhược điểm)"}</h2>
     <div class="table-wrap"><table class="cmp"><thead><tr><th>Sản phẩm</th><th>Giá</th><th>Ưu điểm</th><th>Nhược điểm</th>${tech ? "<th>Công nghệ</th>" : ""}<th>Điểm</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${renderVerdict(entry) ? `<div class="why">${renderVerdict(entry)}</div>` : ""}
-    <p class="muted small">Điểm = giá ${Math.round(w.price * 100)}% + cân bằng ưu/nhược ${Math.round(w.merit * 100)}% + số nguồn xác nhận ${Math.round(w.evidence * 100)}%${tech ? ` + công nghệ ${Math.round(w.tech * 100)}%` : ""}. Tính hoàn toàn từ dữ liệu đã lưu. Ô có dấu “?” là nguồn chưa kiểm chứng.</p>
   </div>`;
 }
 
@@ -196,9 +188,9 @@ export function renderLandscape(entry, need = {}) {
   }).join("");
   return `<div class="card verdict"><h2>Công nghệ của cả nhóm “${esc(land.label)}” <span class="count">ưu tiên: ${esc(PRIORITY_LABEL[land.priority])}</span></h2>
     <ul class="items">${land.summary.map((l) => `<li><span class="t">${esc(l)}</span></li>`).join("")}</ul>
-    <p class="muted small" style="margin:8px 0 0">Đổi ưu tiên ở tab “Tư vấn chọn” (Nhu cầu của bạn) để gợi ý thay đổi theo giá rẻ, chất lượng hay độ bền.</p></div>
+  </div>
     <div class="card"><h2>Phân loại và so sánh công nghệ <span class="count">${land.items.length}</span></h2>${groups}
-    <p class="muted small">Điểm là nhận định tham khảo (chất lượng, chi phí, độ bền) từ ngân hàng công nghệ có sẵn của ứng dụng, cộng thêm khi công nghệ xuất hiện ở nhiều sản phẩm đã đọc. Không phải kết quả đo: hãy đối chiếu thông số và nguồn của từng sản phẩm.</p></div>`;
+  </div>`;
 }
 
 export function renderTech(entry, need = {}) {
@@ -223,7 +215,7 @@ function renderTechClusters(entry) {
       <h3 style="color:var(--good)">Ưu điểm của công nghệ</h3>${claims(c.benefits, "pros", "Chưa có thông tin ưu điểm.")}
       <h3 style="color:var(--bad);margin-top:10px">Nhược điểm của công nghệ</h3>${claims(c.drawbacks, "cons", "Chưa có thông tin nhược điểm.")}
     </div>`).join("");
-  return summary + cards + `<p class="muted small">Gom từ công nghệ đã nhận diện của từng hãng và các ưu/nhược điểm có nhắc tên công nghệ. Mọi ý kèm nguồn; ô “?” là nguồn chưa kiểm chứng.</p>`;
+  return summary + cards;
 }
 
 const telLink = (p) => `<a href="tel:${esc(p.replace(/\s/g, ""))}">${esc(p)}</a>`;
@@ -253,6 +245,5 @@ export function renderSuppliers(entry) {
       <details><summary class="small">${s.pages.length} trang đã đọc</summary>${s.pages.map((p) => `<div class="small"><a href="${esc(httpUrl(p.url))}" target="_blank" rel="noopener noreferrer">${esc(clip(p.title || p.url, 70))}</a>${p.price ? " · " + money(p.price) : ""}${p.relevant ? "" : ' <span class="muted">(không khớp model)</span>'}</div>`).join("")}</details>
     </div>`).join("");
   return `<div class="card"><h2>Nhà cung cấp đã gặp <span class="count">${list.length} NCC · ${withContact} có liên hệ</span></h2>
-    <p class="muted small" style="margin:0 0 10px">Tên, liên hệ và các trang đã đọc của mọi website đã mở được lưu lại (kể cả khi trang đó không bán đúng sản phẩm), dùng chung cho các lần tìm sau.</p>
     <div class="sup-grid">${cards}</div></div>`;
 }
