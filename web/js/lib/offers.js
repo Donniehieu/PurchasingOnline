@@ -40,6 +40,7 @@ export function upsertOffer(entry, o) {
   for (const k of ["name", "brand", "seller", "model"]) if (now[k] && (!cur[k] || now.priceVia !== "ai")) cur[k] = now[k];
   cur.kind = now.kind;
   if (now.pack) cur.pack = now.pack;
+  if (now.priceHint !== undefined) cur.priceHint = cur.price == null ? now.priceHint : "";
   cur.weak = !!(cur.weak && now.weak); // đã từng khớp đúng thì không còn là "tương tự"
   cur.readFromPage = !!(cur.readFromPage || now.readFromPage); // đã từng đọc đúng trang này
   cur.ts = now.ts;

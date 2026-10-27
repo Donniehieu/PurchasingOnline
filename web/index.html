@@ -68,6 +68,7 @@
         <span id="ocrNote" class="muted"></span>
         <button type="button" id="pasteClear" class="chip">Bỏ ảnh</button>
       </div>
+      <div id="intentHint" class="intent-hint" hidden aria-live="polite"></div>
       <details class="need" id="needBox">
         <summary>Nhu cầu của bạn <span class="muted small">(không bắt buộc · dùng để gợi ý sản phẩm, NCC)</span></summary>
         <div class="need-grid">
@@ -89,6 +90,8 @@
       <input type="file" id="file" accept="image/*" hidden>
     </form>
   </section>
+
+  <section id="preCards" class="card precards" hidden aria-label="Câu hỏi trước khi tìm"></section>
 
   <section id="progress" class="card" hidden aria-live="polite">
     <ol id="steps" class="steps"></ol>
@@ -151,26 +154,67 @@
 <dialog id="dlg">
   <form method="dialog" id="settingsForm" class="settings">
     <h2>Cài đặt</h2>
-    <label>Địa chỉ máy chủ <small>(để trống = cùng địa chỉ trang này)</small>
-      <input id="sApi" type="url" placeholder="https://muahangthongminh.workers.dev" inputmode="url"></label>
-    <label>Nguồn tìm kiếm
-      <select id="sProvider"><option value="auto">Tự chọn: Google Chrome → dịch vụ có khóa → miễn phí</option><option value="chrome">Chỉ Google trong Chrome (cần tiện ích)</option><option value="free">Miễn phí, không cần khóa</option><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select></label>
-    <label>Khóa dịch vụ của bạn <small>(không bắt buộc nếu máy chủ đã có khóa; lưu trên thiết bị này)</small>
-      <input id="sKey" type="password" placeholder="sk-ant-… hoặc AIza…" autocomplete="off"></label>
-    <label>Mã truy cập <small>(nếu chủ ứng dụng đặt)</small>
-      <input id="sCode" type="password" autocomplete="off"></label>
-    <label>Tự xóa dữ liệu đã lưu sau
-      <select id="sKeep"><option value="7">7 ngày</option><option value="14">14 ngày</option><option value="30">30 ngày</option><option value="90">90 ngày</option></select></label>
-    <label>Số trang nguồn tối đa mở mỗi lần: <b id="sPagesVal">10</b>
-      <input id="sPages" type="range" min="4" max="30" step="1"></label>
-    <div id="healthOut" class="muted small" aria-live="polite"></div>
-    <div class="muted small">Tiện ích Chrome: <a href="ext/mua-hang-extension.zip" download>tải bản mới nhất (.zip)</a> <span id="extVer"></span></div>
+    <nav class="stabs" role="tablist" aria-label="Nhóm cài đặt">
+      <button type="button" role="tab" data-stab="search" aria-selected="true">Tìm kiếm</button>
+      <button type="button" role="tab" data-stab="conn" aria-selected="false">Kết nối</button>
+      <button type="button" role="tab" data-stab="data" aria-selected="false">Dữ liệu</button>
+    </nav>
+
+    <div class="spanel" data-spanel="search">
+      <p class="muted small" style="margin:0">Chọn mẫu có sẵn hoặc tự chỉnh từng mục theo nhu cầu tìm kiếm của bạn. Nhiều trang và nhiều ảnh thì đầy đủ hơn nhưng chậm hơn.</p>
+      <div class="presets" role="group" aria-label="Mẫu cấu hình">
+        <button type="button" class="chip" data-preset="fast">Nhanh</button>
+        <button type="button" class="chip" data-preset="balanced">Cân bằng</button>
+        <button type="button" class="chip" data-preset="full">Đầy đủ</button>
+        <span id="presetNote" class="muted small"></span>
+      </div>
+      <label>Số trang đọc khi đủ thông tin: <b data-val="pagesFull"></b>
+        <input id="cPagesFull" data-cfg="pagesFull" type="range" min="4" max="40" step="1"></label>
+      <label>Số trang đọc khi thiếu thông tin (chỉ cái nhìn chung): <b data-val="pagesExplore"></b>
+        <input id="cPagesExplore" data-cfg="pagesExplore" type="range" min="2" max="12" step="1"></label>
+      <label>Số trang đọc thêm mỗi lần “tìm thêm dữ liệu mới”: <b data-val="pagesEnrich"></b>
+        <input id="cPagesEnrich" data-cfg="pagesEnrich" type="range" min="3" max="24" step="1"></label>
+      <label>Số ảnh giữ cho sản phẩm chính: <b data-val="images"></b>
+        <input id="cImages" data-cfg="images" type="range" min="1" max="12" step="1"></label>
+      <label>Số ảnh giữ cho mỗi hãng khác: <b data-val="imagesAlt"></b>
+        <input id="cImagesAlt" data-cfg="imagesAlt" type="range" min="1" max="8" step="1"></label>
+      <label>Số trang đọc cùng lúc: <b data-val="concurrency"></b>
+        <input id="cConc" data-cfg="concurrency" type="range" min="1" max="6" step="1"></label>
+      <label>Tối đa số trang của cùng một website: <b data-val="perHost"></b>
+        <input id="cPerHost" data-cfg="perHost" type="range" min="1" max="5" step="1"></label>
+      <label class="check2"><input id="cContact" data-cfg="contactPages" type="checkbox"> Mở trang “Liên hệ” của nhà cung cấp để lấy SĐT/email</label>
+      <label class="check2"><input id="cSupp" data-cfg="supplement" type="checkbox"> Đọc thêm DuckDuckGo + Bing qua tiện ích Chrome (nhiều nguồn hơn)</label>
+      <label class="check2"><input id="cStop" data-cfg="stopEarly" type="checkbox"> Dừng sớm khi đã đủ dữ liệu (ít yêu cầu hơn)</label>
+    </div>
+
+    <div class="spanel" data-spanel="conn" hidden>
+      <label>Địa chỉ máy chủ <small>(để trống = cùng địa chỉ trang này)</small>
+        <input id="sApi" type="url" placeholder="https://muahangthongminh.workers.dev" inputmode="url"></label>
+      <label>Nguồn tìm kiếm
+        <select id="sProvider"><option value="auto">Tự chọn: Google Chrome → dịch vụ có khóa → miễn phí</option><option value="chrome">Chỉ Google trong Chrome (cần tiện ích)</option><option value="free">Miễn phí, không cần khóa</option><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select></label>
+      <label>Khóa dịch vụ của bạn <small>(không bắt buộc nếu máy chủ đã có khóa; lưu trên thiết bị này)</small>
+        <input id="sKey" type="password" placeholder="sk-ant-… hoặc AIza…" autocomplete="off"></label>
+      <label>Mã truy cập <small>(nếu chủ ứng dụng đặt)</small>
+        <input id="sCode" type="password" autocomplete="off"></label>
+      <div id="healthOut" class="muted small" aria-live="polite"></div>
+      <div class="muted small">Tiện ích Chrome: <a href="ext/mua-hang-extension.zip" download>tải bản mới nhất (.zip)</a> <span id="extVer"></span></div>
+      <div class="row" style="margin-top:0">
+        <button type="button" id="btnUnblock" class="btn ghost" title="Xóa danh sách tên miền đang tạm ngừng vì bị chặn">Xóa chặn</button>
+        <button type="button" id="btnHealth" class="btn ghost">Kiểm tra kết nối</button>
+      </div>
+    </div>
+
+    <div class="spanel" data-spanel="data" hidden>
+      <label>Tự xóa dữ liệu đã lưu sau
+        <select id="sKeep"><option value="7">7 ngày</option><option value="14">14 ngày</option><option value="30">30 ngày</option><option value="90">90 ngày</option></select></label>
+      <p class="muted small" style="margin:0">Xuất, nạp hoặc xóa toàn bộ dữ liệu ở mục <b>Lịch sử đã lưu</b> (biểu tượng đồng hồ góc trên bên phải). Danh bạ nhà cung cấp được xuất cùng file cache.</p>
+      <p class="muted small" style="margin:0">iPhone: mở bằng Safari → Chia sẻ → “Thêm vào MH chính”. Android/Chrome: menu ⋮ → “Cài đặt ứng dụng”.</p>
+    </div>
+
     <div class="row end">
-      <button type="button" id="btnUnblock" class="btn ghost" title="Xóa danh sách tên miền đang tạm ngừng vì bị chặn">Xóa chặn</button>
-      <button type="button" id="btnHealth" class="btn ghost">Kiểm tra kết nối</button>
+      <button type="button" id="btnCancel" class="btn ghost">Đóng</button>
       <button value="ok" class="btn primary" id="btnSave">Lưu</button>
     </div>
-    <p class="muted small">iPhone: mở bằng Safari → Chia sẻ → “Thêm vào MH chính”. Android/Chrome: menu ⋮ → “Cài đặt ứng dụng”.</p>
   </form>
 </dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

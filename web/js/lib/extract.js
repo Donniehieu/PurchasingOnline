@@ -27,6 +27,7 @@ const asArray = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
 export function jsonLdProducts(html) {
   const found = [];
+  const ids = new Map(); // JSON-LD dạng đồ thị: Product.offers chỉ là {"@id": "...#offer"}, giá nằm ở nút Offer khác cùng @id
   const re = /<script[^>]+type\s*=\s*["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi;
   let m;
   while ((m = re.exec(html))) {
@@ -34,8 +35,47 @@ export function jsonLdProducts(html) {
     let data;
     try { data = JSON.parse(raw); } catch { continue; }
     walk(data, found, 0);
+    indexIds(data, ids, 0);
   }
+  const deref = (v) => {
+    if (Array.isArray(v)) return v.map(deref);
+    if (v && typeof v === "object" && v["@id"] && ids.has(v["@id"])) return { ...ids.get(v["@id"]), ...v };
+    return v;
+  };
+  for (const p of found) for (const k of ["offers", "brand", "aggregateRating"]) if (p[k] != null) p[k] = deref(p[k]);
   return found;
+}
+
+function indexIds(node, ids, depth) {
+  if (!node || typeof node !== "object" || depth > 8) return;
+  if (Array.isArray(node)) { for (const n of node) indexIds(n, ids, depth + 1); return; }
+  if (node["@id"] && Object.keys(node).length > 1) ids.set(node["@id"], { ...ids.get(node["@id"]), ...node });
+  for (const v of Object.values(node)) indexIds(v, ids, depth + 1);
+}
+
+// Trang dựng bằng JavaScript (Next.js...) không có JSON-LD nhưng nhúng dữ liệu sản phẩm trong <script id="__NEXT_DATA__">.
+// Tìm đối tượng "giống sản phẩm" (có tên + giá + mã/hãng) và đổi sang dạng JSON-LD để dùng chung đường xử lý.
+const PRICE_KEYS = ["salePrice", "sellingPrice", "finalPrice", "price", "currentPrice"];
+export function embeddedProducts(html) {
+  const m = html.match(/<script[^>]+id\s*=\s*["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (!m) return [];
+  let data;
+  try { data = JSON.parse(m[1]); } catch { return []; }
+  const out = [];
+  const visit = (node, depth) => {
+    if (!node || typeof node !== "object" || depth > 9 || out.length >= 5) return;
+    if (Array.isArray(node)) { for (const n of node.slice(0, 40)) visit(n, depth + 1); return; }
+    const price = PRICE_KEYS.map((k) => Number(node[k])).find((v) => Number.isFinite(v) && v > 0);
+    if (typeof node.name === "string" && node.name.length >= 3 && price && (node.sku || node.barcode || node.brandName || node.brand || node.id)) {
+      const img = node.mediaItems?.[0]?.mediaUrl ?? node.image ?? node.imageUrl ?? node.images?.[0]?.url ?? node.images?.[0];
+      const brand = node.brandName ?? (typeof node.brand === "object" ? node.brand?.name : node.brand);
+      out.push({ "@type": "Product", name: node.name, sku: node.sku ?? node.barcode, brand, image: typeof img === "string" ? img : undefined, offers: { "@type": "Offer", price, priceCurrency: "VND" }, _embedded: true });
+      return; // không đi sâu vào các biến thể bên trong sản phẩm này
+    }
+    for (const v of Object.values(node)) visit(v, depth + 1);
+  };
+  visit(data, 0);
+  return out;
 }
 
 function walk(node, found, depth) {
@@ -197,9 +237,54 @@ export function priceSentences(lines, max = 3) {
 
 // Quy cách đóng gói: "1 Thùng = 48 Hộp x 110ml" -> { outer: "thùng", count: 48, unit: "hộp" } để tính giá mỗi hộp
 export function packInfo(text) {
-  const m = String(text).slice(0, 30_000).match(/\b1\s*(thùng|lốc|kiện|vỉ|hộp|bộ|lố)\s*[=:]\s*(\d{1,3})\s*(hộp|chai|lon|gói|túi|lốc|viên|cái|lọ|vỉ|hũ|ống|lon)\b/i);
+  const t = String(text).slice(0, 30_000);
+  // "1 Thùng = 48 Hộp x 110ml" hoặc "lốc 4 hộp x 110ml"
+  const m = t.match(/\b1\s*(thùng|lốc|kiện|vỉ|hộp|bộ|lố)\s*[=:]\s*(\d{1,3})\s*(hộp|chai|lon|gói|túi|lốc|viên|cái|lọ|vỉ|hũ|ống|lon)\b/i)
+    || t.match(/\b(thùng|lốc|kiện|vỉ|bộ|lố)\s*(\d{1,3})\s*(hộp|chai|lon|gói|túi|viên|cái|lọ|hũ|ống)\b/i);
   if (!m || Number(m[2]) < 2) return null;
   return { outer: m[1].toLowerCase(), count: Number(m[2]), unit: m[3].toLowerCase() };
+}
+
+// Dữ liệu vi mô / thuộc tính giá: itemprop="price" content="123000", data-price="123000", data-price-amount (Magento), WooCommerce
+export function priceFromAttrs(html) {
+  const pats = [
+    /itemprop\s*=\s*["']price["'][^>]*\bcontent\s*=\s*["']([\d.,]+)["']/i,
+    /\bcontent\s*=\s*["']([\d.,]+)["'][^>]*itemprop\s*=\s*["']price["']/i,
+    /data-price-amount\s*=\s*["']([\d.,]+)["']/i,
+    /class\s*=\s*["'][^"']*woocommerce-Price-amount[^"']*["'][^>]*>\s*(?:<bdi>)?\s*(?:<span[^>]*>[^<]*<\/span>)?\s*([\d.,]+)/i,
+    /data-(?:product-)?price\s*=\s*["']([\d.,]+)["']/i,
+  ];
+  for (const re of pats) {
+    const m = html.match(re);
+    const p = m && parseOfferPrice(m[1], "VND");
+    if (p?.value && p.value >= 1000 && p.value < 5e9) return p.value;
+  }
+  return null;
+}
+
+// Giá đứng ngay sau tên sản phẩm (trang tự viết, không gắn nhãn "giá"): lấy số tiền đầu tiên trong vài dòng sau tiêu đề
+const NOT_PRICE = /(giảm|tiết kiệm|trả góp|trả trước|phí|ship|vận chuyển|voucher|cọc|đặt trước|mỗi tháng|\/tháng|tặng|quà|thu cũ|hoàn tiền|thanh toán|từ \d)/i;
+export function priceNearTitle(lines, title) {
+  const t = String(title ?? "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 30);
+  if (t.length < 6) return null;
+  const i = lines.findIndex((l) => l.toLowerCase().includes(t));
+  if (i < 0) return null;
+  for (const l of lines.slice(i + 1, i + 16)) {
+    if (NOT_PRICE.test(l) || l.length > 160) continue;
+    const m = l.match(/(\d{1,3}(?:[.,]\d{3}){1,3})\s*(?:đ|₫|vnđ|vnd|VND)(?![\p{L}\d])/iu);
+    if (m) { const v = parseVnd(m[1]); if (v && v >= 1000 && v < 5e9) return v; }
+  }
+  return null;
+}
+
+// Vì sao không có giá: "contact" = trang ghi liên hệ để biết giá; "js" = trang tải giá bằng JavaScript sau khi mở
+export function priceHintOf(html, text) {
+  const head = String(text).slice(0, 8000);
+  if (/giá\s*[:\-]?\s*liên hệ|liên hệ\s*(?:để\s*)?(?:biết|có|báo|nhận)?\s*giá|call\s*for\s*price|giá\s*:?\s*call/i.test(head)) return "contact";
+  const spa = /id\s*=\s*["'](?:root|app|__nuxt|__next)["']|\bng-app\b|data-reactroot|window\.__NUXT__|__INITIAL_STATE__/i.test(html);
+  if (spa && String(text).length < 4000) return "js";
+  if (spa && !/(\d{1,3}(?:[.,]\d{3}){1,3})\s*(?:đ|₫|vnđ|vnd)/i.test(head)) return "js";
+  return "";
 }
 
 // Giá nằm trong phần tử có class/id chứa "price" hoặc "gia" (trang tự viết, không có dữ liệu cấu trúc): "388,000 đ"
@@ -241,8 +326,12 @@ export function extractFacts(htmlRaw, url, hint = {}) {
 
   // Sản phẩm có cấu trúc
   const prods = jsonLdProducts(html);
+  if (!prods.length) prods.push(...embeddedProducts(html));
   const key = modelKey(hint.model || "");
-  const pick = (key && prods.find((p) => modelKey([p.name, p.sku, p.mpn, p.model].join(" ")).includes(key))) || prods[0] || null;
+  // Chọn sản phẩm: khớp mã model, ưu tiên cái CÓ giá (nhóm biến thể thường không có giá), rồi tới cái đầu tiên
+  const hasPrice = (p) => !!offerPrice(p.offers)?.value;
+  const byKey = key ? prods.filter((p) => modelKey([p.name, p.sku, p.mpn, p.model].join(" ")).includes(key)) : [];
+  const pick = byKey.find(hasPrice) || byKey[0] || prods.find(hasPrice) || prods[0] || null;
   const product = { name: "", brand: "", sku: "", price: null, low: null, high: null, rating: null };
   if (pick) {
     product.name = clip(decodeEntities(String(pick.name ?? "")), 160);
@@ -261,14 +350,16 @@ export function extractFacts(htmlRaw, url, hint = {}) {
 
   const lines = htmlToText(html);
   const text = lines.join("\n");
-  if (!product.price) {
-    const mv = priceFromMarkup(html);
-    if (mv) product.price = { value: mv, source: "markup" };
-  }
+  // Các cách đọc giá khi trang không có dữ liệu cấu trúc (thứ tự: chắc chắn nhất trước)
+  if (!product.price) { const v = priceFromAttrs(html); if (v) product.price = { value: v, source: "markup" }; }
+  if (!product.price) { const mv = priceFromMarkup(html); if (mv) product.price = { value: mv, source: "markup" }; }
+  if (!product.price) { const nv = priceNearTitle(lines, h1 || title); if (nv) product.price = { value: nv, source: "text" }; }
   if (!product.price) {
     const ps = priceSentences(lines, 1)[0];
     if (ps) product.price = { value: ps.value, source: "text" };
   }
+  // Không đọc được giá: nói rõ vì sao (liên hệ báo giá / trang tải giá bằng JavaScript) để người dùng biết cần làm gì
+  const priceHint = product.price ? "" : priceHintOf(html, text);
 
   // Khớp sản phẩm: ưu tiên mã model, nếu không có thì so tên
   const headKey = modelKey(title + " " + h1 + " " + url);
@@ -345,7 +436,8 @@ export function extractFacts(htmlRaw, url, hint = {}) {
     cons: pc.cons.slice(0, 6),
     tech,
     priceSentences: priceSentences(lines),
-    pack: packInfo(text),
+    pack: packInfo(`${product.name} ${h1} ${title} ${text}`),
+    priceHint,
     listing: listing.slice(0, 20),
     // cho bảng so sánh NCC
     specs: relevant || prods.length ? extractSpecs(html, pick) : [],

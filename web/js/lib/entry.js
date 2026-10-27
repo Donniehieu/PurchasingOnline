@@ -213,7 +213,7 @@ export function ingestPage(entry, page, ctx = {}) {
       target.push({ url: im.url, alt: clip(im.alt || "", 100), srcId, score: im.score ?? 0, for: forAlt ? forAlt.brand || forAlt.name : "main" });
       rec.found.images++;
     }
-    keepBestImages(target);
+    keepBestImages(target, forAlt ? ctx.imageLimitAlt ?? MAX_IMAGES : ctx.imageLimit ?? MAX_IMAGES);
   }
   // liên hệ của NCC (theo tên miền): lấy từ mọi trang đã đọc, kể cả trang không khớp model
   if (page.contact) mergeSellerContact(entry, page.finalUrl || page.url, page.contact);
@@ -230,7 +230,7 @@ export function ingestPage(entry, page, ctx = {}) {
       seller: page.seller || page.domain,
       price: pr?.value ?? (forAlt ? forAlt.price : null) ?? null,
       priceVia: pr?.source ?? (forAlt && forAlt.price ? "ai" : "page"),
-      vat: page.vat, specs: page.specs, pack: page.pack ?? null, url: page.finalUrl || page.url, srcId, readFromPage: true, weak,
+      vat: page.vat, specs: page.specs, pack: page.pack ?? null, priceHint: page.priceHint || "", url: page.finalUrl || page.url, srcId, readFromPage: true, weak,
     });
     if (weak) rec.weak = true;
   }

@@ -194,6 +194,12 @@ details > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .q-num { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .75rem; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
 .chip.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); border-color: transparent; }
 .chip.on .muted { color: inherit; opacity: .8; }
+.intent-hint { margin-top: 10px; padding: 7px 12px; border-radius: 10px; font-size: .85rem; }
+.intent-hint.ok { background: var(--good-soft); color: var(--good); }
+.intent-hint.ask { background: var(--warn-soft); color: var(--warn); }
+.precards { border: 2px solid color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.pc-preview { margin: 12px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--accent-soft); font-size: .9rem; overflow-wrap: anywhere; }
+.pc-other { width: 100%; font: inherit; font-size: 14px; padding: 7px 11px; border: 1px dashed var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
 .chat { display: grid; gap: 10px; margin: 10px 0; }
 .msg { padding: 11px 14px; border-radius: 16px; max-width: 92%; white-space: pre-wrap; }
 .msg.q { justify-self: end; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); }
@@ -222,6 +228,14 @@ dialog::backdrop { background: rgba(15, 18, 40, .55); -webkit-backdrop-filter: b
 .settings { padding: 20px; display: grid; gap: 12px; }
 .settings label { display: grid; gap: 4px; font-weight: 600; font-size: .9rem; }
 .settings label small { font-weight: 400; color: var(--muted); }
+.stabs { display: flex; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.stabs button { border: 1px solid transparent; background: transparent; color: var(--muted); padding: 7px 14px; border-radius: 999px; font: inherit; font-weight: 600; cursor: pointer; }
+.stabs button[aria-selected=true] { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); }
+.spanel { display: grid; gap: 12px; max-height: min(60vh, 520px); overflow-y: auto; padding-right: 4px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.settings label.check2 { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.settings label.check2 input { width: auto; }
+.settings input[type=range] { padding: 0; border: 0; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: #1d2040; color: #fff; padding: 11px 18px; border-radius: 999px; opacity: 0; pointer-events: none; transition: .25s var(--ease); z-index: 60; max-width: calc(100% - 32px); font-size: .9rem; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 

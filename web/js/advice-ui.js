@@ -3,12 +3,13 @@
 import { esc, money, clip } from "./lib/text.js";
 import { adviseProducts, adviseSuppliers, adviseCards, PRIORITY_OPTIONS } from "./lib/advisor.js";
 import { needSummary } from "./lib/need.js";
+import { analyzeInput, preCards } from "./lib/intent.js";
 import { contactHtml } from "./render.js";
 
 const httpUrl = (u) => (/^https?:\/\//i.test(u) ? u : "#");
 const priceRange = (a, b) => (a == null ? "chưa có giá" : b != null && b !== a ? `${money(a)} – ${money(b)}` : money(a));
 
-function productCard(c, i, chosen) {
+function productCard(c, i, chosen, explore = false) {
   return `<div class="pick${i === 0 && c.score > 0 ? " best" : ""}${chosen === c.key ? " chosen" : ""}">
     <h3>${i === 0 && c.score > 0 ? `<span class="badge good">Phù hợp nhất</span> ` : ""}${esc(clip(c.name || c.model, 90))}</h3>
     <div class="muted small">${[c.brand, c.model && c.model !== c.name ? "Model " + c.model : ""].filter(Boolean).map(esc).join(" · ")}</div>
@@ -17,7 +18,7 @@ function productCard(c, i, chosen) {
     ${c.reasons.length ? `<p class="why-line">✓ ${esc(c.reasons.join("; "))}</p>` : ""}
     ${c.warns.length ? `<p class="warn-line">! ${esc(c.warns.join("; "))}</p>` : ""}
     ${c.specs.length ? `<div class="specs-mini">${c.specs.slice(0, 4).map((s) => `${esc(s.k)}: ${esc(clip(s.v, 30))}`).join(" · ")}</div>` : ""}
-    <button type="button" class="btn ${chosen === c.key ? "primary" : "ghost"} sm" data-pick="${esc(c.key)}">${chosen === c.key ? "Đang chọn" : "Chọn sản phẩm này"}</button>
+    <button type="button" class="btn ${chosen === c.key ? "primary" : "ghost"} sm" data-pick="${esc(c.key)}">${chosen === c.key ? "Đang chọn" : explore ? "Chọn và so sánh NCC" : "Chọn sản phẩm này"}</button>
   </div>`;
 }
 
@@ -30,6 +31,19 @@ function supplierCard(s, i) {
     <div class="contact">${contactHtml(s.contact)}</div>
     <a class="btn ghost sm" href="${esc(httpUrl(s.url))}" target="_blank" rel="noopener noreferrer">Mở trang sản phẩm của NCC</a>
   </div>`;
+}
+
+// Thiếu thông tin: KHÔNG tư vấn chọn sản phẩm/NCC. Chỉ nêu những gì cần bổ sung để tìm cụ thể.
+function renderNeedMore(entry) {
+  const a = analyzeInput(entry.plan.query);
+  const cards = preCards(a);
+  const todo = cards.filter((c) => c.kind !== "need").map((c) => c.title.replace(/\?$/, ""));
+  if (a.scenario === "need" || !a.type) todo.unshift("Loại sản phẩm bạn cần");
+  if (!a.signals.brand && !a.signals.model) todo.push("Hãng hoặc mã model (nếu đã biết)");
+  return `<div class="card verdict"><h2>Cần bổ sung thông tin để tư vấn</h2>
+    <p style="margin:0">Ứng dụng <b>chưa thể tư vấn chọn sản phẩm, nhà cung cấp hay so sánh báo giá</b> vì thông tin bạn nhập chưa đủ để biết chính xác bạn cần gì. Các tab hiện đang cho cái nhìn chung về loại sản phẩm này.</p>
+    ${todo.length ? `<p style="margin:10px 0 4px"><b>Bạn có thể bổ sung:</b></p><ul class="ask-list">${[...new Set(todo)].map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+    <p style="margin:12px 0 0"><button type="button" class="btn primary" data-need-more="1" style="margin-left:0">Bổ sung thông tin (trả lời vài câu)</button></p></div>`;
 }
 
 // Thẻ câu hỏi: 3–5 câu theo dữ liệu đã đọc, chọn để lọc đúng loại/đối tượng
@@ -48,6 +62,7 @@ function renderCards(entry, need, answers) {
 
 /** need: { budgetMin, budgetMax, purpose, priority }; choice: khóa sản phẩm người dùng đã chọn ("" = chưa chọn). */
 export function renderAdvice(entry, need = {}, choice = "", answers = {}) {
+  if (entry.scenario === "explore") return renderNeedMore(entry);
   const prod = adviseProducts(entry, need, answers);
   const picked = choice || (prod.mode === "supplier" ? prod.candidates.find((c) => c.isMain)?.key ?? "" : "");
   const summary = needSummary(need);
@@ -64,7 +79,7 @@ export function renderAdvice(entry, need = {}, choice = "", answers = {}) {
     const intro = prod.questions.length ? `<ul class="ask-list">${prod.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : "";
     step1 = `<div class="card"><h2>Bước 1: Chọn sản phẩm phù hợp <span class="count">${prod.candidates.length} sản phẩm</span></h2>
       ${intro}
-      ${prod.candidates.length ? `<div class="pick-grid" style="margin-top:12px">${prod.candidates.slice(0, 9).map((c, i) => productCard(c, i, picked)).join("")}</div>` : `<p class="muted">Chưa có đủ sản phẩm từ các trang đã đọc. Bấm “Tìm thêm dữ liệu mới” hoặc gõ rõ hơn mã model.</p>`}
+      ${prod.candidates.length ? `<div class="pick-grid" style="margin-top:12px">${prod.candidates.slice(0, 9).map((c, i) => productCard(c, i, picked, entry.scenario === "explore")).join("")}</div>` : `<p class="muted">Chưa có đủ sản phẩm từ các trang đã đọc. Bấm “Tìm thêm dữ liệu mới” hoặc gõ rõ hơn mã model.</p>`}
       <p class="muted small">Điểm gợi ý theo quy tắc cố định: khớp ngân sách, khớp mục đích, số NCC bán, dữ liệu đọc từ đúng trang${need.priority && need.priority !== "balanced" ? ", ưu tiên bạn chọn" : ""}. Không phải đánh giá chất lượng tuyệt đối.</p></div>`;
   }
 

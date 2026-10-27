@@ -123,6 +123,19 @@ Dùng Claude thay Gemini: `npx wrangler secret put ANTHROPIC_API_KEY`. Đổi mo
 
 **Gói Free**: giới hạn ~10 ms CPU mỗi lần gọi và hạn mức số lần gọi mỗi ngày (xem trang giá Cloudflare, có thể đổi). App giữ trang đọc ≤ 320 KB và mở từng trang một lần gọi để nằm trong giới hạn.
 
+## Cấu hình tìm kiếm (tab Cài đặt → Tìm kiếm)
+
+Chọn mẫu **Nhanh / Cân bằng / Đầy đủ** hoặc tự chỉnh: số trang đọc (khi đủ thông tin / khi thiếu thông tin / mỗi lần tìm thêm), số ảnh giữ cho sản phẩm chính và cho mỗi hãng khác, số trang đọc cùng lúc, tối đa số trang của cùng một website, bật/tắt trang "Liên hệ" của NCC, bật/tắt đọc thêm DuckDuckGo + Bing qua tiện ích, dừng sớm khi đã đủ dữ liệu. Giá trị luôn được ép vào khoảng an toàn. Cấu hình lưu trên thiết bị.
+
+## Thử đọc giá trên nhiều kiểu website
+
+```bash
+node dev/probe-sites.mjs dev/sites.json      # tự tìm trang sản phẩm thật trên các website mẫu và thử đọc giá
+node dev/probe-sitemap.mjs https://ten-website.vn 3   # thử trên website bất kỳ có sitemap.xml
+```
+
+Mỗi dòng kết quả cho biết nền tảng đoán được, giá đọc được và đọc theo cách nào (jsonld / meta / markup / text), hoặc "THIẾU" khi trong HTML có chữ giá mà chưa đọc được. Thêm website vào `dev/sites.json` để thử.
+
 ## Dữ liệu và tự dọn
 
 Kết quả lưu trên thiết bị (IndexedDB). App **tự xóa mục cũ hơn N ngày** (mặc định 30, chỉnh ở Cài đặt), giữ tối đa 40 mục, và tự xóa bớt khi bộ nhớ đầy. **Gộp dữ liệu mới vào cache cũ:** mỗi lần tìm lại cùng sản phẩm, app (1) hiện dữ liệu đã lưu ngay, (2) dùng bộ từ khóa khác lần trước (4 cách hỏi Google AI, 3 bộ từ khóa DuckDuckGo) và báo cho AI những nguồn/ý đã có để tìm cái MỚI, (3) chỉ mở các trang chưa đọc (tối đa 5 trang mới mỗi lần), (4) gộp ưu/nhược điểm, giá, ảnh, hãng, công nghệ mới vào dữ liệu cũ, bỏ ý trùng, giữ nguyên mã nguồn cũ, giá quá 45 ngày bị bỏ khi đã có giá mới. Đã đủ 5 hãng so sánh thì không tìm thêm hãng. Tab **Nhật ký → Các lần tìm** ghi mỗi lần thêm được gì. Bị lỗi giữa chừng thì dữ liệu cũ vẫn nguyên. Ô “Khi đã có trong cache” chọn: tìm thêm (mặc định) / chỉ xem cache / làm lại từ đầu; nút **Tìm thêm dữ liệu mới** ngay trong kết quả.

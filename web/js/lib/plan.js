@@ -108,7 +108,7 @@ export function makePlan(input) {
 }
 
 // Hãng lạ viết HOA giữa câu thường: "Đồng hồ đo áp LIGI Inox 316" -> "LIGI" (bỏ các từ viết tắt thông dụng)
-const ACRONYMS = new Set(["LED", "LCD", "USB", "PVC", "PPR", "HDPE", "HDMI", "WIFI", "RAM", "SSD", "HDD", "CPU", "GPU", "UPS", "LPG", "RO", "UV", "DC", "AC", "IP", "PLC", "NAS", "TV", "UHD", "OLED", "QLED", "DIY", "ABS", "INOX", "NEW", "PRO", "MAX", "MINI", "PLUS", "SET", "VAT"]);
+const ACRONYMS = new Set(["LED", "LCD", "USB", "PVC", "PPR", "HDPE", "HDMI", "WIFI", "RAM", "SSD", "HDD", "CPU", "GPU", "UPS", "LPG", "RO", "UV", "DC", "AC", "IP", "PLC", "NAS", "TV", "UHD", "OLED", "QLED", "DIY", "ABS", "INOX", "NEW", "PRO", "MAX", "MINI", "PLUS", "SET", "VAT", "BTU", "KVA", "RPM", "KWH", "MHZ", "GHZ", "FPS", "LTE", "GPS", "NFC", "HEPA", "BAR", "PSI", "MPA", "VGA", "DVI", "LAN", "WAN", "IOT", "TDS", "PH"]);
 function brandInCaps(text, model) {
   const words = String(text).split(/[\s,;:()/]+/).filter(Boolean);
   if (!words.some((w) => /[a-zà-ỹ]/.test(w))) return ""; // cả câu viết hoa: không suy ra hãng

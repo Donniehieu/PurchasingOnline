@@ -165,6 +165,7 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
     } catch (e) { if (e.name === "AbortError") throw e; /* không có lượt tìm thêm vẫn dùng được kết quả AI */ }
     // Bổ sung: DuckDuckGo + Bing đọc bằng tiện ích (IP của người dùng, không tốn hạn mức Google) để có thêm nhà cung cấp
     try {
+      if (getSettings().cfg?.supplement === false) throw Object.assign(new Error("tắt trong cài đặt"), { skip: true });
       const extra = await webSupplement(plan, signal);
       const seen2 = new Set(sources.map((x) => normUrl(x.url)));
       for (const x of extra.results) { const k = normUrl(x.url); if (seen2.has(k)) continue; seen2.add(k); sources.push({ url: x.url, title: x.title, kind: "shop" }); shops++; }

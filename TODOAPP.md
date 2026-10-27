@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.9.1** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.11.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -202,6 +202,55 @@ Yêu cầu: scrawl Google → trang web thật + dùng cache → bảng so sánh
 - Cache trang cũ tự đọc lại (FACTS_VERSION 6).
 
 **Chưa kiểm chứng:** không biết chính xác "110" bạn thấy ở đâu trong tab Tổng hợp (không có dữ liệu lần tìm đó). Nếu còn thấy giá 110 sau khi tìm lại, gửi mình ảnh tab Tổng hợp và Nhật ký.
+
+## 2m. Thiết kế lại luồng theo kiểu dữ liệu người dùng nhập (bản 2.10.0)
+
+**Trang WinMart (Next.js) không đọc được giá:** trang dựng bằng JavaScript, không có JSON-LD nhưng nhúng dữ liệu trong `<script id="__NEXT_DATA__">`. Đã thêm đọc dữ liệu nhúng này (tên, giá, mã, hãng, ảnh; bỏ qua các biến thể bên trong) và nhận quy cách "lốc 4 hộp x 110ml" để hiện giá mỗi hộp. Thử trực tiếp trang bạn gửi: giá 21.900 đ/lốc 4 hộp (≈ 5.475 đ/hộp), hãng VINAMILK, mã 10602909G4.
+
+**Nguyên tắc luồng mới:** nhận diện dữ liệu nhập TRƯỚC khi tìm (chạy ngay trên máy, không gọi mạng, không tốn lượt tìm) → chọn kịch bản. Dòng gợi ý dưới ô tìm cho biết kịch bản ngay khi gõ.
+
+| # | Kiểu dữ liệu nhập | Ví dụ | Hành vi |
+|---|---|---|---|
+| 1 | Dữ liệu thô, thiếu thông tin (biết loại hàng) | "đồng hồ đo dầu", "máy lọc nước" | Hiện **thẻ câu hỏi trước** (3–5 thẻ theo loại hàng, mỗi thẻ có ô "Khác" tự nhập, bỏ qua được). Trả lời đủ → tìm đầy đủ. **Bỏ qua** → chế độ **khám phá**: chỉ giá, sản phẩm tương đương, ưu nhược điểm (tối đa 6 trang, không mở trang liên hệ), **chưa có bảng so sánh NCC**; chọn một sản phẩm ở tab Tư vấn chọn thì tìm đầy đủ cho đúng sản phẩm đó |
+| 2 | Đủ thông tin | "Sony WH-1000XM5", "Kangaroo KG100A", hãng + thông số ("LIGI inox 316 D63mm ren 13mm"), "sữa vinamilk growplus pha sẵn 110ml" | **Không hỏi**, tìm thẳng, dựng bảng NCC theo đúng tên/mã (trang giống một phần vào bảng với dấu "tương tự") |
+| 3 | Có hãng + loại, thiếu chi tiết | "sữa vinamilk" | Thẻ câu hỏi (bỏ câu hãng vì đã có) |
+| 4 | Mới có ngân sách/nhu cầu | "quà tặng dưới 500k", "laptop dưới 15 triệu cho sinh viên" | Chưa biết loại → thẻ **chọn loại hàng** trước, rồi hỏi tiếp theo loại đó; ngân sách/mục đích tự điền vào ô Nhu cầu |
+| 5 | Link sản phẩm | dán URL | Không hỏi; đọc thẳng trang, tên/mã lấy từ trang, rồi tìm các NCC khác |
+| 6 | Ảnh | dán/chụp ảnh | Đọc chữ trên ảnh → điền vào ô tìm → áp dụng các kịch bản trên |
+| 7 | Hai sản phẩm | "so sánh A với B", "A vs B" | Hỏi tìm cái nào trước (tìm từng sản phẩm một) |
+| 8 | Đã có trong cache | tìm lại cùng sản phẩm | **Không hỏi lại**, mở cache ngay rồi bổ sung trang mới |
+| 9 | Quá ngắn / chưa rõ | "xyz" | Thẻ chọn loại hàng + đối tượng + ngân sách, hoặc nhắc nhập thêm |
+
+**Thẻ câu hỏi lấy từ đâu:** ngân hàng câu hỏi có sẵn trong ứng dụng cho 14 loại hàng (sữa, thực phẩm đóng gói, đồng hồ đo công nghiệp, van/ống, điều hòa, tủ lạnh, máy giặt, máy lọc nước, laptop, điện thoại, tivi, tai nghe/loa, đồ bếp, máy bơm/dụng cụ điện) + gợi ý học từ cache các lần tìm trước trên máy (hãng và thông số đã gặp, nhãn "đã gặp"). Không gọi dịch vụ ngoài. Chuỗi tìm = chữ bạn gõ + các lựa chọn bạn chọn (hiện ngay trong ô tìm, sửa được); thẻ ngân sách/đối tượng/ưu tiên chỉ điền ô Nhu cầu, không vào chuỗi tìm. Loại hàng chưa có trong ngân hàng thì hỏi thẻ chung (loại hàng, đối tượng, ngân sách).
+
+**Tải nhanh, tìm hiệu quả:** (1) nhận diện và thẻ câu hỏi chạy tức thì trên máy; (2) cache trước: đã tìm rồi thì mở ngay, không hỏi; (3) thiếu thông tin thì không phí lượt tìm vào bảng NCC (khám phá nhẹ, tối đa 6 trang, bỏ trang liên hệ); (4) đủ thông tin mới tìm sâu (12 trang, trang liên hệ, danh bạ NCC dùng chung); (5) dừng sớm khi đã đủ 8 trang/8 NCC; (6) đọc nhiều trang cùng lúc (3 luồng), giãn cách theo tên miền; (7) vỏ ứng dụng được lưu offline (service worker), thư viện Excel chỉ tải khi xuất file.
+
+**Chưa làm / hạn chế:** loại hàng ngoài 14 loại chỉ có thẻ chung; chưa so sánh song song hai sản phẩm trong một lần chạy; ngân hàng câu hỏi là quy tắc cố định (mở rộng bằng cách thêm vào `web/js/lib/kb.js`).
+
+## 2n. Đọc giá trên nhiều kiểu website, không tư vấn khi thiếu thông tin, tab cấu hình (bản 2.11.0)
+
+### Tự chạy thử đọc giá trên website thật
+Công cụ: `node dev/probe-sites.mjs dev/sites.json` (tự tìm trang sản phẩm thật rồi đọc giá) và `node dev/probe-sitemap.mjs <website>`. Đã chạy trên 24 website (52 trang).
+
+**Đọc được giá (từ HTML, không cần chạy JavaScript):** thegioididong, dienmayxanh, cellphones, hoanghamobile, fptshop, phongvu, tiki, pico, mediamart, dienmaycholon, viettelstore, shopdunk, WinMart (Next.js nhúng dữ liệu).
+
+**Lỗi tìm thấy và đã sửa:**
+- thegioididong: JSON-LD dạng đồ thị, `Product.offers` chỉ là tham chiếu `@id` và giá nằm ở nút Offer khác; trước đó đọc nhầm giá trong chữ (50.000 thay vì 48.990.000). Nay ghép theo `@id` và ưu tiên sản phẩm có giá (nhóm biến thể thường không có giá).
+- Thêm các cách đọc giá cho trang không có dữ liệu cấu trúc: vi dữ liệu `itemprop="price"`, `data-price-amount` (Magento), WooCommerce, giá nằm ngay sau tên sản phẩm (bỏ dòng giảm giá/trả góp/phí), phần tử có class "price" (bỏ giá cũ gạch), nhãn "Đơn giá:" ở dòng riêng.
+- Có mẫu kiểm thử mô phỏng từng nền tảng: `tests/sites.test.mjs`.
+
+**Không đọc được giá, và app giờ nói rõ vì sao** (cột Đơn giá của bảng NCC):
+- "Giá do trang tải bằng JavaScript — mở link để xem": coolmate, bachhoaxanh, hasaki, lazada, shopee (HTML không chứa giá). Cần trình duyệt chạy JavaScript; **chưa làm** (hướng: tiện ích Chrome mở tab thật rồi đọc giá, cần cập nhật tiện ích).
+- "Liên hệ báo giá (trang không niêm yết)": nhiều website thiết bị công nghiệp ghi "Giá: Liên hệ".
+- Website bán bằng USD (gymshark) không nằm trong phạm vi (ứng dụng dành cho giá VND).
+
+Các dòng THIẾU còn lại trong lần chạy cuối đều là trang tin tức/danh mục/landing bị công cụ chọn nhầm, không phải trang sản phẩm.
+
+### Thiếu thông tin thì KHÔNG tư vấn
+Ở kịch bản khám phá (thiếu thông tin hoặc bạn bấm bỏ qua thẻ câu hỏi): không "Lựa chọn tối ưu", không tư vấn chọn sản phẩm/NCC, không xếp hạng hay so sánh báo giá, không bảng NCC, không giá trung bình. Chỉ có cái nhìn chung (ưu nhược điểm, công nghệ, ảnh, **khoảng giá tham khảo** kèm cảnh báo, các hãng cùng loại thường gặp) và nhắc **bổ sung thông tin** (nút "Bổ sung thông tin" mở lại thẻ câu hỏi, liệt kê cần bổ sung gì). Ô hỏi đáp bỏ gợi ý "nên chọn"/"so sánh công nghệ". Bổ sung đủ thì tìm lại ở chế độ đầy đủ.
+
+### Tab Cài đặt cấu hình
+Cài đặt chia 3 tab: **Tìm kiếm** (mẫu Nhanh / Cân bằng / Đầy đủ hoặc tự chỉnh: số trang khi đủ/khi thiếu thông tin/mỗi lần tìm thêm, số ảnh sản phẩm chính và mỗi hãng khác, số trang đọc cùng lúc, tối đa trang mỗi website, bật/tắt trang liên hệ NCC, bật/tắt DuckDuckGo+Bing qua tiện ích, dừng sớm khi đủ), **Kết nối** (máy chủ, nguồn tìm, khóa, mã, kiểm tra kết nối, tiện ích), **Dữ liệu** (tự xóa sau N ngày). Mọi giá trị được ép vào khoảng an toàn; có hiệu lực ngay từ lần tìm kế tiếp.
 
 ## 3. Tự xóa dữ liệu cũ
 

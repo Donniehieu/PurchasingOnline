@@ -92,7 +92,7 @@ async function pool(items, size, fn, signal) {
  * opts: { api, store, emit, signal, force, pageLimit, concurrency }
  * Trả về entry (cũng đã lưu vào store).
  */
-export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 12, enrichPageLimit = 10, concurrency = 3, perHostCap = 2, freeGapMs = 4000 }) {
+export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 12, enrichPageLimit = 10, explorePageLimit = 6, concurrency = 3, perHostCap = 2, freeGapMs = 4000, contactPages = true, stopEarly = true, imageLimit = 5, imageLimitAlt = 5 }) {
   const step = (id, status, text = "") => emit({ type: "step", id, status, text });
   const publish = (entry) => emit({ type: "entry", entry });
   if (force) mode = "fresh";
@@ -130,6 +130,11 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
   const enriching = !!old;
   const entry = old ?? newEntry(plan, key);
   entry.runs ??= [];
+  // Kịch bản: "full" = đủ thông tin (bảng NCC theo đúng tên/mã); "explore" = thiếu thông tin (chỉ giá, sản phẩm tương đương, ưu nhược điểm; nhẹ và nhanh hơn)
+  const scenario = input.scenario === "explore" && !(old?.scenario === "full") ? "explore" : "full";
+  entry.scenario = scenario;
+  entry.imageLimit = imageLimit; entry.imageLimitAlt = imageLimitAlt; // hiển thị đúng số ảnh đã chọn trong cài đặt
+  if (scenario === "explore") { pageLimit = explorePageLimit; enrichPageLimit = Math.min(enrichPageLimit, explorePageLimit); }
   const before = enriching ? counts(entry) : counts(null);
   if (enriching) {
     entry.status = "running";
@@ -273,7 +278,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
         const hint = p.alt
           ? { model: p.alt.model, name: p.alt.name, brand: p.alt.brand }
           : { model: entry.product.model || plan.model, name: entry.product.name || plan.name, brand: entry.product.brand || plan.brand };
-        if (!p.alt && !enriching && enough(entry)) {
+        if (!p.alt && !enriching && stopEarly && enough(entry)) {
           if (!skippedEnough++) logEvent(entry, "plan", "Đã đủ dữ liệu, không mở thêm trang cho sản phẩm chính (tránh gửi yêu cầu thừa)");
           step("pages", "running", `${++done}/${picks.length} · đủ dữ liệu`);
           return;
@@ -281,7 +286,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
         let page;
         try { page = await api.page(p.url, hint, signal); }
         catch (e) { if (e.name === "AbortError" || e.status === 401) throw e; page = { ok: false, url: p.url, error: e.message }; }
-        ingestPage(entry, page, { alt: p.alt, forLabel: p.alt ? p.alt.brand : "" });
+        ingestPage(entry, page, { alt: p.alt, forLabel: p.alt ? p.alt.brand : "", imageLimit, imageLimitAlt });
         step("pages", "running", `${++done}/${picks.length} · ${domainOf(p.url)}`);
         publish(entry);
       }, signal);
@@ -291,7 +296,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
 
     seedFromDirectory(entry, dir);
     // 5) Trang "Liên hệ" của các NCC chưa có SĐT/email (mỗi NCC một lần, tối đa vài trang mỗi lần tìm)
-    for (const c of sellersNeedingContact(entry, enriching ? 2 : 3)) {
+    for (const c of scenario === "explore" || !contactPages ? [] : sellersNeedingContact(entry, enriching ? 2 : 3)) {
       aborted(signal);
       step("pages", "running", `trang liên hệ · ${c.domain}`);
       let page;

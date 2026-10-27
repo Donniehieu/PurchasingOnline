@@ -15,17 +15,24 @@ function save(state) {
   try { localStorage.setItem(KEY, JSON.stringify({ hidden: [...state.hidden], sort: state.view.sort, source: state.view.source, group: state.view.group })); } catch { /* chế độ riêng tư */ }
 }
 
-export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = {}) {
+export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onAdvice = () => {} } = {}) {
   const saved = loadSaved();
   const state = {
     view: { ...DEFAULT_VIEW, filters: { ...DEFAULT_VIEW.filters }, source: saved.source || "all", group: saved.group || DEFAULT_VIEW.group, sort: saved.sort && "col" in saved.sort ? saved.sort : { ...DEFAULT_VIEW.sort } },
     hidden: new Set(saved.hidden ?? []),
     entry: null,
     shown: [],
+    raw: false, // thiếu thông tin: người dùng chọn vẫn xem bảng tạm thời
   };
 
   host.innerHTML = `
     <div class="card tbl-card">
+      <div class="tbl-explore" hidden>
+        <h2>Chưa đủ thông tin để so sánh nhà cung cấp</h2>
+        <p class="muted" style="margin:0 0 10px">Bạn mới nhập thông tin chung nên các trang tìm được là nhiều loại sản phẩm khác nhau. Hãy <b>bổ sung hãng, mã hoặc thông số</b> rồi ứng dụng sẽ tìm nhà cung cấp đúng sản phẩm đó và dựng bảng so sánh.</p>
+        <div class="row" style="margin-top:0"><button type="button" class="btn primary tbl-goadvice" style="margin-left:0" data-need-more="1">Bổ sung thông tin (trả lời vài câu)</button></div>
+      </div>
+      <div class="tbl-main">
       <div class="tbl-bar">
         <input type="search" class="tbl-q" placeholder="Lọc nhanh: tên, NCC, thông số…" aria-label="Lọc nhanh">
         <select class="tbl-src btn ghost sm" aria-label="Nguồn dữ liệu">
@@ -53,6 +60,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
         <table class="otbl"><thead><tr class="h"></tr><tr class="f"></tr></thead><tbody></tbody></table>
       </div>
       <p class="muted small">Giữ chuột kéo trái/phải (hoặc cuộn) để xem các cột. Bấm tên cột để sắp xếp, dấu × để ẩn cột, nút “Cột” để hiện lại. Lọc giá: <code>&lt;3tr</code>, <code>&gt;2000000</code>, <code>2tr-3tr</code>. Lọc thông số kỹ thuật (cách nhau bằng dấu <code>;</code>, phải đúng hết): <code>inverter</code>, <code>công suất: 1500</code>, <code>công suất&gt;=1500</code>, <code>dung tích&lt;=6 lít</code>; số phải khớp trọn (1500 không khớp 15000). Xuất Excel theo đúng bảng đang xem (cột đang hiện, dòng đã lọc và sắp xếp).</p>
+      </div>
     </div>`;
 
   const $ = (s) => host.querySelector(s);
@@ -86,7 +94,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
   // ----- thân bảng -----
   const vatCell = (r) => `<span class="badge ${GOOD[r.vat?.state ?? "unknown"]}" title="${esc(r.vat?.text || "")}">${esc(r.vatLabel)}</span>`;
   const priceCell = (r) => (r.price == null
-    ? `<span class="muted">Liên hệ</span>`
+    ? (r.priceHint === "js" ? `<span class="muted" title="Trang này tải giá bằng JavaScript sau khi mở nên ứng dụng không đọc được. Mở link để xem giá.">Giá do trang tải bằng JavaScript — mở link để xem</span>` : r.priceHint === "contact" ? `<span class="muted">Liên hệ báo giá (trang không niêm yết)</span>` : `<span class="muted">Liên hệ</span>`)
     : `<b>${money(r.price)}</b><div class="muted small">${esc(PRICE_NOTE[r.priceVia] || "")}</div>${r.pack ? `<div class="muted small" title="Giá trang là giá cả ${esc(r.pack.outer)}">≈ ${money(Math.round(r.price / r.pack.count))}/${esc(r.pack.unit)} (${r.pack.count} ${esc(r.pack.unit)}/${esc(r.pack.outer)})</div>` : ""}`);
   const specsCell = (r) => (r.specs?.length ? `<div class="specs" title="${esc(r.specText)}">${r.specs.slice(0, 12).map((s) => `<div><span class="muted">${esc(s.k)}:</span> ${esc(clip(s.v, 80))}</div>`).join("")}</div>` : `<span class="muted">—</span>`);
   const contactCell = (r) => {
@@ -132,6 +140,10 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
 
   function render() {
     if (!state.entry) return;
+    const explore = state.entry.scenario === "explore" && !state.raw;
+    host.querySelector(".tbl-explore").hidden = !explore;
+    host.querySelector(".tbl-main").hidden = explore;
+    if (explore) return;
     const all = tableRows(state.entry);
     state.shown = applyView(all, state.view);
     lastGroup = null;
@@ -226,7 +238,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
   applyColumns();
   applySortMarks();
   return {
-    update(entry) { state.entry = entry; render(); },
+    update(entry) { if (state.entry?.key !== entry.key) state.raw = false; state.entry = entry; render(); },
     get view() { return state.view; },
     get shown() { return state.shown; },
     visibleIds,

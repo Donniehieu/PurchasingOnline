@@ -27,6 +27,7 @@ export function renderBanner(entry) {
   if (entry.ai?.mock) out.push(`<div class="alert warn"><b>Dữ liệu mẫu.</b> Chưa có khóa dịch vụ nên đang chạy thử với sản phẩm và hãng hư cấu — không dùng để mua hàng. Vào Cài đặt để nhập khóa Claude hoặc Gemini.</div>`);
   if (entry.ai?.chrome) out.push(`<div class="alert info"><b>Nguồn: Google ${entry.ai.organic ? "(kết quả thường)" : "(tìm nâng cao)"} chạy trong Chrome của bạn</b> (miễn phí). Trang được đọc bằng IP của bạn, giãn cách vài giây, tự ngừng khi bị chặn. Hãy mở nguồn để kiểm tra thông tin.</div>`);
   if (entry.ai?.free) out.push(`<div class="alert info"><b>Chế độ miễn phí.</b> Tìm bằng DuckDuckGo/Bing rồi tự đọc từng trang. Giá, ảnh, ưu/nhược điểm chỉ có khi trang cho đọc; hãng khác chỉ có giá và ảnh. Nhập khóa Gemini miễn phí ở Cài đặt (hoặc dùng Google trong Chrome) để có đủ ưu/nhược điểm và công nghệ.</div>`);
+  if (entry.scenario === "explore") out.push(`<div class="alert info"><b>Chưa đủ thông tin để tư vấn.</b> Dưới đây chỉ là cái nhìn chung về loại sản phẩm (ưu nhược điểm, công nghệ, khoảng giá tham khảo). Ứng dụng <b>chưa tư vấn chọn sản phẩm, nhà cung cấp hay so sánh báo giá</b> vì chưa biết chính xác bạn cần gì. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></div>`);
   if (entry.status === "partial") out.push(`<div class="alert info">Đã dừng giữa chừng — đang hiện phần dữ liệu thu được.</div>`);
   if (entry.status === "error") out.push(`<div class="alert err">Lần tìm này chưa hoàn tất. Dữ liệu bên dưới (nếu có) là phần thu được trước khi lỗi.</div>`);
   return out.join("");
@@ -37,7 +38,7 @@ export function renderHeadline(entry) {
   const p = entry.product;
   const sub = [p.brand, p.model].filter(Boolean).join(" · ");
   const range = s.price.count > 1 && s.price.min !== s.price.max ? `khoảng ${money(s.price.min)} – ${money(s.price.max)} · ` : "";
-  const imgs = s.images.filter((i) => i.for === "main").slice(0, MAX_IMAGES);
+  const imgs = s.images.filter((i) => i.for === "main").slice(0, entry.imageLimit ?? MAX_IMAGES);
   return `
     <div class="top-line">
       <span class="badge">${esc(catLabel(entry.category))}</span>
@@ -47,7 +48,7 @@ export function renderHeadline(entry) {
     </div>
     <div><h1>${esc(p.name || entry.plan.query)}</h1>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}</div>
     <div>
-      ${s.price.count ? `<div class="price-big">${money(s.price.median)}</div><div class="price-sub">Giá trung bình · ${range}${s.price.count} nguồn ${chips(entry, s.price.items.map((i) => i.srcId), 3)}</div>` : `<div class="price-big muted">Chưa có giá xác thực</div><div class="price-sub">Nên hỏi báo giá nhà cung cấp.</div>`}
+      ${entry.scenario === "explore" ? (s.price.count ? `<div class="price-big">${s.price.min !== s.price.max ? `${money(s.price.min)} – ${money(s.price.max)}` : money(s.price.median)}</div><div class="price-sub">Khoảng giá tham khảo của nhiều loại khác nhau. Bổ sung thông tin để có giá cụ thể.</div>` : `<div class="price-big muted">Chưa có giá cụ thể</div><div class="price-sub">Bổ sung hãng, mã hoặc thông số để tìm giá.</div>`) : s.price.count ? `<div class="price-big">${money(s.price.median)}</div><div class="price-sub">Giá trung bình · ${range}${s.price.count} nguồn ${chips(entry, s.price.items.map((i) => i.srcId), 3)}</div>` : `<div class="price-big muted">Chưa có giá xác thực</div><div class="price-sub">Nên hỏi báo giá nhà cung cấp.</div>`}
     </div>
     ${imgs.length ? `<div class="gallery">${imgs.map((i) => imgTag(i)).join("")}</div>` : ""}
     ${p.summary ? `<p style="margin:0">${esc(p.summary)}</p>` : ""}
@@ -60,6 +61,7 @@ function imgTag(i, link = true) {
 }
 
 export function renderVerdict(entry) {
+  if (entry.scenario === "explore") return ""; // thiếu thông tin: không nêu "lựa chọn tối ưu"
   const rec = recommend(entry);
   if (!rec.comparable || !rec.best) return "";
   const b = rec.best;
@@ -82,9 +84,9 @@ export function renderSummary(entry) {
   const wait = running ? "Đang thu thập…" : "Chưa có dữ liệu.";
   const priceRows = s.price.items.map((i) => `<li><span class="t"><b>${money(i.value)}</b> <span class="muted">${esc(i.label || "")}</span>${i.via === "page" ? ` <span class="badge good">đọc từ trang</span>` : ""}${i.verified === false ? ` <span class="badge warn">chưa kiểm chứng</span>` : ""}</span> ${chip(entry, i.srcId)}</li>`).join("");
   return `
-    <div class="card"><h2>Giá <span class="count">${s.price.count ? `trung bình ${money(s.price.median)}` : ""}</span></h2>
+    ${entry.scenario === "explore" ? `<div class="card"><h2>Khoảng giá tham khảo</h2><p style="margin:0">${s.price.count ? (s.price.min !== s.price.max ? `${money(s.price.min)} – ${money(s.price.max)}` : money(s.price.median)) : "Chưa có"}</p><p class="muted small" style="margin:6px 0 0">Các giá thu được thuộc nhiều loại sản phẩm khác nhau nên không dùng để so sánh báo giá. Bổ sung thông tin để có giá và nhà cung cấp cụ thể. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></p></div>` : `<div class="card"><h2>Giá <span class="count">${s.price.count ? `trung bình ${money(s.price.median)}` : ""}</span></h2>
       ${priceRows ? `<ul class="items">${priceRows}</ul>` : `<p class="muted">${wait}</p>`}
-      ${s.price.dropped.length ? `<p class="muted small">Đã loại ${s.price.dropped.length} giá lệch hẳn mặt bằng (nghi phụ kiện hoặc nhầm).</p>` : ""}</div>
+      ${s.price.dropped.length ? `<p class="muted small">Đã loại ${s.price.dropped.length} giá lệch hẳn mặt bằng (nghi phụ kiện hoặc nhầm).</p>` : ""}</div>`}
     <div class="card"><h2>Ưu điểm <span class="count">${s.pros.length}</span></h2>${itemList(entry, s.pros, "pros", wait)}</div>
     <div class="card"><h2>Nhược điểm <span class="count">${s.cons.length}</span></h2>${itemList(entry, s.cons, "cons", wait)}</div>
     ${entry.category === "tech"
@@ -94,6 +96,10 @@ export function renderSummary(entry) {
 }
 
 export function renderCompare(entry) {
+  if (entry.scenario === "explore") {
+    const names = entry.alternatives.map((a) => esc([a.brand, a.model || a.name].filter(Boolean).join(" "))).filter(Boolean);
+    return `<div class="card"><h2>Chưa đủ thông tin để so sánh</h2><p style="margin:0 0 8px">Ứng dụng chưa so sánh giá hay xếp hạng vì chưa biết chính xác sản phẩm bạn cần.${names.length ? " Một số hãng/sản phẩm cùng loại thường gặp:" : ""}</p>${names.length ? `<div class="chips">${names.map((n) => `<span class="badge">${n}</span>`).join("")}</div>` : ""}<p class="muted small" style="margin:10px 0 0">Bổ sung hãng, mã hoặc thông số để so sánh cụ thể. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></p></div>`;
+  }
   const rec = recommend(entry);
   const tech = entry.category === "tech";
   if (rec.rows.length < 2) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang tìm các hãng khác để so sánh…" : "Chưa có hãng khác để so sánh."}</p></div>`;
@@ -120,9 +126,9 @@ export function renderCompare(entry) {
 
 export function renderImages(entry) {
   const groups = [];
-  const main = entry.images.slice(0, MAX_IMAGES);
+  const main = entry.images.slice(0, entry.imageLimit ?? MAX_IMAGES);
   if (main.length) groups.push({ title: entry.product.name || "Sản phẩm", list: main });
-  for (const a of entry.alternatives) if (a.images.length) groups.push({ title: `${a.brand} ${a.model || a.name}`, list: a.images.slice(0, MAX_IMAGES) });
+  for (const a of entry.alternatives) if (a.images.length) groups.push({ title: `${a.brand} ${a.model || a.name}`, list: a.images.slice(0, entry.imageLimitAlt ?? MAX_IMAGES) });
   if (!groups.length) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang lấy ảnh từ các trang nguồn…" : "Chưa lấy được ảnh nào từ các trang đã mở."}</p></div>`;
   return groups.map((g) => `<div class="card"><h2>${esc(g.title)} <span class="count">${g.list.length} ảnh</span></h2><div class="images-grid">${g.list.map((i) => `<figure><a href="${esc(httpUrl(i.url))}" target="_blank" rel="noopener noreferrer">${imgTag(i, false)}</a><figcaption>${chip(entry, i.srcId)}</figcaption></figure>`).join("")}</div></div>`).join("");
 }
@@ -194,6 +200,7 @@ export function contactHtml(c) {
 
 // Tab "Nhà cung cấp": mọi NCC đã gặp khi đọc trang (kể cả trang không khớp model), kèm liên hệ đã lưu
 export function renderSuppliers(entry) {
+  if (entry.scenario === "explore") return `<div class="card"><h2>Chưa đủ thông tin để nêu nhà cung cấp</h2><p class="muted" style="margin:0">Các trang đã đọc thuộc nhiều loại sản phẩm khác nhau nên ứng dụng chưa liệt kê nhà cung cấp. Bổ sung hãng, mã hoặc thông số để tìm nhà cung cấp đúng sản phẩm. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></p></div>`;
   const list = suppliersOf(entry);
   if (!list.length) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang đọc các trang bán hàng…" : "Chưa đọc được trang bán hàng nào."}</p></div>`;
   const withContact = list.filter((s) => s.contactText).length;
