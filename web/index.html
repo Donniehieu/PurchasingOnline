@@ -230,6 +230,31 @@
             <li>Ở đây: chọn nguồn tìm <b>Claude</b>, dán khóa vào ô <b>Khóa dịch vụ</b>, <b>Kiểm tra kết nối</b>, <b>Lưu</b>.</li>
           </ol>
         </details>
+        <details class="keyguide" data-guide="openai">
+          <summary>ChatGPT (OpenAI) — cần nạp tiền, dùng làm AI dự phòng rất tiện</summary>
+          <ol>
+            <li>Mở <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a> và đăng nhập (đây là trang dành cho API, khác với trang chat chatgpt.com).</li>
+            <li>Vào <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer">Billing</a>, bấm <b>Add payment details</b> và nạp trước một khoản nhỏ (khoảng 5 USD là đủ dùng lâu). Chưa nạp tiền thì khóa báo hết hạn mức. Gói ChatGPT Plus không dùng được cho API.</li>
+            <li>Quay lại API keys, bấm <b>Create new secret key</b>, đặt tên (ví dụ "mua hang"), quyền để mặc định (All).</li>
+            <li>Sao chép khóa ngay (bắt đầu bằng <code>sk-</code>, chỉ hiện một lần).</li>
+            <li>Ở đây có hai cách:
+              <ul>
+                <li><b>Dùng làm AI chính:</b> chọn nguồn tìm <b>ChatGPT (OpenAI)</b>, dán khóa vào ô <b>Khóa dịch vụ</b>.</li>
+                <li><b>Dùng làm AI dự phòng</b> (khuyên dùng): mở <b>Khóa dự phòng</b> ở trên, dán vào ô <b>Khóa ChatGPT</b>. Khi Gemini hết hạn mức, app tự chuyển sang ChatGPT.</li>
+              </ul>
+            </li>
+            <li>Bấm <b>Kiểm tra kết nối</b> rồi <b>Lưu</b>.</li>
+          </ol>
+          <p class="muted small">Khóa chỉ lưu trên thiết bị này: dùng thêm điện thoại thì nhập lại ở đó. Không chia sẻ khóa cho người khác; nếu lộ, vào trang API keys để xóa và tạo khóa mới. App tự chọn model ChatGPT mới nhất mà khóa dùng được.</p>
+        </details>
+        <details class="keyguide" data-guide="custom">
+          <summary>AI tùy chọn (dịch vụ theo chuẩn OpenAI)</summary>
+          <ol>
+            <li>Lấy từ nhà cung cấp 3 thông tin: <b>địa chỉ API</b> (thường kết thúc bằng <code>/v1</code>), <b>tên model</b> và <b>khóa</b>.</li>
+            <li>Dán vào 3 ô <b>AI tùy chọn</b> trong mục <b>Khóa dự phòng</b>, rồi <b>Lưu</b>.</li>
+          </ol>
+          <p class="muted small">AI này chỉ dùng để đọc và tóm tắt trang, đọc ảnh, trả lời; không dùng cho việc cần tìm web. Địa chỉ nội bộ (127.0.0.1, 192.168…) bị chặn.</p>
+        </details>
         <details class="keyguide" data-guide="chrome">
           <summary>Google trong Chrome (tiện ích) — không cần khóa</summary>
           <ol>

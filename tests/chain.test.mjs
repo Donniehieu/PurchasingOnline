@@ -77,3 +77,8 @@ test("extraKeysOf: gói khóa phụ thành header, trống thì bỏ", () => {
   assert.equal(extraKeysOf({ keys: { gemini: " ", customUrl: "https://a" } }), "");
   assert.deepEqual(JSON.parse(atob(extraKeysOf({ keys: { openai: "sk-1", customUrl: "https://a/v1", customKey: "k", customModel: "m" } }))), { openai: "sk-1", custom: { url: "https://a/v1", key: "k", model: "m" } });
 });
+
+test("chỉ có một AI bị hết hạn mức: báo rõ chưa có AI dự phòng", async () => {
+  const sel = pickProvider({}, h({ "x-ai-key": "AIzaMain" }));
+  await assert.rejects(callAI(sel, "ask", { system: "s", user: "u", fetchImpl: async (u) => (u.includes("/models?") ? { ok: true, status: 200, json: async () => ({ models: [] }) } : { ok: false, status: 429, json: async () => ({}) }) }), (e) => e.status === 429 && /Chưa có AI dự phòng/.test(e.message));
+});

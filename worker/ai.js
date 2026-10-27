@@ -380,6 +380,11 @@ export async function callAI(sel, task, opts) {
       if (e.status === 413) break;
     }
   }
-  if (errors.length === 1) throw errors[0].err;
+  if (errors.length === 1) {
+    const e = errors[0].err;
+    // chỉ có một AI mà bị giới hạn: nói rõ vì sao không tự chuyển được
+    if ((e.status === 429 || /không hỗ trợ vùng/.test(e.message)) && all.length === 1) throw new AIError(e.message.replace(/[. ]*$/, "") + ". Chưa có AI dự phòng nên không tự chuyển được: thêm khóa Gemini khác, Claude hoặc ChatGPT ở Cài đặt → Kết nối → Khóa dự phòng (khóa lưu riêng từng thiết bị, điện thoại phải nhập lại).", e.status);
+    throw e;
+  }
   throw new AIError("Mọi dịch vụ AI đều lỗi — " + errors.map((e) => `${NAMES[e.provider] ?? e.provider}: ${e.err.message}`).join(" · "), errors[0].err.status);
 }
