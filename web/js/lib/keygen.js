@@ -4,6 +4,7 @@
 //   3) (hàng kỹ thuật) từ khóa về các công nghệ của cả nhóm sản phẩm, để so sánh công nghệ chứ không chỉ sản phẩm đang tìm
 import { norm } from "./text.js";
 import { TYPES } from "./kb.js";
+import { canonBrand } from "./plan.js";
 
 export const GROUP_LABEL = { core: "Từ khóa theo thông tin bạn cung cấp", competitor: "Hãng đối thủ", tech: "Công nghệ của nhóm sản phẩm" };
 
@@ -35,7 +36,7 @@ export function competitorBrands({ entry = null, type = null, mainBrand = "", le
   const main = norm(mainBrand || entry?.product?.brand || "");
   const list = [];
   const push = (b) => {
-    const label = squash(b);
+    const label = canonBrand(b);
     const k = norm(label);
     if (!k || k.length < 2 || (main && (k === main || main.includes(k) || k.includes(main)))) return;
     if (!list.some((x) => norm(x) === k)) list.push(label);

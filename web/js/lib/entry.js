@@ -4,6 +4,8 @@ import { normUrl, domainOf, parseVnd, sentenceKey, clip, decodeEntities, norm, m
 import { priceStats } from "./aggregate.js";
 import { upsertOffer } from "./offers.js";
 import { mergeContact, hasContact } from "./contact.js";
+import { cleanTechName } from "./extract.js";
+import { canonBrand } from "./plan.js";
 
 export const ENTRY_VERSION = 2;
 
@@ -35,7 +37,7 @@ export function newEntry(plan, key) {
 }
 
 // Đổi số này khi cách nhận trang "đúng sản phẩm" thay đổi: trang từng bị loại ở bản cũ sẽ được đọc lại
-export const PAGE_LOGIC_VERSION = 4;
+export const PAGE_LOGIC_VERSION = 5; // v5: trang phải đúng cả hãng mục tiêu mới tính là đúng sản phẩm
 export const MAX_IMAGES = 5;
 /** Chỉ giữ MAX_IMAGES ảnh tốt nhất (điểm cao trước; bằng điểm thì giữ ảnh đến trước). */
 export function keepBestImages(list, max = MAX_IMAGES) {
@@ -44,6 +46,9 @@ export function keepBestImages(list, max = MAX_IMAGES) {
   list.splice(0, list.length, ...ranked);
   return list;
 }
+
+const sameText = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x.includes(y) || y.includes(x)); };
+const sameModel = (a, b) => { const x = modelKey(a), y = modelKey(b); return !!x && !!y && (x.includes(y) || y.includes(x)); };
 
 export function logEvent(entry, kind, msg, extra = {}) {
   entry.log.push({ ts: Date.now(), kind, msg, ...extra });
@@ -97,10 +102,15 @@ export function ingestProduct(entry, ai) {
     if (entry.plan.categoryAuto) entry.category = d.category;
   }
   const p = d.product ?? {};
+  // Mục tiêu luôn là đúng hãng/model người dùng đã gõ: AI trả hãng hoặc model khác hẳn thì giữ theo người dùng
+  const aiBrand = canonBrand(p.brand);
+  const brandClash = !!(entry.plan.brand && aiBrand && !sameText(aiBrand, entry.plan.brand));
+  const modelClash = !!(entry.plan.model && p.model && !sameModel(p.model, entry.plan.model));
+  if (brandClash || modelClash) logEvent(entry, "error", `Dịch vụ tìm trả về ${[brandClash ? "hãng " + aiBrand : "", modelClash ? "model " + p.model : ""].filter(Boolean).join(", ")} khác với bạn nhập: giữ đúng ${[entry.plan.brand, entry.plan.model].filter(Boolean).join(" ")} của bạn`);
   entry.product = {
-    name: clip(p.name || entry.product.name, 140),
-    brand: clip(p.brand || entry.product.brand, 40),
-    model: clip(p.model || entry.product.model, 40),
+    name: clip(brandClash || modelClash ? entry.product.name : p.name || entry.product.name, 140),
+    brand: clip(brandClash ? entry.product.brand : aiBrand || entry.product.brand, 40),
+    model: clip(modelClash ? entry.product.model : p.model || entry.product.model, 40),
     summary: clip(p.summary || entry.product.summary || "", 400),
     aliases: Array.isArray(p.aliases) ? p.aliases.slice(0, 5) : [],
   };
@@ -119,11 +129,12 @@ export function ingestProduct(entry, ai) {
   pushClaims(entry, entry.pros, d.pros);
   pushClaims(entry, entry.cons, d.cons);
   for (const t of d.technologies ?? []) {
-    if (!t?.name) continue;
+    const tname = cleanTechName(t?.name, 80);
+    if (!tname) continue; // tên bị cắt dở / là cả câu / chung chung: không hiển thị
     const tsrc = t.source ? addSource(entry, t.source, "", "ai", t.verified !== false) : null;
-    if (entry.tech.some((x) => norm(x.name) === norm(t.name) && x.srcId === tsrc)) continue;
+    if (entry.tech.some((x) => norm(x.name) === norm(tname) && x.srcId === tsrc)) continue;
     entry.tech.push({
-      name: clip(t.name, 80), benefit: clip(t.benefit || "", 200), drawback: clip(t.drawback || "", 200),
+      name: tname, benefit: clip(t.benefit || "", 200), drawback: clip(t.drawback || "", 200),
       srcId: t.source ? addSource(entry, t.source, "", "ai", t.verified !== false) : null, via: "ai",
     });
   }
@@ -137,7 +148,7 @@ export function ingestCompare(entry, ai) {
   for (const s of ai.sources ?? []) addSource(entry, s.url, s.title, "ai", true, s.kind);
   if (Array.isArray(ai.queries)) for (const q of ai.queries) if (q && !entry.queries.includes(q)) entry.queries.push(q);
   const seen = new Set(entry.alternatives.map((a) => (a.brand + a.model).toLowerCase()));
-  for (const a of d.alternatives ?? []) {
+  for (const a of (d.alternatives ?? []).map((x) => ({ ...x, brand: canonBrand(x?.brand) }))) {
     if (!a?.brand && !a?.name) continue;
     const id = ((a.brand || "") + (a.model || a.name || "")).toLowerCase();
     if (seen.has(id)) continue;
@@ -154,7 +165,7 @@ export function ingestCompare(entry, ai) {
       priceSrcId: value && a.price?.source ? addSource(entry, a.price.source, "", "ai", a.price.verified !== false) : null,
       pros: tmp.pros.slice(0, 5),
       cons: tmp.cons.slice(0, 5),
-      tech: (entry.category === "tech" ? a.technologies ?? [] : []).slice(0, 5).map((t) => ({ name: clip(t?.name || String(t), 60), benefit: clip(t?.benefit || "", 160), drawback: clip(t?.drawback || "", 160) })),
+      tech: (entry.category === "tech" ? a.technologies ?? [] : []).map((t) => ({ name: cleanTechName(t?.name || String(t), 60), benefit: clip(t?.benefit || "", 160), drawback: clip(t?.drawback || "", 160) })).filter((t) => t.name).slice(0, 5),
       vsMain: clip(a.vsMain || "", 240),
       srcIds: [],
       images: [],
@@ -184,6 +195,12 @@ export function ingestPage(entry, page, ctx = {}) {
   const srcId = addSource(entry, page.finalUrl || page.url, page.title, "page");
   rec.srcId = srcId;
   const forAlt = ctx.alt ?? null; // trang thuộc sản phẩm đối thủ
+  // Đã mở trang và thấy KHÔNG đúng sản phẩm/hãng đang tìm: bỏ giá do AI gắn với trang này, để tổng hợp chỉ có sản phẩm mục tiêu
+  if (!page.relevant && !forAlt) {
+    const had = entry.prices.length;
+    entry.prices = entry.prices.filter((p) => p.srcId !== srcId || p.via === "page");
+    if (entry.prices.length < had) logEvent(entry, "cache", `Bỏ giá AI gắn với ${page.domain}: trang này không đúng sản phẩm/hãng đang tìm`);
+  }
 
   if (page.relevant || forAlt) {
     const price = page.product?.price?.value;
@@ -199,7 +216,7 @@ export function ingestPage(entry, page, ctx = {}) {
       const known = new Set([...entry.pros, ...entry.cons].map((c) => sentenceKey(c.text)));
       for (const t of page.pros ?? []) { const k = sentenceKey(t); if (known.has(k)) continue; known.add(k); entry.pros.push({ text: t, srcId, verified: true, via: "page" }); rec.found.pros++; }
       for (const t of page.cons ?? []) { const k = sentenceKey(t); if (known.has(k)) continue; known.add(k); entry.cons.push({ text: t, srcId, verified: true, via: "page" }); rec.found.cons++; }
-      if (entry.category === "tech") for (const t of page.tech ?? []) {
+      if (entry.category === "tech") for (const t of (page.tech ?? []).map((x) => cleanTechName(x, 80)).filter(Boolean)) {
         const benefit = page.techDetail?.find((d) => sentenceKey(d.name) === sentenceKey(t))?.benefit ?? "";
         const have = entry.tech.find((x) => sentenceKey(x.name) === sentenceKey(t));
         if (have) { if (benefit && !have.benefit) have.benefit = benefit; continue; }
@@ -262,7 +279,7 @@ export function ingestListing(entry, page) {
   const mainPrice = priceStats(entry.prices).median;
   const have = new Set(entry.alternatives.map((a) => norm(a.brand)));
   const best = new Map();
-  for (const p of page.listing ?? []) {
+  for (const p of (page.listing ?? []).map((x) => ({ ...x, brand: canonBrand(x.brand) })).filter((x) => x.brand)) {
     const b = norm(p.brand);
     if (!b || b === mainBrand || have.has(b)) continue;
     if (mainKey && modelKey(`${p.name} ${p.sku}`).includes(mainKey)) continue; // chính sản phẩm đang xem
@@ -357,7 +374,7 @@ export function ingestAltInsight(entry, alt, ins) {
   const d = ins.data;
   for (const c of d.pros.slice(0, 4)) alt.pros.push({ text: clip(decodeEntities(c.text), 240), srcId, verified: true, via: "ai" });
   for (const c of d.cons.slice(0, 4)) alt.cons.push({ text: clip(decodeEntities(c.text), 240), srcId, verified: true, via: "ai" });
-  if (entry.category === "tech") for (const t of d.technologies.slice(0, 4)) alt.tech.push({ name: clip(t.name, 60), benefit: clip(t.benefit, 160), drawback: "", srcId });
+  if (entry.category === "tech") for (const t of d.technologies.slice(0, 4).filter((x) => cleanTechName(x.name, 60))) alt.tech.push({ name: cleanTechName(t.name, 60), benefit: clip(t.benefit, 160), drawback: "", srcId });
   if (!alt.price) { const pr = d.prices[0]; if (pr) { alt.price = pr.value; alt.priceSrcId = srcId; } }
   if (srcId && !alt.srcIds.includes(srcId)) alt.srcIds.push(srcId);
   logEvent(entry, "ai", `Google về ${alt.brand}: ${d.pros.length} ưu điểm, ${d.cons.length} nhược điểm`, { srcId });

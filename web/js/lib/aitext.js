@@ -1,7 +1,7 @@
 // Phân tích câu trả lời của Google Chế độ AI (dòng chữ + nhãn nguồn) thành dữ liệu có cấu trúc, bằng quy tắc.
 // Mỗi ý giữ lại chỉ số nguồn trích dẫn (cites) để sau này gắn URL thật.
 import { norm, parseVnd, clip } from "./text.js";
-import { techNames } from "./extract.js";
+import { techNames, cleanTechName } from "./extract.js";
 import { exactQuery } from "./plan.js";
 
 const SECTIONS = [
@@ -98,6 +98,7 @@ export function parseAnswer({ lines, cites }, plan = {}) {
       if (!out.technologies.some((x) => norm(x.name).includes(norm(bare)))) out.technologies.push({ name: bare, benefit: "", drawback: "", cites: [] });
     }
   } else out.technologies = [];
+  out.technologies = out.technologies.map((t) => ({ ...t, name: cleanTechName(t.name, 70) })).filter((t) => t.name);
   return out;
 }
 

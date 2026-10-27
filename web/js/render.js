@@ -98,6 +98,11 @@ export function renderSummary(entry) {
 }
 
 export function renderCompare(entry) {
+  const v = renderVerdict(entry);
+  return (v ? `<div class="card verdict">${v}</div>` : "") + renderCompareTable(entry);
+}
+
+function renderCompareTable(entry) {
   if (entry.scenario === "explore") {
     const names = entry.alternatives.map((a) => esc([a.brand, a.model || a.name].filter(Boolean).join(" "))).filter(Boolean);
     return `<div class="card"><h2>Chưa đủ thông tin để so sánh</h2><p style="margin:0 0 8px">Ứng dụng chưa so sánh giá hay xếp hạng vì chưa biết chính xác sản phẩm bạn cần.${names.length ? " Một số hãng/sản phẩm cùng loại thường gặp:" : ""}</p>${names.length ? `<div class="chips">${names.map((n) => `<span class="badge">${n}</span>`).join("")}</div>` : ""}<p class="muted small" style="margin:10px 0 0">Bổ sung hãng, mã hoặc thông số để so sánh cụ thể. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></p></div>`;

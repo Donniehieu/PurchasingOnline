@@ -71,6 +71,7 @@ async function freeSearch(task, plan, env) {
   const nameTokens = norm(plan.query || plan.name).split(" ").filter((w) => w.length >= 3).slice(0, 6);
   const rel = (r) => {
     const hay = r.title + " " + r.snippet + " " + r.url;
+    if (plan.brand && !norm(hay).includes(norm(plan.brand))) return false; // khác hãng = sản phẩm khác
     const byTokens = nameTokens.filter((w) => norm(hay).includes(w)).length >= Math.max(2, Math.ceil(nameTokens.length * 0.6));
     return (key && modelKey(hay).includes(key)) || byTokens;
   };

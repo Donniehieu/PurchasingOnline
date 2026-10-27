@@ -10,6 +10,7 @@ import { newQuoteEntry, importLinks } from "./lib/quote.js";
 import { genKeys, competitorBrands, withInfo } from "./lib/keygen.js";
 import { expandResearch } from "./lib/expand.js";
 import { catalogNames } from "./lib/techkb.js";
+import { saveWizard, recallWizard, savedFor } from "./lib/wizcache.js";
 import { TYPES } from "./lib/kb.js";
 import { research, ask, STEPS } from "./lib/pipeline.js";
 import { INTENTS } from "./lib/answer.js";
@@ -78,13 +79,27 @@ function showResult(entry) {
   renderAskChips();
 }
 
+// Đang tìm thì dữ liệu về liên tục: vẽ lại tối đa ~1 lần/giây và KHÔNG vẽ lại khi đang bấm/chạm,
+// nếu không các link trong bảng bị thay mới ngay giữa lúc nhấn nên bấm không mở được và trang bị đơ.
+let lastRender = 0, pressing = false, pressTimer;
+const release = () => { clearTimeout(pressTimer); pressTimer = setTimeout(() => { pressing = false; }, 450); };
+document.addEventListener("pointerdown", () => { pressing = true; clearTimeout(pressTimer); pressTimer = setTimeout(() => { pressing = false; }, 4000); }, true);
+document.addEventListener("pointerup", release, true);
+document.addEventListener("pointercancel", release, true);
 function scheduleRender() {
   if (renderQueued) return;
   renderQueued = true;
   // rAF bị trình duyệt tạm dừng khi tab ở nền: dùng thêm setTimeout để dữ liệu vẫn được vẽ
-  const go = () => { if (!renderQueued) return; renderQueued = false; if (current) render(current); };
-  requestAnimationFrame(go);
-  setTimeout(go, 120);
+  const wait = runCtl ? Math.max(0, lastRender + 1000 - Date.now()) : 0;
+  const go = () => {
+    if (!renderQueued) return;
+    if (pressing) { clearTimeout(retry); retry = setTimeout(go, 250); return; }
+    renderQueued = false; lastRender = Date.now();
+    if (current) render(current);
+  };
+  let retry;
+  if (!wait) requestAnimationFrame(go);
+  setTimeout(go, Math.max(wait, 120));
 }
 
 // bảng NCC dựng một lần (giữ nguyên ô lọc, thứ tự sắp xếp, cột ẩn khi dữ liệu cập nhật)
@@ -98,9 +113,8 @@ const offerTable = mountOfferTable($("tab-table"), {
 function render(entry) {
   $("banner").innerHTML = renderBanner(entry);
   $("headline").innerHTML = renderHeadline(entry);
-  const v = renderVerdict(entry);
-  $("verdict").hidden = !v;
-  $("verdict").innerHTML = v;
+  $("verdict").hidden = true; // tổng hợp chỉ có sản phẩm mục tiêu: phần "lựa chọn tối ưu" (gồm cả đối thủ) nằm ở tab So sánh
+  $("verdict").innerHTML = "";
   $("tab-summary").innerHTML = renderSummary(entry);
   $("tab-advice").innerHTML = renderAdvice(entry, readNeed(), choices.get(entry.key) ?? entry.need?.choice ?? "", answersOf(entry));
   $("tab-suppliers").innerHTML = renderSuppliers(entry);
@@ -316,13 +330,23 @@ async function startSearch(text, { skipCards = false } = {}) {
     return;
   }
   $("preCards").hidden = true; pre = null;
+  // đã từng trả lời cho từ khóa này: dùng lại thông tin đó để tìm bổ sung, không hỏi lại
+  const saved = $("mode").value !== "cache" && a.scenario !== "url" ? savedFor(cacheKey(makePlan({ text, ocrText: ocrCtx, category: $("cat").value }))) : null;
+  if (saved) {
+    pending = { text, adds: saved.adds, baseKey: cacheKey(makePlan({ text, ocrText: ocrCtx, category: $("cat").value })), typeId: saved.typeId, analysis: analyzeInput(withInfo(text, saved.adds)) };
+    toast("Dùng lại thông tin bạn đã trả lời: " + saved.adds.join(" · "));
+  }
   run(text, { mode: $("mode").value, ocrText: ocrCtx, scenario: a.mode });
 }
 
 async function showPreCards(text, a, forcedType = "") {
   const hints = a.type ? learnFromCache(await store.list().catch(() => []), a.type.id) : null;
-  const keep = pre?.text === text && !forcedType ? pre.answers : {};
-  pre = { text, forcedType, analysis: a, hints, cards: preCards(a, { hints }), answers: keep, step: 0, baseKey: cacheKey(makePlan({ text, ocrText: ocrCtx, category: $("cat").value })) };
+  const baseKey = cacheKey(makePlan({ text, ocrText: ocrCtx, category: $("cat").value }));
+  const cards = preCards(a, { hints });
+  const again = pre?.text === text && !forcedType;
+  // chưa trả lời lần nào trong phiên này: điền lại từ câu trả lời đã lưu (cùng từ khóa, hoặc cùng loại hàng)
+  const recalled = again ? { answers: pre.answers, exact: false } : recallWizard({ baseKey, typeId: a.type?.id ?? "", cards });
+  pre = { text, forcedType, analysis: a, hints, cards, answers: recalled.answers, recalled: !again && Object.keys(recalled.answers).length > 0, exact: recalled.exact, step: 0, baseKey };
   renderPreCards();
   $("preCards").hidden = false;
   $("preCards").scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -352,8 +376,10 @@ function renderPreCards() {
   const isPair = pre.analysis.scenario === "pair";
   const busy = !isPair && runCtl ? "Đang tìm theo thông tin ban đầu… " : "";
   const last = i === total - 1;
+  const reuse = pre.recalled && i === 0 && !isPair ? `<div class="alert info" style="margin:0 0 10px">Đã điền lại câu trả lời ${pre.exact ? "lần trước của sản phẩm này" : "gần nhất cho loại hàng này"}: <b>${esc(wizardPreview())}</b>. <button type="button" class="chip" data-pc-all="1">Dùng lại và tìm bổ sung</button></div>` : "";
   $("preCards").innerHTML = `<h2>Hỏi nhanh để tìm đúng sản phẩm <span class="count">câu ${i + 1}/${total} · ${esc(pre.analysis.label)}</span></h2>
     <p class="muted small" style="margin:0 0 10px">${busy}${isPair ? "" : "Trả lời xong, ứng dụng tự tìm bổ sung theo từ khóa sinh từ chữ bạn gõ + thông tin trả lời + hãng đối thủ + công nghệ. "}Bỏ qua câu nào cũng được.</p>
+    ${reuse}
     <div class="wz-dots" role="presentation">${dots}</div>
     <div class="qcard"><div class="q-title"><span class="q-num">${i + 1}</span>${esc(c.title)}</div><div class="chips">${chips}</div>${other}</div>
     <p class="pc-preview">${isPair ? "Sẽ tìm: " : "Thông tin thêm vào từ khóa: "}<b>${esc(wizardPreview())}</b></p>
@@ -372,6 +398,7 @@ function wizardAdds(p = pre) {
 const wizardPreview = () => (pre.analysis.scenario === "pair" ? composeQuery(pre.text, pre.cards, pre.answers) : wizardAdds().join(" · ") || NO_INFO);
 
 function stepWizard(delta) {
+  saveWizard({ baseKey: pre.baseKey, typeId: pre.analysis.type?.id ?? "", answers: pre.answers, adds: wizardAdds() }); // nhớ ngay từng câu, kể cả khi đóng giữa chừng
   pre.step += delta;
   if (pre.step >= pre.cards.length) return finishWizard();
   renderPreCards();
@@ -391,6 +418,9 @@ function finishWizard() {
     return;
   }
   const adds = wizardAdds(p);
+  saveWizard({ baseKey: p.baseKey, typeId: p.analysis.type?.id ?? "", answers: p.answers, adds });
+  // đã trả lời xong: mọi tab chuyển sang chế độ đủ thông tin NGAY (không còn "Chưa đủ thông tin / Bổ sung thông tin" ở tab nào), rồi cập nhật dần khi tìm bổ sung
+  if (current?.key === p.baseKey) markAsked(current, adds);
   pending = { text: p.text, adds, baseKey: p.baseKey, typeId: p.analysis.type?.id ?? "", analysis: analyzeInput(withInfo(p.text, adds)) };
   maybeExpand();
 }
@@ -423,7 +453,8 @@ $("preCards").addEventListener("click", async (e) => {
     renderPreCards();
     return;
   }
-  if (e.target.closest("[data-pc-next]")) stepWizard(1);
+  if (e.target.closest("[data-pc-all]")) finishWizard();
+  else if (e.target.closest("[data-pc-next]")) stepWizard(1);
   else if (e.target.closest("[data-pc-skip]")) {
     const c = pre.cards[Math.min(pre.step, pre.cards.length - 1)];
     if (c.kind === "query") delete pre.answers[c.id];
@@ -443,6 +474,15 @@ $("preCards").addEventListener("input", (e) => {
   const el = $("preCards").querySelector(".pc-preview b");
   if (el) el.textContent = wizardPreview();
 });
+
+// Đã hỏi xong thì không hỏi lại ở bất kỳ tab nào: bỏ chế độ "thiếu thông tin" cho bản ghi này
+function markAsked(entry, adds) {
+  entry.scenario = "full";
+  entry.asked = { adds, ts: Date.now() };
+  entry.need = { ...readNeed(), choice: choices.get(entry.key) ?? entry.need?.choice ?? "", answers: answersOf(entry) };
+  store.save(entry).catch(() => {});
+  scheduleRender();
+}
 
 // ---------- tìm bổ sung theo từ khóa tự sinh ----------
 // Chạy SAU lần tìm ban đầu (đang chạy theo chữ bạn gõ), cộng dồn vào cùng bản ghi cache.
@@ -472,7 +512,7 @@ async function maybeExpand() {
     showResult(entry);
     const o = runOptions();
     const stats = await expandResearch(entry, keys, { api, store, emit: onEvent, signal, kind: generic, concurrency: o.concurrency, perHostCap: o.perHostCap, maxPages: o.enrichPageLimit });
-    if (p.analysis.mode === "full") entry.scenario = "full"; // đã bổ sung đủ thông tin: dựng bảng NCC
+    markAsked(entry, p.adds); // đã trả lời xong: dựng đủ mọi tab, không hỏi lại
     entry.need = { ...readNeed(), choice: choices.get(entry.key) ?? entry.need?.choice ?? "", answers: answersOf(entry) };
     await store.save(entry).catch(() => {});
     showResult(entry);

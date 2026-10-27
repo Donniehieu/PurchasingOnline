@@ -1,5 +1,6 @@
 // Lập kế hoạch tìm kiếm: nhận diện model, hãng, ngành hàng và sinh bộ từ khóa thông minh.
 import { norm, stripAccents, modelKey } from "./text.js";
+import { TYPES } from "./kb.js";
 
 const BRANDS = [
   "samsung", "lg", "sony", "panasonic", "philips", "xiaomi", "apple", "asus", "acer", "dell", "hp", "lenovo", "msi", "huawei", "oppo", "vivo", "realme", "nokia",
@@ -24,10 +25,41 @@ const CONSUMER_WORDS = [
   "tuong ", "sua chua", "nuoc ngot", "snack", "shampoo", "soap", "coffee", "noodle",
 ];
 
+// Cách viết chuẩn của các hãng viết tắt/viết hoa đặc biệt (còn lại: viết hoa chữ cái đầu mỗi từ)
+const BRAND_CASE = { lg: "LG", hp: "HP", tcl: "TCL", msi: "MSI", jbl: "JBL", dji: "DJI", abb: "ABB", ups: "UPS", "tp-link": "TP-Link", "d-link": "D-Link", "ls electric": "LS Electric", "p&g": "P&G", "th true milk": "TH true milk", "lock&lock": "Lock&Lock", "black+decker": "Black+Decker", gopro: "GoPro", dewalt: "DeWalt", hikoki: "HiKOKI", ingco: "INGCO", ecovacs: "Ecovacs", "g7": "G7", "pentax": "Pentax", kärcher: "Kärcher" };
+export function brandLabel(b) {
+  const k = String(b ?? "").trim().toLowerCase();
+  return BRAND_CASE[k] ?? k.replace(/(^|[\s-])(\p{L})/gu, (m, a, c) => a + c.toUpperCase());
+}
+
+/**
+ * Tên hãng đã kiểm tra: hãng có trong danh sách thì viết đúng chuẩn ("lg" -> "LG"); hãng lạ giữ nguyên cách viết nếu hợp lý.
+ * Trả về "" nếu không đáng tin (quá dài, bị cắt dở, cả câu, chỉ có số).
+ */
+export function canonBrand(raw) {
+  const s = String(raw ?? "").replace(/\s+/g, " ").trim().replace(/^[\s\-–:;,.|]+|[\s\-–:;,.|]+$/g, "");
+  if (!s || s.length > 40 || /…|\.\.\./.test(s) || /^\d+$/.test(s) || s.split(" ").length > 4) return "";
+  const t = " " + norm(s).replace(/[^a-z0-9&+\- ]/g, " ").replace(/\s+/g, " ").trim() + " ";
+  for (const b of BRANDS) if (t === " " + stripAccents(b) + " ") return brandLabel(b);
+  return s === s.toLowerCase() || s === s.toUpperCase() && s.length > 4 ? brandLabel(s) : s;
+}
+
 export const CATEGORY_LABELS = { tech: "Máy móc / thiết bị / gia dụng / điện tử", consumer: "Hàng tiêu dùng" };
+
+// Loại hàng có trong ngân hàng câu hỏi (từ khóa không dấu, khớp cụm dài nhất): "lọc nước nóng lạnh" là thiết bị chứ không phải nước uống
+function kbKind(t) {
+  let best = null;
+  for (const type of TYPES) for (const key of type.keys) {
+    if (/[^\x00-\x7f]/.test(key)) continue;
+    if (t.includes(" " + key + " ") && (!best || key.length > best.len)) best = { kind: type.kind, len: key.length };
+  }
+  return best?.kind ?? null;
+}
 
 export function detectCategory(text) {
   const t = " " + norm(text) + " ";
+  const known = kbKind(t.replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " "));
+  if (known) return known;
   let tech = 0, consumer = 0;
   for (const w of TECH_WORDS) if (t.includes(w.startsWith(" ") ? w : " " + w) || t.includes(w)) tech++;
   for (const w of CONSUMER_WORDS) if (t.includes(" " + w) || t.includes(w)) consumer++;
@@ -65,7 +97,7 @@ export function detectBrand(text) {
     const key = " " + stripAccents(b) + " ";
     if (t.includes(key) && b.length > best.length) best = b;
   }
-  return best ? best.replace(/\b\w/g, (c) => c.toUpperCase()) : "";
+  return best ? brandLabel(best) : "";
 }
 
 /** Mọi hãng có trong danh sách được nhắc trong đoạn chữ (theo thứ tự xuất hiện trong danh sách). */
@@ -73,7 +105,7 @@ export function detectBrands(text) {
   const t = " " + norm(text).replace(/[^a-z0-9&+\- ]/g, " ") + " ";
   const out = [];
   for (const b of BRANDS) {
-    if (t.includes(" " + stripAccents(b) + " ")) { const label = b.replace(/\b\w/g, (c) => c.toUpperCase()); if (!out.includes(label)) out.push(label); }
+    if (t.includes(" " + stripAccents(b) + " ")) { const label = brandLabel(b); if (!out.includes(label)) out.push(label); }
   }
   return out;
 }

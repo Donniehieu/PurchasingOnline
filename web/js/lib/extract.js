@@ -220,6 +220,29 @@ function pushItem(list, raw) {
 }
 
 const STOP = new Set(["giúp", "cho", "với", "và", "của", "để", "này", "là", "được", "có", "trên", "từ", "đến", "mang", "tạo", "khi", "nhằm", "sử", "hiện", "đại", "tiên", "tiến"]);
+const GENERIC_TECH = new Set(["moi", "hien dai", "tien tien", "cao cap", "doc quyen", "thong minh", "chinh hang", "dac biet", "noi bat", "vuot troi", "an toan", "tiet kiem", "tien loi"]);
+const DANGLING = /\s+(và|với|của|cho|để|giúp|là|có|được|trong|khi|nhằm|bằng|từ|đến|tại|như|hoặc|hay|mà|the|and|of|for|with|to|a|an)$/i;
+
+/**
+ * Kiểm tra một tên công nghệ trước khi hiển thị. Trả về tên đã làm sạch, hoặc "" nếu không đáng tin:
+ * bị cắt dở ("…", ngoặc chưa đóng, kết thúc bằng từ nối), là cả câu, quá dài, chung chung ("hiện đại"), hay chỉ là số.
+ * Không bao giờ tự cắt ngắn tên (cắt sẽ làm sai nghĩa): quá dài thì bỏ.
+ */
+export function cleanTechName(raw, max = 60) {
+  let s = String(raw ?? "").replace(/\s+/g, " ").trim();
+  if (!s || /(…|\.\.\.)\s*$/.test(s)) return "";
+  s = s.replace(/^[\s\-–•*:;,.]+/, "").replace(/[\s\-–:;,.]+$/, "");
+  if ((s.match(/\(/g) ?? []).length !== (s.match(/\)/g) ?? []).length) s = s.replace(/\s*\([^)]*$/, "").trim();
+  for (let i = 0; i < 4 && DANGLING.test(s); i++) s = s.replace(DANGLING, "").trim();
+  const bare = s.replace(/^(công nghệ|tính năng|technology)\s+/i, "").trim();
+  if (bare.length < 2 || s.length > max) return "";
+  if (!/[\p{L}]/u.test(bare) || /^\d+$/.test(bare)) return "";
+  const core = bare.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim(); // phần giải thích trong ngoặc không tính
+  if (!core || core.split(" ").length > 7 || /[.!?;:]/.test(core)) return "";
+  if (GENERIC_TECH.has(norm(bare))) return "";
+  return s;
+}
+
 export function techNames(text, max = 6) {
   const out = [];
   const re = /(?:công nghệ|technology)\s+([A-Za-zÀ-ỹ0-9][A-Za-zÀ-ỹ0-9\-+]*(?:\s+[A-Za-zÀ-ỹ0-9\-+]+){0,2})/gi;
@@ -232,8 +255,8 @@ export function techNames(text, max = 6) {
       words.push(w);
     }
     if (!words.length || !/^[A-ZÀ-Ỹ0-9]/.test(words[0])) continue;
-    const name = "Công nghệ " + words.join(" ");
-    if (!out.some((x) => norm(x) === norm(name))) out.push(name);
+    const name = cleanTechName("Công nghệ " + words.join(" "));
+    if (name && !out.some((x) => norm(x) === norm(name))) out.push(name);
   }
   return out;
 }
@@ -390,7 +413,13 @@ export function extractFacts(htmlRaw, url, hint = {}) {
   // Có mã model: khớp mã HOẶC khớp gần hết tên (nhà bán hay viết mã model khác đi). Không có model: khớp phần lớn tên.
   // (khi nhận theo tên, phần số của mã model vẫn phải có trên trang để không lẫn sang mã khác cùng hãng)
   const modelNums = wordsOf(hint.model).filter((t) => /^\d+$/.test(t));
-  const relevant = key ? (!!modelMatch || (nameScore >= 0.75 && modelNums.every((n) => headSet.has(n)))) : nameScore >= 0.6;
+  let relevant = key ? (!!modelMatch || (nameScore >= 0.75 && modelNums.every((n) => headSet.has(n)))) : nameScore >= 0.6;
+  // Hãng mục tiêu phải có trên trang: tên giống nhau nhưng khác hãng (Kangaroo / Karofi) là sản phẩm KHÁC, không đưa vào dữ liệu của sản phẩm đang tìm
+  if (relevant && hint.brand) {
+    const brandHay = " " + norm(title + " " + h1 + " " + url + " " + (product.brand ?? "") + " " + (product.name ?? "") + " " + text.slice(0, 3000)).replace(/[^a-z0-9]+/g, " ") + " ";
+    const bk = " " + norm(hint.brand).replace(/[^a-z0-9]+/g, " ").trim() + " ";
+    if (bk.trim() && !brandHay.includes(bk)) relevant = false;
+  }
 
   // Ảnh
   const cands = new Map();

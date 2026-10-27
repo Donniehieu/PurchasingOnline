@@ -1,6 +1,7 @@
 // Tổng hợp dữ liệu đã thu thập theo từng mục và chọn phương án tối ưu.
 // Không gọi mạng: chỉ dùng dữ liệu trong entry (cache).
 import { median, mean, sentenceKey, norm, clip } from "./text.js";
+import { cleanTechName } from "./extract.js";
 
 // Hai câu coi là một ý nếu khóa trùng hoặc câu này nằm trọn trong câu kia (≥ 25 ký tự)
 function findSimilar(map, key) {
@@ -22,6 +23,8 @@ function rank(map, limit) {
   return [...map.values()].sort((a, b) => b.srcIds.length - a.srcIds.length || b.count - a.count).slice(0, limit);
 }
 
+const cleanTechs = (list) => (list ?? []).map((t) => ({ ...t, name: cleanTechName(t.name, 80) })).filter((t) => t.name);
+
 export function priceStats(prices) {
   const vals = prices.map((p) => p.value).filter((v) => v > 0);
   if (!vals.length) return { count: 0, avg: null, median: null, min: null, max: null, items: [], dropped: [] };
@@ -40,7 +43,7 @@ export function summarize(entry) {
   const pros = new Map(), cons = new Map(), tech = new Map();
   for (const c of entry.pros) addIds(pros, sentenceKey(c.text), c, c.srcId);
   for (const c of entry.cons) addIds(cons, sentenceKey(c.text), c, c.srcId);
-  if (entry.category === "tech") for (const t of entry.tech) addIds(tech, sentenceKey(t.name), t, t.srcId);
+  if (entry.category === "tech") for (const t of cleanTechs(entry.tech)) addIds(tech, sentenceKey(t.name), t, t.srcId);
   const price = priceStats(entry.prices);
   return {
     price,
@@ -96,9 +99,9 @@ export function comparisonRows(entry) {
       cons: a.cons.map((p) => p.text),
       prosFull: a.pros.map((p) => ({ text: p.text, srcIds: p.srcId ? [p.srcId] : [] })),
       consFull: a.cons.map((p) => ({ text: p.text, srcIds: p.srcId ? [p.srcId] : [] })),
-      techFull: a.tech,
-      tech: a.tech.map((t) => t.name),
-      techDetail: a.tech,
+      techFull: cleanTechs(a.tech),
+      tech: cleanTechs(a.tech).map((t) => t.name),
+      techDetail: cleanTechs(a.tech),
       vsMain: a.vsMain,
       evidence: verifiedCount([...a.srcIds]),
       image: a.images[0]?.url ?? null,
@@ -174,8 +177,8 @@ export function technologyComparison(entry) {
   const s = summarize(entry);
   const mainBrand = entry.product.brand || "Sản phẩm đang xem";
   const rows = [
-    { brand: mainBrand, model: entry.product.model, isMain: true, tech: entry.tech.map((t) => ({ name: t.name, benefit: t.benefit, drawback: t.drawback, srcIds: t.srcId ? [t.srcId] : [] })), pros: s.pros.map((p) => ({ text: p.text, srcIds: p.srcIds })), cons: s.cons.map((p) => ({ text: p.text, srcIds: p.srcIds })) },
-    ...entry.alternatives.map((a) => ({ brand: a.brand || a.name, model: a.model, isMain: false, tech: a.tech.map((t) => ({ name: t.name, benefit: t.benefit, drawback: t.drawback, srcIds: t.srcId ? [t.srcId] : a.srcIds.slice(0, 1) })), pros: a.pros.map((p) => ({ text: p.text, srcIds: p.srcId ? [p.srcId] : [] })), cons: a.cons.map((p) => ({ text: p.text, srcIds: p.srcId ? [p.srcId] : [] })) })),
+    { brand: mainBrand, model: entry.product.model, isMain: true, tech: cleanTechs(entry.tech).map((t) => ({ name: t.name, benefit: t.benefit, drawback: t.drawback, srcIds: t.srcId ? [t.srcId] : [] })), pros: s.pros.map((p) => ({ text: p.text, srcIds: p.srcIds })), cons: s.cons.map((p) => ({ text: p.text, srcIds: p.srcIds })) },
+    ...entry.alternatives.map((a) => ({ brand: a.brand || a.name, model: a.model, isMain: false, tech: cleanTechs(a.tech).map((t) => ({ name: t.name, benefit: t.benefit, drawback: t.drawback, srcIds: t.srcId ? [t.srcId] : a.srcIds.slice(0, 1) })), pros: a.pros.map((p) => ({ text: p.text, srcIds: p.srcId ? [p.srcId] : [] })), cons: a.cons.map((p) => ({ text: p.text, srcIds: p.srcId ? [p.srcId] : [] })) })),
   ];
 
   const items = [];

@@ -5,7 +5,8 @@
 // Dùng /api/discover (công cụ tìm miễn phí), không tốn hạn mức AI.
 import { addSource, ingestPage, logEvent } from "./entry.js";
 import { domainOf, normUrl, norm, clip } from "./text.js";
-import { detectBrands } from "./plan.js";
+import { detectBrands, canonBrand } from "./plan.js";
+import { cleanTechName } from "./extract.js";
 import { brandKeys, interleave } from "./keygen.js";
 
 const SKIP_HOSTS = /(^|\.)(google\.[a-z.]+|bing\.com|facebook\.com|youtube\.com|youtu\.be|tiktok\.com|instagram\.com|twitter\.com|x\.com|pinterest\.[a-z]+|reddit\.com|zalo\.me|t\.me|wikipedia\.org)$/i;
@@ -21,7 +22,9 @@ async function pool(items, size, fn, signal) {
   }));
 }
 
-function altFor(entry, brand) {
+function altFor(entry, rawBrand) {
+  const brand = canonBrand(rawBrand);
+  if (!brand) return null;
   const k = norm(brand);
   let a = entry.alternatives.find((x) => norm(x.brand) === k);
   if (!a && entry.alternatives.length < MAX_ALTS) {
@@ -150,7 +153,7 @@ export async function expandResearch(entry, keys, { api, store, emit = () => {},
         if (!alt.model && page.product?.sku) alt.model = clip(page.product.sku, 40);
         takeNew(alt.pros, page.pros ?? [], (text) => ({ text, srcId: p.srcId, verified: true, via: "page" }));
         takeNew(alt.cons, page.cons ?? [], (text) => ({ text, srcId: p.srcId, verified: true, via: "page" }));
-        if (entry.category === "tech") takeNew(alt.tech, page.tech ?? [], (name) => ({ name: clip(name, 60), benefit: "", drawback: "", srcId: p.srcId }));
+        if (entry.category === "tech") takeNew(alt.tech, (page.tech ?? []).map((x) => cleanTechName(x, 60)).filter(Boolean), (name) => ({ name: clip(name, 60), benefit: "", drawback: "", srcId: p.srcId }));
       }
       stats.pages++;
       emit({ type: "entry", entry });

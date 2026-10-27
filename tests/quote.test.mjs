@@ -173,3 +173,79 @@ test("ngân hàng công nghệ: mỗi mục đủ trường, điểm 0–10", as
     }
   }
 });
+
+import { saveWizard, recallWizard, savedFor } from "../web/js/lib/wizcache.js";
+import { preCards, analyzeInput } from "../web/js/lib/intent.js";
+
+function memStorage() { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }; }
+
+test("wizcache: nhớ câu trả lời theo từ khóa và theo loại hàng, điền lại đúng thẻ", () => {
+  const st = memStorage();
+  const cards = preCards(analyzeInput("Máy lọc nước Kangaroo"));
+  const brandCard = cards.find((c) => c.id === "cores") ?? cards.find((c) => c.kind === "query");
+  const opt = brandCard.options[0];
+  saveWizard({ baseKey: "k1|tech", typeId: "purifier", answers: { [brandCard.id]: { value: opt.value, add: opt.add }, other: { custom: "tự gõ" } }, adds: [opt.add] }, st);
+  // cùng từ khóa: điền lại đúng, exact
+  const same = recallWizard({ baseKey: "k1|tech", typeId: "purifier", cards }, st);
+  assert.equal(same.exact, true);
+  assert.equal(same.answers[brandCard.id].value, opt.value);
+  assert.equal(same.answers[brandCard.id].add, opt.add);
+  // sản phẩm khác cùng loại: gợi ý lại lựa chọn gần nhất, không exact
+  const other = recallWizard({ baseKey: "k2|tech", typeId: "purifier", cards }, st);
+  assert.equal(other.exact, false);
+  assert.equal(other.answers[brandCard.id].value, opt.value);
+  // loại khác: không điền
+  assert.deepEqual(recallWizard({ baseKey: "k3|tech", typeId: "tv", cards }, st).answers, {});
+  // lựa chọn không còn tồn tại thì bỏ, chữ tự nhập thì giữ
+  saveWizard({ baseKey: "k4|tech", typeId: "purifier", answers: { [brandCard.id]: { value: "không còn", add: "x" } } }, st);
+  assert.equal(recallWizard({ baseKey: "k4|tech", typeId: "x", cards }, st).answers[brandCard.id], undefined);
+  assert.deepEqual(savedFor("k1|tech", st).adds, [opt.add]);
+  assert.equal(savedFor("zzz", st), null);
+});
+
+import { cleanTechName, extractFacts } from "../web/js/lib/extract.js";
+import { canonBrand, detectBrand } from "../web/js/lib/plan.js";
+import { ingestPage, ingestProduct } from "../web/js/lib/entry.js";
+import { summarize } from "../web/js/lib/aggregate.js";
+
+test("cleanTechName: bỏ tên bị cắt dở, cả câu, chung chung; không tự cắt ngắn", () => {
+  assert.equal(cleanTechName("Công nghệ Rapid Air"), "Công nghệ Rapid Air");
+  assert.equal(cleanTechName("Công nghệ Inverter và"), "Công nghệ Inverter");
+  assert.equal(cleanTechName("Công nghệ làm lạnh tiên tiến nhất…"), "");
+  assert.equal(cleanTechName("Công nghệ lọc RO (thẩm thấu"), "Công nghệ lọc RO");
+  assert.equal(cleanTechName("Công nghệ hiện đại"), "");
+  assert.equal(cleanTechName("Máy giúp bạn nấu ăn nhanh hơn rất nhiều lần so với các loại khác."), "");
+  assert.equal(cleanTechName("360"), "");
+  assert.equal(cleanTechName("x".repeat(70)), "");
+});
+
+test("canonBrand: viết đúng tên hãng, bỏ chuỗi không phải tên hãng", () => {
+  assert.equal(canonBrand("lg"), "LG");
+  assert.equal(canonBrand("TP-LINK"), "TP-Link");
+  assert.equal(canonBrand("kangaroo"), "Kangaroo");
+  assert.equal(canonBrand("Hãng X"), "Hãng X");
+  assert.equal(canonBrand("một hãng rất dài nhiều chữ lắm nhé"), "");
+  assert.equal(canonBrand("Samsung…"), "");
+  assert.equal(detectBrand("tai nghe jbl tune"), "JBL");
+});
+
+test("techLandscape: 'rõ ràng' không bị nhận nhầm là RO; chữ RO viết hoa thì nhận", () => {
+  const e1 = newEntry(makePlan({ text: "Máy lọc nước Kangaroo KG100", category: "tech" }), "a|tech");
+  e1.pros.push({ text: "Lọc nước rõ ràng, uống ngon", srcId: 1 });
+  assert.equal(techLandscape(e1).items.find((i) => i.id === "ro").has, false);
+  e1.pros.push({ text: "Màng lọc RO 0,0001 micron", srcId: 1 });
+  assert.equal(techLandscape(e1).items.find((i) => i.id === "ro").has, true);
+});
+
+test("trang khác hãng (tên giống) không phải sản phẩm mục tiêu; giá AI gắn với trang đó bị bỏ", () => {
+  const html = (brand) => `<html><head><title>Máy lọc nước ${brand} 7 lõi</title></head><body><h1>Máy lọc nước ${brand} 7 lõi</h1><p>Giá: 5.490.000 đ</p></body></html>`;
+  const hint = { name: "Máy lọc nước Kangaroo 7 lõi", brand: "Kangaroo", model: "" };
+  assert.equal(extractFacts(html("Karofi"), "https://shop.vn/a", hint).relevant, false);
+  assert.equal(extractFacts(html("Kangaroo"), "https://shop.vn/b", hint).relevant, true);
+  const entry = newEntry(makePlan({ text: "Máy lọc nước Kangaroo 7 lõi", category: "tech" }), "k|tech");
+  ingestProduct(entry, { data: { product: { name: "Máy lọc nước Karofi", brand: "Karofi" }, prices: [{ value: 5490000, source: "https://shop.vn/a" }] }, sources: [{ url: "https://shop.vn/a", title: "" }] });
+  assert.equal(entry.product.brand.toLowerCase(), "kangaroo", "AI trả hãng khác: giữ hãng người dùng gõ");
+  assert.equal(entry.prices.length, 1);
+  ingestPage(entry, { ...extractFacts(html("Karofi"), "https://shop.vn/a", hint), url: "https://shop.vn/a", ok: true, domain: "shop.vn" });
+  assert.equal(summarize(entry).price.count, 0);
+});
