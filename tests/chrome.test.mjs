@@ -120,7 +120,7 @@ test("hybrid: Google Chế độ AI -> ưu/nhược điểm/giá có nguồn th�
   const plan = { query: "Nồi chiên không dầu Zeta ZF-500", name: "Nồi chiên không dầu Zeta ZF-500", model: "ZF-500", brand: "Zeta", category: "tech", generic: "nồi chiên không dầu", queries: [] };
   const r = await api.search("product", plan);
   assert.equal(r.provider, "chrome");
-  assert.equal(r.model, "Google Chế độ AI");
+  assert.equal(r.model, "Google");
   assert.equal(r.data.pros.length, 4);
   assert.equal(r.data.cons.length, 3);
   assert.equal(r.data.prices[0].value, 2500000);
@@ -199,7 +199,7 @@ test("pipeline với Google Chrome: Chế độ AI -> trang nguồn -> hãng kh�
   assert.equal(new Set(ext.log.fetch).size, ext.log.fetch.length - ext.log.fetch.filter((u, i, a) => a.indexOf(u) !== i).length + 0 || true, true);
   const pageUrls = entry.pages.map((p) => p.url);
   assert.equal(new Set(pageUrls).size, pageUrls.length, "mỗi trang ghi log đúng 1 lần");
-  assert.ok(entry.log.some((l) => /Google Chế độ AI trong Chrome/.test(l.msg)));
+  assert.ok(entry.log.some((l) => /Google \(tìm nâng cao\) trong Chrome/.test(l.msg)));
 
   // bảng NCC: mỗi trang cửa hàng Google dẫn tới là một dòng, dữ liệu đọc từ đúng trang đó, kèm liên hệ
   const rows = applyView(tableRows(entry), DEFAULT_VIEW);

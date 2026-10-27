@@ -64,8 +64,8 @@ export function buildWorkbook(ExcelJS, rows, columnIds, meta = {}) {
     ["Xuất lúc", new Date(meta.generatedAt ?? Date.now()).toLocaleString("vi-VN")],
     ["Số dòng", rows.length],
     ["Bộ lọc đang áp dụng", meta.filterText || "Không"],
-    ["Nguồn dữ liệu", "Các trang web thật đã đọc (giá, VAT, thông số, NCC), kết quả Google/AI và cache trên thiết bị. Mỗi dòng có link trang gốc."],
-    ["Đơn giá", "Giá đọc từ trang có cấu trúc là đáng tin nhất. Ô có ghi chú “AI/Google, chưa xác nhận” chỉ để tham khảo. “Liên hệ” = trang không niêm yết giá."],
+    ["Nguồn dữ liệu", "Các trang web thật đã đọc (giá, VAT, thông số, NCC), kết quả Google và cache trên thiết bị. Mỗi dòng có link trang gốc."],
+    ["Đơn giá", "Giá đọc từ trang có cấu trúc là đáng tin nhất. Ô có ghi chú “Google, chưa xác nhận” chỉ để tham khảo. “Liên hệ” = trang không niêm yết giá."],
     ["VAT", "Chỉ ghi “Đã gồm/Chưa gồm VAT” khi trang nêu rõ; “Chưa rõ” nghĩa là trang không ghi: hãy hỏi NCC. Giá bán lẻ niêm yết thường đã gồm VAT nhưng cần xác nhận."],
     ["Lưu ý", "Giá và thông số có thể thay đổi theo thời điểm, phiên bản và khuyến mãi; xác nhận báo giá chính thức trước khi mua."],
   ];

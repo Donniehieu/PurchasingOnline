@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Mua hàng thông minh</title>
-  <meta name="description" content="Tìm kiếm, tư vấn và so sánh sản phẩm bằng AI: giá, ưu nhược điểm, công nghệ, kèm nguồn.">
-  <meta name="theme-color" content="#2b4ccf" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#14182b" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Tìm, so sánh và chọn sản phẩm, nhà cung cấp phù hợp nhu cầu và ngân sách: giá, ưu nhược điểm, công nghệ, kèm nguồn.">
+  <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#14172b" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Mua hàng">
@@ -17,29 +17,44 @@
   <link rel="stylesheet" href="table.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand">
-    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
-    <div><b>Mua hàng thông minh</b><small id="modeTag">AI tìm · cache · so sánh</small></div>
+<header class="top" id="top">
+  <div class="top-bar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+      <div><b>Mua hàng thông minh</b><small id="modeTag">Tìm · lưu · so sánh</small></div>
+    </div>
+    <div class="top-actions">
+      <button id="btnInstall" class="icon-btn install" hidden title="Cài ứng dụng">Cài app</button>
+      <button id="btnHistory" class="icon-btn" aria-label="Lịch sử đã lưu" title="Lịch sử đã lưu"><svg viewBox="0 0 24 24"><path d="M12 7v5l3 2M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button id="btnSettings" class="icon-btn" aria-label="Cài đặt" title="Cài đặt"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
   </div>
-  <div class="top-actions">
-    <button id="btnInstall" class="icon-btn install" hidden title="Cài ứng dụng">Cài app</button>
-    <button id="btnHistory" class="icon-btn" aria-label="Lịch sử đã lưu" title="Lịch sử đã lưu"><svg viewBox="0 0 24 24"><path d="M12 7v5l3 2M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <button id="btnSettings" class="icon-btn" aria-label="Cài đặt" title="Cài đặt"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-  </div>
+  <!-- Các tab nằm trong thanh đầu trang nên luôn thấy, kể cả khi kéo thanh cuộn lên xuống -->
+  <nav class="tabs" role="tablist" id="tabs" aria-label="Các phần kết quả" hidden>
+    <button role="tab" data-tab="summary" aria-selected="true">Tổng hợp</button>
+    <button role="tab" data-tab="advice" aria-selected="false">Tư vấn chọn</button>
+    <button role="tab" data-tab="suppliers" aria-selected="false">Nhà cung cấp</button>
+    <button role="tab" data-tab="table" aria-selected="false">Bảng NCC</button>
+    <button role="tab" data-tab="compare" aria-selected="false">So sánh</button>
+    <button role="tab" data-tab="tech" aria-selected="false" id="tabTechBtn">Công nghệ</button>
+    <button role="tab" data-tab="images" aria-selected="false">Hình ảnh</button>
+    <button role="tab" data-tab="log" aria-selected="false">Nhật ký</button>
+    <button role="tab" data-tab="ask" aria-selected="false">Hỏi đáp</button>
+  </nav>
 </header>
 
 <main id="main">
   <div id="extBanner" class="alert info" hidden></div>
-  <section class="card search" aria-label="Tìm sản phẩm">
+  <section class="card search" aria-label="Tìm sản phẩm" id="dropZone">
     <form id="form" autocomplete="off">
       <label for="q" class="sr-only">Tên sản phẩm hoặc mã model</label>
-      <textarea id="q" rows="2" maxlength="300" placeholder="Tên / mã model, hoặc dán link sản phẩm. Ví dụ: Tai nghe Sony WH-1000XM5" enterkeyhint="search"></textarea>
+      <textarea id="q" rows="2" maxlength="500" placeholder="Tên / mã model, hoặc dán link sản phẩm. Ví dụ: Tai nghe Sony WH-1000XM5. Có thể dán ảnh (Ctrl+V)." enterkeyhint="search"></textarea>
       <div class="row">
-        <button type="button" id="btnPhoto" class="btn ghost" title="Đọc sản phẩm từ ảnh">
+        <button type="button" id="btnPhoto" class="btn ghost" title="Chọn ảnh sản phẩm từ máy">
           <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
           Ảnh
         </button>
+        <button type="button" id="btnPaste" class="btn ghost" title="Dán ảnh đang sao chép (hoặc bấm Ctrl+V trong trang)">Dán ảnh</button>
         <label class="sr-only" for="cat">Loại hàng</label>
         <select id="cat" class="btn ghost">
           <option value="auto">Tự nhận loại hàng</option>
@@ -48,6 +63,21 @@
         </select>
         <button type="submit" id="btnGo" class="btn primary">Tìm hiểu</button>
       </div>
+      <div id="pasteInfo" class="paste-info" hidden>
+        <img id="pastePreview" alt="Ảnh đã dán">
+        <span id="ocrNote" class="muted"></span>
+        <button type="button" id="pasteClear" class="chip">Bỏ ảnh</button>
+      </div>
+      <details class="need" id="needBox">
+        <summary>Nhu cầu của bạn <span class="muted small">(không bắt buộc · dùng để gợi ý sản phẩm, NCC)</span></summary>
+        <div class="need-grid">
+          <label>Mục đích sử dụng<input id="nPurpose" type="text" maxlength="80" placeholder="Ví dụ: gia đình 4 người, văn phòng, chơi game"></label>
+          <label>Ngân sách từ<input id="nMin" type="text" inputmode="text" placeholder="3tr hoặc 3000000"></label>
+          <label>Ngân sách đến<input id="nMax" type="text" inputmode="text" placeholder="5tr hoặc 5000000"></label>
+          <label>Ưu tiên<select id="nPriority"><option value="balanced">Cân bằng</option><option value="cheap">Giá rẻ nhất</option><option value="quality">Chất lượng, công nghệ</option><option value="durable">Bền, bảo hành tốt</option></select></label>
+        </div>
+        <p id="nHint" class="muted small" style="margin:6px 0 0">Tự điền từ câu bạn gõ (ví dụ “dưới 5 triệu cho gia đình 4 người”), bạn có thể sửa. Các ô này <b>không dùng để tìm kiếm</b>: từ khóa tìm luôn là đúng chữ bạn nhập.</p>
+      </details>
       <div class="row small">
         <label class="check">Khi đã có trong cache:
           <select id="mode" class="btn ghost sm">
@@ -55,7 +85,6 @@
             <option value="cache">chỉ xem cache, không tìm</option>
             <option value="fresh">làm lại từ đầu (xóa dữ liệu cũ)</option>
           </select></label>
-        <span id="ocrNote" class="muted"></span>
       </div>
       <input type="file" id="file" accept="image/*" hidden>
     </form>
@@ -70,11 +99,11 @@
   <section id="empty" class="card hint">
     <h2>Cách dùng nhanh</h2>
     <ol>
-      <li>Nhập <b>tên hoặc mã model</b> (hoặc chụp ảnh sản phẩm).</li>
-      <li>AI tìm trên web trước, lưu vào <b>cache</b>, rồi mở các trang nguồn để lấy giá, ảnh, ưu/nhược điểm.</li>
-      <li>Hỏi tiếp bất kỳ lúc nào: câu trả lời lấy từ cache, <b>ngắn gọn và gắn nguồn</b>.</li>
+      <li>Nhập <b>tên hoặc mã model</b> (hoặc dán/chụp ảnh sản phẩm). Có thể ghi thêm ngân sách, mục đích.</li>
+      <li>Ứng dụng tìm trên web, lưu vào <b>cache</b>, rồi mở từng trang bán hàng để lấy giá, VAT, thông số, liên hệ nhà cung cấp.</li>
+      <li>Mở tab <b>Tư vấn chọn</b> để chọn sản phẩm rồi nhà cung cấp hợp nhu cầu và ngân sách. Hỏi tiếp bất kỳ lúc nào: câu trả lời lấy từ dữ liệu đã lưu, <b>ngắn gọn và gắn nguồn</b>.</li>
     </ol>
-    <p id="extHint" class="muted small" hidden>Muốn tìm bằng <b>Google Chế độ AI</b> trong Chrome của bạn (ít bị chặn 403)? <a href="ext/mua-hang-extension.zip" download>Tải tiện ích</a>, giải nén, rồi làm theo README.</p>
+    <p id="extHint" class="muted small" hidden>Muốn tìm bằng <b>Google</b> ngay trong Chrome của bạn (ít bị chặn 403)? <a href="ext/mua-hang-extension.zip" download>Tải tiện ích</a>, giải nén, rồi làm theo README.</p>
     <div id="recent" class="chips"></div>
   </section>
 
@@ -83,16 +112,9 @@
     <article id="headline" class="card headline"></article>
     <article id="verdict" class="card verdict" hidden></article>
 
-    <nav class="tabs" role="tablist" id="tabs">
-      <button role="tab" data-tab="summary" aria-selected="true">Tổng hợp</button>
-      <button role="tab" data-tab="table" aria-selected="false">Bảng NCC</button>
-      <button role="tab" data-tab="compare" aria-selected="false">So sánh</button>
-      <button role="tab" data-tab="tech" aria-selected="false" id="tabTechBtn">Công nghệ</button>
-      <button role="tab" data-tab="images" aria-selected="false">Hình ảnh</button>
-      <button role="tab" data-tab="log" aria-selected="false">Nhật ký</button>
-      <button role="tab" data-tab="ask" aria-selected="false">Hỏi đáp</button>
-    </nav>
     <div id="tab-summary" class="panel" role="tabpanel"></div>
+    <div id="tab-advice" class="panel" role="tabpanel" hidden></div>
+    <div id="tab-suppliers" class="panel" role="tabpanel" hidden></div>
     <div id="tab-table" class="panel" role="tabpanel" hidden></div>
     <div id="tab-compare" class="panel" role="tabpanel" hidden></div>
     <div id="tab-tech" class="panel" role="tabpanel" hidden></div>
@@ -130,10 +152,10 @@
   <form method="dialog" id="settingsForm" class="settings">
     <h2>Cài đặt</h2>
     <label>Địa chỉ máy chủ <small>(để trống = cùng địa chỉ trang này)</small>
-      <input id="sApi" type="url" placeholder="https://ten-ung-dung.workers.dev" inputmode="url"></label>
-    <label>AI dùng để tìm
-      <select id="sProvider"><option value="auto">Tự chọn: Google Chrome → AI có khóa → miễn phí</option><option value="chrome">Chỉ Google trong Chrome (cần tiện ích)</option><option value="free">Miễn phí, không cần khóa (không có AI)</option><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select></label>
-    <label>Khóa AI của bạn <small>(không bắt buộc nếu máy chủ đã có khóa; lưu trên thiết bị này)</small>
+      <input id="sApi" type="url" placeholder="https://muahangthongminh.workers.dev" inputmode="url"></label>
+    <label>Nguồn tìm kiếm
+      <select id="sProvider"><option value="auto">Tự chọn: Google Chrome → dịch vụ có khóa → miễn phí</option><option value="chrome">Chỉ Google trong Chrome (cần tiện ích)</option><option value="free">Miễn phí, không cần khóa</option><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select></label>
+    <label>Khóa dịch vụ của bạn <small>(không bắt buộc nếu máy chủ đã có khóa; lưu trên thiết bị này)</small>
       <input id="sKey" type="password" placeholder="sk-ant-… hoặc AIza…" autocomplete="off"></label>
     <label>Mã truy cập <small>(nếu chủ ứng dụng đặt)</small>
       <input id="sCode" type="password" autocomplete="off"></label>

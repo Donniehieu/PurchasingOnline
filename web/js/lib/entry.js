@@ -33,6 +33,15 @@ export function newEntry(plan, key) {
   };
 }
 
+export const MAX_IMAGES = 5;
+/** Chỉ giữ MAX_IMAGES ảnh tốt nhất (điểm cao trước; bằng điểm thì giữ ảnh đến trước). */
+export function keepBestImages(list, max = MAX_IMAGES) {
+  if (list.length <= max) return list;
+  const ranked = list.map((im, i) => ({ im, i })).sort((x, y) => (y.im.score ?? 0) - (x.im.score ?? 0) || x.i - y.i).slice(0, max).sort((x, y) => x.i - y.i).map((x) => x.im);
+  list.splice(0, list.length, ...ranked);
+  return list;
+}
+
 export function logEvent(entry, kind, msg, extra = {}) {
   entry.log.push({ ts: Date.now(), kind, msg, ...extra });
   entry.updatedAt = Date.now();
@@ -191,19 +200,20 @@ export function ingestPage(entry, page, ctx = {}) {
       }
     }
     const imgs = page.images ?? [];
-    const have = new Set(entry.images.map((i) => normUrl(i.url)));
+    const target = forAlt ? forAlt.images : entry.images;
+    const have = new Set(target.map((i) => normUrl(i.url)));
     for (const im of imgs) {
-      if (!forAlt && entry.images.length >= 24) break; // đủ ảnh, không gom thêm
       const k = normUrl(im.url);
       if (have.has(k)) continue;
       have.add(k);
-      const rec2 = { url: im.url, alt: clip(im.alt || "", 100), srcId, score: im.score ?? 0, for: forAlt ? forAlt.brand || forAlt.name : "main" };
-      if (forAlt) forAlt.images.push(rec2); else entry.images.push(rec2);
+      target.push({ url: im.url, alt: clip(im.alt || "", 100), srcId, score: im.score ?? 0, for: forAlt ? forAlt.brand || forAlt.name : "main" });
       rec.found.images++;
     }
+    keepBestImages(target);
   }
   // liên hệ của NCC (theo tên miền): lấy từ mọi trang đã đọc, kể cả trang không khớp model
   if (page.contact) mergeSellerContact(entry, page.finalUrl || page.url, page.contact);
+  noteSupplier(entry, page, forAlt ? false : !!page.relevant);
   if (page.relevant || forAlt) {
     const pr = page.product?.price;
     upsertOffer(entry, {
@@ -228,6 +238,8 @@ export function ingestListing(entry, page) {
   if (!page.ok) return ingestPage(entry, page);
   const srcId = addSource(entry, page.finalUrl || page.url, page.title, "page");
   const rec = { url: page.url, finalUrl: page.finalUrl || page.url, ok: true, status: page.status ?? 200, title: clip(page.title || "", 120), ts: Date.now(), ms: page.ms ?? 0, relevant: false, error: "", for: "hãng khác", srcId, found: { price: 0, pros: 0, cons: 0, tech: 0, images: 0 } };
+  noteSupplier(entry, page, false);
+  if (page.contact) mergeSellerContact(entry, page.finalUrl || page.url, page.contact);
   const mainBrand = norm(entry.product.brand);
   const mainKey = modelKey(entry.product.model);
   const mainPrice = priceStats(entry.prices).median;
@@ -257,6 +269,29 @@ export function ingestListing(entry, page) {
   entry.pages.push(rec);
   logEvent(entry, "page", `Đã mở ${page.domain} để tìm hãng khác: ${rec.found.price ? rec.found.price + " hãng mới" : "không có hãng mới"}`, { url: page.url, ok: true, srcId });
   return rec;
+}
+
+/**
+ * Ghi nhớ NCC của MỌI trang đã đọc được (kể cả trang không khớp model): tên NCC, các trang đã đọc, có bán đúng sản phẩm không.
+ * Thông tin liên hệ nằm ở entry.contacts[tên miền]. Danh bạ này cũng được lưu chung ở store.suppliers.
+ */
+export function noteSupplier(entry, page, matched = false) {
+  const url = page.finalUrl || page.url;
+  const d = domainOf(url);
+  if (!d || /(^|\.)google\./.test(d)) return null;
+  entry.suppliers ??= {};
+  const s = (entry.suppliers[d] ??= { domain: d, name: "", pages: [], matched: false, firstTs: Date.now() });
+  const nm = String(page.seller || "").trim();
+  if (nm && nm.toLowerCase() !== d && (!s.name || nm.length < s.name.length + 30)) s.name = clip(nm, 80);
+  const key = normUrl(url);
+  const p = s.pages.find((x) => x.key === key);
+  const price = page.product?.price?.value ?? null;
+  if (p) { p.relevant = p.relevant || !!matched; if (price != null) p.price = price; }
+  else s.pages.push({ key, url, title: clip(page.title || "", 100), relevant: !!matched, price });
+  if (s.pages.length > 12) s.pages = s.pages.slice(-12);
+  s.matched = s.matched || !!matched;
+  s.ts = Date.now();
+  return s;
 }
 
 /** Gộp thông tin liên hệ vào entry.contacts[tên miền]. */
@@ -301,14 +336,14 @@ export function ingestContactPage(entry, domain, page) {
 
 // Ưu/nhược điểm/công nghệ của một hãng khác, lấy từ Google Chế độ AI (nguồn là chính trang Google AI đó)
 export function ingestAltInsight(entry, alt, ins) {
-  const srcId = addSource(entry, ins.url, "Google Chế độ AI: " + ins.query, "ai");
+  const srcId = addSource(entry, ins.url, "Google: " + ins.query, "ai");
   const d = ins.data;
   for (const c of d.pros.slice(0, 4)) alt.pros.push({ text: clip(decodeEntities(c.text), 240), srcId, verified: true, via: "ai" });
   for (const c of d.cons.slice(0, 4)) alt.cons.push({ text: clip(decodeEntities(c.text), 240), srcId, verified: true, via: "ai" });
   if (entry.category === "tech") for (const t of d.technologies.slice(0, 4)) alt.tech.push({ name: clip(t.name, 60), benefit: clip(t.benefit, 160), drawback: "", srcId });
   if (!alt.price) { const pr = d.prices[0]; if (pr) { alt.price = pr.value; alt.priceSrcId = srcId; } }
   if (srcId && !alt.srcIds.includes(srcId)) alt.srcIds.push(srcId);
-  logEvent(entry, "ai", `Google AI về ${alt.brand}: ${d.pros.length} ưu điểm, ${d.cons.length} nhược điểm`, { srcId });
+  logEvent(entry, "ai", `Google về ${alt.brand}: ${d.pros.length} ưu điểm, ${d.cons.length} nhược điểm`, { srcId });
 }
 
 const LABEL = { price: "giá", pros: "ưu điểm", cons: "nhược điểm", tech: "công nghệ", images: "ảnh" };

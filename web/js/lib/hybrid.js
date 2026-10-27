@@ -142,7 +142,7 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
       technologies: d.technologies.map((t) => ({ name: t.name, benefit: t.benefit, drawback: t.drawback, source: srcFor(t) })),
       specs: d.specs,
     };
-    const sources = [{ url: aiUrl, title: "Google Chế độ AI: " + q }, ...[...resolved.values()].map((x) => ({ url: x.url, title: x.title }))];
+    const sources = [{ url: aiUrl, title: "Google: " + q }, ...[...resolved.values()].map((x) => ({ url: x.url, title: x.title }))];
     const queries = [q];
     // Thêm một lượt Google thường: mở các trang bán hàng THẬT trong kết quả (liên kết /goto dẫn thẳng tới trang đích)
     // để lấy giá, thông số, liên hệ của từng nhà cung cấp cho bảng NCC. Dữ liệu lấy từ đúng trang đó.
@@ -162,7 +162,7 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
         }
       }
     } catch (e) { if (e.name === "AbortError") throw e; /* không có lượt tìm thêm vẫn dùng được kết quả AI */ }
-    return { ok: true, task: "product", data, sources, queries, provider: "chrome", model: "Google Chế độ AI", ms: Date.now() - t0, chrome: true, resolved: resolved.size, shops, cached: !!r.cached };
+    return { ok: true, task: "product", data, sources, queries, provider: "chrome", model: "Google", ms: Date.now() - t0, chrome: true, resolved: resolved.size, shops, cached: !!r.cached };
   }
 
   async function chromeCompare(plan, signal) {
@@ -207,7 +207,7 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
       const r = await bridge.call("googleAI", { q }, 180000);
       abortIf(signal);
       if (!r.ok) return { ok: false, blocked: !!r.blocked, rate: !!r.rate, error: r.message || r.error };
-      if (r.mode !== "ai") return { ok: false, error: "Google không có Chế độ AI cho truy vấn này" };
+      if (r.mode !== "ai") return { ok: false, error: "Google không trả lời nâng cao cho truy vấn này" };
       return { ok: true, data: parseAnswer(r, { category: plan.category }), url: googleAIUrl(q), query: q };
     },
 

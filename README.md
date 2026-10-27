@@ -113,7 +113,7 @@ npx wrangler secret put APP_CODE
 npm run deploy
 ```
 
-Lệnh in địa chỉ dạng `https://mua-hang-thong-minh.<tên-bạn>.workers.dev`. Mở trên điện thoại:
+Lệnh in địa chỉ dạng `https://muahangthongminh.<tên-bạn>.workers.dev`. Mở trên điện thoại:
 - **Android/Chrome**: menu ⋮ → *Cài đặt ứng dụng*.
 - **iPhone/Safari**: Chia sẻ → *Thêm vào MH chính*.
 

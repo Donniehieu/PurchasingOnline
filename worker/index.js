@@ -97,8 +97,8 @@ async function handleSearch(request, env, origin) {
   const user = task === "compare" ? comparePrompt(plan, body.product ?? {}) : productPrompt(plan);
   const r = await callAI(sel, task, { system: SYSTEM, user, search: true, effort: env.CLAUDE_EFFORT || "medium", maxUses: task === "compare" ? 6 : 5, origin });
   const data = extractJson(r.text);
-  if (!data) throw new AIError("AI trả về dữ liệu không đọc được. Hãy thử lại.", 502);
-  if (task === "compare" && !Array.isArray(data.alternatives)) throw new AIError("AI không trả về danh sách sản phẩm so sánh.", 502);
+  if (!data) throw new AIError("Dịch vụ tìm trả về dữ liệu không đọc được. Hãy thử lại.", 502);
+  if (task === "compare" && !Array.isArray(data.alternatives)) throw new AIError("Dịch vụ tìm không trả về danh sách sản phẩm so sánh.", 502);
   verifyClaims(data, r.sources);
   return json({ ok: true, task, data, sources: r.sources, queries: r.queries, provider: r.provider, model: r.model, ms: r.ms, mock: r.provider === "mock" });
 }
@@ -117,7 +117,7 @@ async function handleAsk(request, env, origin) {
   const question = str(body.question, 400).trim();
   if (!question) throw new AIError("Chưa nhập câu hỏi.", 400);
   const sel = pickProvider(env, request.headers);
-  if (sel.provider === "free") throw new AIError("Chế độ miễn phí không có AI để trả lời câu hỏi tự do. Hãy dùng các nút Giá, Ưu điểm, Nhược điểm, Nên chọn, hoặc nhập khóa Gemini miễn phí ở Cài đặt.", 501);
+  if (sel.provider === "free") throw new AIError("Chế độ miễn phí không trả lời được câu hỏi tự do. Hãy dùng các nút Giá, Ưu điểm, Nhược điểm, Nên chọn, hoặc nhập khóa Gemini miễn phí ở Cài đặt.", 501);
   const r = await callAI(sel, "ask", { system: ASK_SYSTEM, user: askPrompt(question, body.context ?? {}), search: false, effort: "low", origin });
   return json({ ok: true, answer: r.text.trim(), provider: r.provider, model: r.model, ms: r.ms, mock: r.provider === "mock" });
 }
@@ -127,7 +127,7 @@ async function handleOcr(request, env, origin) {
   const im = body.image;
   if (!im?.data || !/^image\/(jpeg|png|webp|gif)$/.test(im.mime ?? "")) throw new AIError("Ảnh không hợp lệ (cần JPEG/PNG/WebP).", 400);
   const sel = pickProvider(env, request.headers);
-  if (sel.provider === "free") throw new AIError("Đọc chữ từ ảnh cần AI. Hãy nhập khóa Gemini miễn phí ở Cài đặt, hoặc gõ tên/model bằng tay.", 501);
+  if (sel.provider === "free") throw new AIError("Đọc chữ từ ảnh cần khóa dịch vụ. Hãy nhập khóa Gemini miễn phí ở Cài đặt, hoặc gõ tên/model bằng tay.", 501);
   const r = await callAI(sel, "ocr", { system: OCR_SYSTEM, user: OCR_PROMPT, search: false, images: [{ mime: im.mime, data: im.data }], effort: "low", origin });
   const data = extractJson(r.text);
   if (!data) throw new AIError("Không đọc được kết quả nhận diện ảnh.", 502);
@@ -143,7 +143,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.7.3", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.8.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });

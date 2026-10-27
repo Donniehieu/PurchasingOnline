@@ -77,7 +77,7 @@ async function claudeCall({ key, model, system, user, search, images, effort, ma
           for (const c of b.citations ?? []) if (c?.url && !sources.has(normUrl(c.url))) sources.set(normUrl(c.url), { url: c.url, title: c.title || "" });
         }
       }
-      if (msg.stop_reason === "refusal") throw new AIError("AI từ chối trả lời yêu cầu này.", 422);
+      if (msg.stop_reason === "refusal") throw new AIError("Dịch vụ từ chối trả lời yêu cầu này.", 422);
       if (msg.stop_reason === "pause_turn") { messages = [...messages, { role: "assistant", content: msg.content }]; continue; }
       break;
     }

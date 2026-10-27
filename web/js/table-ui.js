@@ -5,7 +5,7 @@ import { esc, money, clip } from "./lib/text.js";
 
 const KEY = "po-table-view";
 const FILTER_COLS = ["name", "price", "vat", "specs", "ncc", "contact", "link"];
-const PLACEHOLDER = { name: "lọc tên/model", price: "<3tr · 2tr-3tr", specs: "lọc thông số", ncc: "lọc NCC/hãng", contact: "lọc SĐT/email", link: "lọc trang" };
+const PLACEHOLDER = { name: "lọc tên/model", price: "<3tr · 2tr-3tr", specs: "công suất>=1500; inverter", ncc: "lọc NCC/hãng", contact: "lọc SĐT/email", link: "lọc trang" };
 const GOOD = { included: "good", excluded: "warn", rate: "good", unknown: "" };
 
 function loadSaved() {
@@ -30,7 +30,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
         <input type="search" class="tbl-q" placeholder="Lọc nhanh: tên, NCC, thông số…" aria-label="Lọc nhanh">
         <select class="tbl-src btn ghost sm" aria-label="Nguồn dữ liệu">
           <option value="page">Chỉ dữ liệu đã đọc từ đúng trang</option>
-          <option value="all">Gồm cả dữ liệu chưa xác nhận (AI/Google/danh sách)</option>
+          <option value="all">Gồm cả dữ liệu chưa xác nhận (Google/danh sách)</option>
         </select>
         <select class="tbl-grp btn ghost sm" aria-label="Nhóm theo">
           <option value="none">Không nhóm</option>
@@ -52,7 +52,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
       <div class="tbl-wrap" tabindex="0" role="region" aria-label="Bảng so sánh nhà cung cấp, kéo chuột hoặc cuộn để xem các cột">
         <table class="otbl"><thead><tr class="h"></tr><tr class="f"></tr></thead><tbody></tbody></table>
       </div>
-      <p class="muted small">Giữ chuột kéo trái/phải (hoặc cuộn) để xem các cột. Bấm tên cột để sắp xếp, dấu × để ẩn cột, nút “Cột” để hiện lại. Lọc giá: <code>&lt;3tr</code>, <code>&gt;2000000</code>, <code>2tr-3tr</code>. Xuất Excel theo đúng bảng đang xem (cột đang hiện, dòng đã lọc và sắp xếp).</p>
+      <p class="muted small">Giữ chuột kéo trái/phải (hoặc cuộn) để xem các cột. Bấm tên cột để sắp xếp, dấu × để ẩn cột, nút “Cột” để hiện lại. Lọc giá: <code>&lt;3tr</code>, <code>&gt;2000000</code>, <code>2tr-3tr</code>. Lọc thông số kỹ thuật (cách nhau bằng dấu <code>;</code>, phải đúng hết): <code>inverter</code>, <code>công suất: 1500</code>, <code>công suất&gt;=1500</code>, <code>dung tích&lt;=6 lít</code>; số phải khớp trọn (1500 không khớp 15000). Xuất Excel theo đúng bảng đang xem (cột đang hiện, dòng đã lọc và sắp xếp).</p>
     </div>`;
 
   const $ = (s) => host.querySelector(s);
@@ -66,7 +66,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
   frow.innerHTML = OFFER_COLUMNS.map((c) => {
     if (!FILTER_COLS.includes(c.id)) return `<th data-col="${c.id}"></th>`;
     if (c.id === "vat") return `<th data-col="vat"><select data-filter="vat" aria-label="Lọc VAT"><option value="">tất cả</option>${Object.entries(VAT_LABEL).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></th>`;
-    return `<th data-col="${c.id}"><input type="search" data-filter="${c.id}" placeholder="${esc(PLACEHOLDER[c.id])}" aria-label="Lọc ${esc(c.label)}"></th>`;
+    return `<th data-col="${c.id}"><input type="search" data-filter="${c.id}" placeholder="${esc(PLACEHOLDER[c.id])}" aria-label="Lọc ${esc(c.label)}"${c.id === "specs" ? ' title="Nhiều điều kiện cách nhau bằng dấu ; ví dụ: công suất>=1500; inverter. Số phải khớp trọn."' : ""}></th>`;
   }).join("");
   menu.innerHTML = OFFER_COLUMNS.filter((c) => c.id !== "stt").map((c) => `<label><input type="checkbox" data-colchk="${c.id}"> ${esc(c.label)}</label>`).join("") + `<button type="button" class="btn ghost sm" data-showall>Hiện tất cả cột</button>`;
 

@@ -56,7 +56,7 @@ export function parseAnswer({ lines, cites }, plan = {}) {
     if (/giá|price|mức giá|dao động|khoảng/i.test(t) || sec === "price") {
       const vals = pricesIn(t);
       if (vals.length && !/trả góp|\/tháng|voucher|giảm\s*\d/i.test(t)) {
-        const label = vals.length > 1 ? `Google AI: khoảng ${Math.min(...vals).toLocaleString("vi-VN")}–${Math.max(...vals).toLocaleString("vi-VN")} ₫` : "Google AI";
+        const label = vals.length > 1 ? `Google: khoảng ${Math.min(...vals).toLocaleString("vi-VN")}–${Math.max(...vals).toLocaleString("vi-VN")} ₫` : "Google AI";
         // khoảng giá hai đầu: dùng trung điểm để không kéo lệch thống kê; giữ nguyên khoảng trong nhãn
         const v = vals.length > 1 ? Math.round((Math.min(...vals) + Math.max(...vals)) / 2) : vals[0];
         out.prices.push({ value: v, label, cites: c, low: Math.min(...vals), high: Math.max(...vals) });

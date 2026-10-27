@@ -1,37 +1,42 @@
 // Cache lưu trong trình duyệt (IndexedDB), có thể xuất/nạp thành một file JSON duy nhất.
 //  - entries: kết quả mỗi lần tìm hiểu
 //  - pages:   kết quả đọc từng trang (giữ 7 ngày) để không tải lại cùng một trang
+//  - suppliers: danh bạ nhà cung cấp (tên, liên hệ, trang đã đọc) theo tên miền, dùng chung cho mọi lần tìm, không tự xóa theo kết quả
 const DB = "po-cache";
 const STORE = "entries";
 const PAGES = "pages";
+const SUPPLIERS = "suppliers";
 export const MAX_ENTRIES = 40;
 export const PAGE_DAYS = 7;
 export const MAX_PAGES = 400;
 
 export function createMemoryStore() {
-  const m = new Map(), pg = new Map();
+  const m = new Map(), pg = new Map(), sp = new Map();
   const clone = (x) => JSON.parse(JSON.stringify(x));
   return wrap({
     async get(k) { return m.get(k) ?? null; },
     async put(e) { m.set(e.key, clone(e)); },
     async del(k) { m.delete(k); },
     async all() { return [...m.values()].map(clone); },
-    async clear() { m.clear(); pg.clear(); },
+    async clear() { m.clear(); pg.clear(); sp.clear(); },
     async pget(k) { return pg.has(k) ? clone(pg.get(k)) : null; },
     async pput(r) { pg.set(r.key, clone(r)); },
     async pdel(k) { pg.delete(k); },
     async pall() { return [...pg.values()].map(clone); },
+    async sput(r) { sp.set(r.key, clone(r)); },
+    async sall() { return [...sp.values()].map(clone); },
   });
 }
 
 export function createIdbStore() {
   let dbp = null;
   const open = () => dbp ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 2);
+    const req = indexedDB.open(DB, 3);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "key" });
       if (!db.objectStoreNames.contains(PAGES)) db.createObjectStore(PAGES, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(SUPPLIERS)) db.createObjectStore(SUPPLIERS, { keyPath: "key" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -51,11 +56,13 @@ export function createIdbStore() {
     put: (e) => tx(STORE, "readwrite", (s) => s.put(e)),
     del: (k) => tx(STORE, "readwrite", (s) => s.delete(k)),
     all: () => tx(STORE, "readonly", (s) => s.getAll()).then((v) => v ?? []),
-    clear: async () => { await tx(STORE, "readwrite", (s) => s.clear()); await tx(PAGES, "readwrite", (s) => s.clear()); },
+    clear: async () => { await tx(STORE, "readwrite", (s) => s.clear()); await tx(PAGES, "readwrite", (s) => s.clear()); await tx(SUPPLIERS, "readwrite", (s) => s.clear()); },
     pget: (k) => tx(PAGES, "readonly", (s) => s.get(k)).then((v) => v ?? null),
     pput: (r) => tx(PAGES, "readwrite", (s) => s.put(r)),
     pdel: (k) => tx(PAGES, "readwrite", (s) => s.delete(k)),
     pall: () => tx(PAGES, "readonly", (s) => s.getAll()).then((v) => v ?? []),
+    sput: (r) => tx(SUPPLIERS, "readwrite", (s) => s.put(r)),
+    sall: () => tx(SUPPLIERS, "readonly", (s) => s.getAll()).then((v) => v ?? []),
   });
 }
 
@@ -111,9 +118,24 @@ function wrap(b) {
       return n;
     },
 
+    // ----- danh bạ nhà cung cấp (theo tên miền) -----
+    async suppliers() {
+      const all = await b.sall().catch(() => []);
+      return Object.fromEntries(all.map((r) => [r.key, r]));
+    },
+    /** Ghi các NCC của một lần tìm vào danh bạ: gộp thông tin liên hệ, không mất dữ liệu cũ. */
+    async saveSuppliers(list) {
+      const cur = await this.suppliers();
+      for (const s of list) {
+        if (!s?.domain) continue;
+        const old = cur[s.domain] ?? {};
+        await b.sput({ ...old, ...s, key: s.domain, name: s.name || old.name || s.domain, contact: s.contact ?? old.contact ?? null, firstTs: old.firstTs ?? s.firstTs ?? Date.now(), ts: Date.now() }).catch(() => {});
+      }
+    },
+
     // Một file duy nhất chứa toàn bộ cache kết quả (không gồm cache trang)
     async exportAll() {
-      return { app: "purchasing-online", version: 2, exportedAt: new Date().toISOString(), entries: await this.list() };
+      return { app: "purchasing-online", version: 2, exportedAt: new Date().toISOString(), entries: await this.list(), suppliers: Object.values(await this.suppliers()) };
     },
     async importAll(data) {
       if (!data || data.app !== "purchasing-online" || !Array.isArray(data.entries)) throw new Error("File không phải cache của ứng dụng này");
@@ -123,6 +145,7 @@ function wrap(b) {
         const cur = await b.get(e.key);
         if (!cur || (cur.updatedAt ?? 0) < (e.updatedAt ?? 0)) { await b.put(e); n++; }
       }
+      for (const s of data.suppliers ?? []) if (s?.key) await b.sput(s).catch(() => {});
       return n;
     },
   };

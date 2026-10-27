@@ -1,6 +1,7 @@
 // Điều phối một lần tìm hiểu: AI tìm trước -> lưu cache -> mở các trang nguồn -> tổng hợp.
 // Mỗi bước phát sự kiện ngay (emit) để giao diện hiện kết quả đến đâu làm đến đó.
 import { makePlan, cacheKey } from "./plan.js";
+import { hasContact, mergeContact } from "./contact.js";
 import { newEntry, ingestProduct, ingestCompare, ingestPage, ingestListing, ingestAltInsight, dropStalePrices, sellersNeedingContact, ingestContactPage, logEvent } from "./entry.js";
 import { domainOf, normUrl, clip, modelKey } from "./text.js";
 import { summarize } from "./aggregate.js";
@@ -13,7 +14,7 @@ const SKIP_HOSTS = /(^|\.)(google\.[a-z.]+|bing\.com|facebook\.com|youtube\.com|
 
 export const STEPS = [
   { id: "plan", label: "Chọn từ khóa" },
-  { id: "product", label: "AI tìm sản phẩm" },
+  { id: "product", label: "Tìm sản phẩm" },
   { id: "compare", label: "So sánh hãng khác" },
   { id: "pages", label: "Mở trang nguồn" },
   { id: "done", label: "Tổng hợp" },
@@ -145,7 +146,9 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
   }
   publish(entry); // hiện dữ liệu cũ ngay, phần mới bổ sung dần
 
-  const save = () => store.save(entry).catch(() => {});
+  // danh bạ NCC dùng chung cho mọi lần tìm: NCC đã biết liên hệ thì không phải mở lại trang liên hệ
+  const dir = typeof store.suppliers === "function" ? await store.suppliers().catch(() => ({})) : {};
+  const save = () => Promise.all([store.save(entry).catch(() => {}), saveDirectory(store, entry)]);
   const finishRun = () => {
     const after = counts(entry);
     const added = Object.fromEntries(Object.keys(after).map((k) => [k, after[k] - before[k]]));
@@ -156,7 +159,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
   try {
     // 2) AI tìm thông tin sản phẩm
     aborted(signal);
-    step("product", "running", "AI đang tìm trên web…");
+    step("product", "running", "Đang tìm trên web…");
     let res;
     try {
       res = await api.search("product", plan, null, signal);
@@ -166,19 +169,19 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
       logEvent(entry, "error", e.message);
       res = { data: {}, sources: [], queries: [], provider: "free", model: "duckduckgo", free: true, ms: 0, searchFailed: true };
     }
-    entry.ai = { provider: res.provider, model: res.model, mock: !!res.mock, free: !!res.free, chrome: !!res.chrome };
+    entry.ai = { provider: res.provider, model: res.model, mock: !!res.mock, free: !!res.free, chrome: !!res.chrome, organic: !!res.organic };
     if (res.fallbackFrom) logEvent(entry, "error", res.fallbackFrom + " — chuyển sang nguồn dự phòng");
     ingestProduct(entry, res);
     if (res.chrome) {
-      logEvent(entry, "ai", `Google ${res.organic ? "(kết quả thường)" : "Chế độ AI"} trong Chrome của bạn: ${entry.prices.length} giá, ${entry.pros.length} ưu điểm, ${entry.cons.length} nhược điểm, đã mở ${res.resolved ?? 0} nguồn trích dẫn${res.cached ? " (từ cache Google 24 giờ)" : ""}`);
+      logEvent(entry, "ai", `Google ${res.organic ? "(kết quả thường)" : "(tìm nâng cao)"} trong Chrome của bạn: ${entry.prices.length} giá, ${entry.pros.length} ưu điểm, ${entry.cons.length} nhược điểm, đã mở ${res.resolved ?? 0} nguồn trích dẫn${res.cached ? " (từ cache Google 24 giờ)" : ""}`);
       if (res.queries?.length) logEvent(entry, "ai", `Từ khóa đã tìm: ${res.queries.join(" | ")}`);
     } else if (res.free) {
       logEvent(entry, "ai", `Tìm miễn phí (${res.model}): ${res.sources.length} kết quả, ${entry.prices.length} giá đọc từ đoạn trích, trong ${(res.ms / 1000).toFixed(1)}s`);
       if (res.errors?.length) logEvent(entry, "error", "Một số công cụ tìm lỗi: " + res.errors.join("; "));
       if (res.queries?.length) logEvent(entry, "ai", `Từ khóa đã tìm: ${res.queries.join(" | ")}`);
     } else {
-      logEvent(entry, "ai", `AI (${res.provider}) trả về ${entry.prices.length} giá, ${entry.pros.length} ưu điểm, ${entry.cons.length} nhược điểm trong ${(res.ms / 1000).toFixed(1)}s`);
-      if (res.queries?.length) logEvent(entry, "ai", `Từ khóa AI đã tìm: ${res.queries.join(" | ")}`);
+      logEvent(entry, "ai", `Dịch vụ tìm (${res.provider}) trả về ${entry.prices.length} giá, ${entry.pros.length} ưu điểm, ${entry.cons.length} nhược điểm trong ${(res.ms / 1000).toFixed(1)}s`);
+      if (res.queries?.length) logEvent(entry, "ai", `Từ khóa đã tìm: ${res.queries.join(" | ")}`);
     }
 
     // Thiếu giá: thử lại một lần với từ khóa chuẩn hóa theo hãng + model mà AI vừa xác định
@@ -205,10 +208,10 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
       let k = 0;
       for (const alt of todo) {
         aborted(signal);
-        step("compare", "running", `hỏi Google AI về hãng khác ${++k}/${todo.length}`);
+        step("compare", "running", `tra Google về hãng khác ${++k}/${todo.length}`);
         const ins = await api.insight(planC, alt, signal).catch((e) => { if (e.name === "AbortError") throw e; return { ok: false, error: e.message }; });
         if (!ins) break;
-        if (!ins.ok) { logEvent(entry, "error", `Google AI (${alt.brand}): ${ins.error}`); if (ins.blocked || ins.rate) break; continue; }
+        if (!ins.ok) { logEvent(entry, "error", `Google (${alt.brand}): ${ins.error}`); if (ins.blocked || ins.rate) break; continue; }
         ingestAltInsight(entry, alt, ins);
         publish(entry);
       }
@@ -222,7 +225,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
       publish(entry);
       await save();
     } else {
-    step("compare", "running", "AI đang tìm sản phẩm của hãng khác…");
+    step("compare", "running", "Đang tìm sản phẩm của hãng khác…");
     // công cụ tìm miễn phí (DuckDuckGo) chặn khi gửi dồn: nghỉ vài giây giữa hai lượt tìm
     if (entry.ai?.free && freeGapMs) await new Promise((r) => setTimeout(r, freeGapMs));
     aborted(signal);
@@ -284,6 +287,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
       step("pages", "done", `${ok}/${picks.length} trang đọc được`);
     }
 
+    seedFromDirectory(entry, dir);
     // 5) Trang "Liên hệ" của các NCC chưa có SĐT/email (mỗi NCC một lần, tối đa vài trang mỗi lần tìm)
     for (const c of sellersNeedingContact(entry, enriching ? 2 : 3)) {
       aborted(signal);
@@ -314,6 +318,26 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
     publish(entry);
     throw e;
   }
+}
+
+/** Điền tên + liên hệ đã biết (từ các lần tìm trước) cho các NCC vừa gặp. */
+function seedFromDirectory(entry, dir) {
+  for (const [d, s] of Object.entries(entry.suppliers ?? {})) {
+    const known = dir[d];
+    if (!known) continue;
+    if (!s.name && known.name && known.name !== d) s.name = known.name;
+    if (known.contact && hasContact(known.contact) && !hasContact(entry.contacts?.[d])) {
+      entry.contacts ??= {};
+      entry.contacts[d] = { ...mergeContact(entry.contacts[d], known.contact), fetchedContactPage: !!known.contact.fetchedContactPage };
+    }
+  }
+}
+
+/** Ghi các NCC của lần tìm này vào danh bạ chung (best-effort). */
+async function saveDirectory(store, entry) {
+  if (typeof store.saveSuppliers !== "function") return;
+  const list = Object.values(entry.suppliers ?? {}).map((s) => ({ domain: s.domain, name: s.name, matched: s.matched, contact: entry.contacts?.[s.domain] ?? null, pages: (s.pages ?? []).slice(-5), firstTs: s.firstTs }));
+  await store.saveSuppliers(list).catch(() => {});
 }
 
 const RUN_LABEL = { pages: "trang", prices: "giá", pros: "ưu điểm", cons: "nhược điểm", tech: "công nghệ", images: "ảnh", alts: "hãng" };

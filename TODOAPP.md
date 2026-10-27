@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.7.3** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.8.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -143,6 +143,22 @@ Yêu cầu: scrawl Google → trang web thật + dùng cache → bảng so sánh
 - Áp dụng cho Google Chế độ AI, Google thường (tìm cửa hàng) và DuckDuckGo. Các lần tìm bổ sung đổi **cụm hỏi** (không đổi chuỗi sản phẩm) để ra nguồn khác.
 - Tên sản phẩm (`plan.name`) không còn bị cắt 14 từ. Nhận diện model không lấy thông số linh kiện (`i5-1235U`, `RTX4060`, `DDR5`, `R32`...) và chỉ dùng để kiểm tra trang đúng sản phẩm, không dùng để thay chuỗi gõ khi tìm.
 - Bước "tìm hãng khác" (so sánh 4–5 hãng) tìm theo **loại sản phẩm**, hỏi riêng từng hãng bằng tên hãng đó: không phải tìm sản phẩm bạn nhập.
+
+## 2i. Giao diện mới, tư vấn chọn sản phẩm/NCC, danh bạ NCC (bản 2.8.0)
+
+**Yêu cầu của bạn → đã làm**
+- **Ảnh chỉ lấy 5 ảnh**: mỗi sản phẩm/hãng giữ tối đa 5 ảnh điểm cao nhất (cache cũ cũng chỉ hiện 5).
+- **Tab lên đầu trang, không mất khi kéo thanh cuộn**: các tab (Tổng hợp, Tư vấn chọn, Nhà cung cấp, Bảng NCC, So sánh…) nằm ngay trong thanh đầu trang dính trên cùng, luôn thấy khi cuộn.
+- **Lưu tên NCC + thông tin của mọi trang đã đọc**: trước đây chỉ trang khớp model mới có dòng NCC. Nay mọi trang đọc được đều ghi tên NCC, các trang đã đọc, liên hệ vào `entry.suppliers` / `entry.contacts`, hiện ở tab **Nhà cung cấp**, và lưu vào **danh bạ NCC dùng chung** (IndexedDB `suppliers`, không mất khi cache kết quả bị dọn; NCC đã có liên hệ thì không mở lại trang liên hệ; xuất/nạp cache kèm theo danh bạ).
+- **Lọc thông tin kỹ thuật đúng**: bộ lọc thông số ở Bảng NCC khớp theo từ/số trọn (150 không khớp 1500), hỗ trợ `công suất: 1500`, `công suất>=1500`, `dung tích<=6 lít`, nhiều điều kiện cách nhau bằng `;`.
+- **Dán ảnh**: Ctrl+V ở bất kỳ đâu trong trang, nút **Dán ảnh**, hoặc kéo thả ảnh vào ô tìm (có ảnh xem trước). Đọc chữ trên ảnh vẫn cần khóa dịch vụ (Gemini miễn phí).
+- **Nhu cầu / mục đích / ngân sách**: mục “Nhu cầu của bạn” dưới ô tìm, tự điền từ chữ bạn gõ (vd “dưới 5 triệu cho gia đình 4 người”), sửa được, lưu theo từng lần tìm. **Chỉ dùng để gợi ý, không dùng để tìm**: từ khóa tìm vẫn là đúng chữ bạn gõ.
+- **Tab Tư vấn chọn**: bước 1 hướng dẫn chọn sản phẩm khi chưa rõ mã model hoặc chỉ có khoảng giá (danh sách sản phẩm xếp theo độ hợp ngân sách/mục đích, kèm câu hỏi để thu hẹp, ví dụ “khác nhau ở Công suất…”); bước 2 xếp hạng NCC của sản phẩm đã chọn (giá, ngân sách, đọc từ đúng trang, VAT, liên hệ) kèm lý do và cảnh báo. Điểm tính theo quy tắc cố định, không phải đánh giá chất lượng tuyệt đối.
+- **Bỏ chữ “AI” trên giao diện**: nhãn, banner, cài đặt, nhật ký, thông báo lỗi đều đổi sang “Google”, “dịch vụ”, “tìm nâng cao”.
+- **Giao diện mềm, hiện đại**: nền gradient nhẹ, thẻ bo tròn, thanh đầu mờ kính, nút gradient, bố cục gọn trên điện thoại, tự theo chế độ tối.
+- **Link ngắn**: Worker đổi tên thành `muahangthongminh` → **https://muahangthongminh.purchasing-online.workers.dev**. Dữ liệu cache lưu theo từng địa chỉ, nên địa chỉ mới bắt đầu trống: ở địa chỉ cũ bấm “Xuất file cache”, ở địa chỉ mới bấm “Nạp file cache”. Worker cũ (`mua-hang-thong-minh`) vẫn chạy, xóa trong Cloudflare dashboard khi không cần nữa. (Link ngắn hơn nữa cần tên miền riêng.)
+
+**Chưa kiểm chứng**: đọc chữ trên ảnh dán với khóa thật; nút “Dán ảnh” trên iPhone/Safari (trình duyệt có thể chặn đọc clipboard: dùng giữ ô nhập → Dán); tiện ích Chrome với địa chỉ mới (`*.workers.dev` đã nằm trong danh sách cho phép, cần bấm “Cho phép trang này” lần đầu).
 
 ## 3. Tự xóa dữ liệu cũ
 

@@ -2,6 +2,9 @@
 import { esc, money, clip } from "./lib/text.js";
 import { summarize, comparisonRows, recommend, logBySection, technologyComparison } from "./lib/aggregate.js";
 import { CATEGORY_LABELS } from "./lib/plan.js";
+import { MAX_IMAGES } from "./lib/entry.js";
+import { suppliersOf } from "./lib/offers.js";
+import { contactText } from "./lib/contact.js";
 
 const RUN_LABEL = { pages: "trang", prices: "giá", pros: "ưu điểm", cons: "nhược điểm", tech: "công nghệ", images: "ảnh", alts: "hãng" };
 const SECTION_LABEL = { price: "Giá", pros: "Ưu điểm", cons: "Nhược điểm", tech: "Công nghệ", images: "Hình ảnh" };
@@ -21,9 +24,9 @@ export const chips = (entry, ids, max = 3) => [...new Set(ids ?? [])].slice(0, m
 
 export function renderBanner(entry) {
   const out = [];
-  if (entry.ai?.mock) out.push(`<div class="alert warn"><b>Dữ liệu mẫu.</b> Chưa có khóa AI nên đang chạy thử với sản phẩm và hãng hư cấu — không dùng để mua hàng. Vào Cài đặt để nhập khóa Claude hoặc Gemini.</div>`);
-  if (entry.ai?.chrome) out.push(`<div class="alert info"><b>Nguồn: Google ${entry.ai.model?.includes("AI") ? "Chế độ AI" : "(kết quả thường)"} chạy trong Chrome của bạn</b> (miễn phí). Trang được đọc bằng IP của bạn, giãn cách vài giây, tự ngừng khi bị chặn. Nội dung do AI của Google tổng hợp: hãy mở nguồn để kiểm tra.</div>`);
-  if (entry.ai?.free) out.push(`<div class="alert info"><b>Chế độ miễn phí (không AI).</b> Tìm bằng DuckDuckGo/Bing rồi tự đọc từng trang. Giá, ảnh, ưu/nhược điểm chỉ có khi trang cho đọc; hãng khác chỉ có giá và ảnh. Nhập khóa Gemini miễn phí ở Cài đặt để có đủ ưu/nhược điểm và công nghệ.</div>`);
+  if (entry.ai?.mock) out.push(`<div class="alert warn"><b>Dữ liệu mẫu.</b> Chưa có khóa dịch vụ nên đang chạy thử với sản phẩm và hãng hư cấu — không dùng để mua hàng. Vào Cài đặt để nhập khóa Claude hoặc Gemini.</div>`);
+  if (entry.ai?.chrome) out.push(`<div class="alert info"><b>Nguồn: Google ${entry.ai.organic ? "(kết quả thường)" : "(tìm nâng cao)"} chạy trong Chrome của bạn</b> (miễn phí). Trang được đọc bằng IP của bạn, giãn cách vài giây, tự ngừng khi bị chặn. Hãy mở nguồn để kiểm tra thông tin.</div>`);
+  if (entry.ai?.free) out.push(`<div class="alert info"><b>Chế độ miễn phí.</b> Tìm bằng DuckDuckGo/Bing rồi tự đọc từng trang. Giá, ảnh, ưu/nhược điểm chỉ có khi trang cho đọc; hãng khác chỉ có giá và ảnh. Nhập khóa Gemini miễn phí ở Cài đặt (hoặc dùng Google trong Chrome) để có đủ ưu/nhược điểm và công nghệ.</div>`);
   if (entry.status === "partial") out.push(`<div class="alert info">Đã dừng giữa chừng — đang hiện phần dữ liệu thu được.</div>`);
   if (entry.status === "error") out.push(`<div class="alert err">Lần tìm này chưa hoàn tất. Dữ liệu bên dưới (nếu có) là phần thu được trước khi lỗi.</div>`);
   return out.join("");
@@ -34,13 +37,13 @@ export function renderHeadline(entry) {
   const p = entry.product;
   const sub = [p.brand, p.model].filter(Boolean).join(" · ");
   const range = s.price.count > 1 && s.price.min !== s.price.max ? `khoảng ${money(s.price.min)} – ${money(s.price.max)} · ` : "";
-  const imgs = s.images.filter((i) => i.for === "main").slice(0, 8);
+  const imgs = s.images.filter((i) => i.for === "main").slice(0, MAX_IMAGES);
   return `
     <div class="top-line">
       <span class="badge">${esc(catLabel(entry.category))}</span>
       ${entry.fromCache ? `<span class="badge good">Từ cache · ${esc(dateTime(entry.updatedAt))}</span>` : entry.status === "running" ? `<span class="badge warn">${entry.runs?.length ? "Từ cache · đang bổ sung dữ liệu mới…" : "Đang thu thập…"}</span>` : `<span class="badge good">Vừa cập nhật</span>`}
       ${entry.runs?.length > 1 ? `<span class="badge">${entry.runs.length} lần tìm</span>` : ""}
-      ${entry.ai ? `<span class="badge">${entry.ai.mock ? "Dữ liệu mẫu" : entry.ai.chrome ? "Google AI (Chrome)" : entry.ai.free ? "Tìm miễn phí" : "AI: " + esc(entry.ai.provider)}</span>` : ""}
+      ${entry.ai ? `<span class="badge">${entry.ai.mock ? "Dữ liệu mẫu" : entry.ai.chrome ? "Google (Chrome)" : entry.ai.free ? "Tìm miễn phí" : esc(entry.ai.provider)}</span>` : ""}
     </div>
     <div><h1>${esc(p.name || entry.plan.query)}</h1>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}</div>
     <div>
@@ -117,9 +120,9 @@ export function renderCompare(entry) {
 
 export function renderImages(entry) {
   const groups = [];
-  const main = entry.images;
+  const main = entry.images.slice(0, MAX_IMAGES);
   if (main.length) groups.push({ title: entry.product.name || "Sản phẩm", list: main });
-  for (const a of entry.alternatives) if (a.images.length) groups.push({ title: `${a.brand} ${a.model || a.name}`, list: a.images });
+  for (const a of entry.alternatives) if (a.images.length) groups.push({ title: `${a.brand} ${a.model || a.name}`, list: a.images.slice(0, MAX_IMAGES) });
   if (!groups.length) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang lấy ảnh từ các trang nguồn…" : "Chưa lấy được ảnh nào từ các trang đã mở."}</p></div>`;
   return groups.map((g) => `<div class="card"><h2>${esc(g.title)} <span class="count">${g.list.length} ảnh</span></h2><div class="images-grid">${g.list.map((i) => `<figure><a href="${esc(httpUrl(i.url))}" target="_blank" rel="noopener noreferrer">${imgTag(i, false)}</a><figcaption>${chip(entry, i.srcId)}</figcaption></figure>`).join("")}</div></div>`).join("");
 }
@@ -139,7 +142,7 @@ export function renderLog(entry) {
     ${runs ? `<div class="card"><h2>Các lần tìm <span class="count">${entry.runs.length}</span></h2>${runs}</div>` : ""}
     <div class="card"><h2>Tổng hợp theo mục <span class="count">${s.sourcesOpened} trang đọc được · ${s.sourcesFailed} bỏ qua</span></h2>
       ${groups || `<p class="muted">${entry.status === "running" ? "Đang mở trang nguồn…" : "Chưa có trang nào đóng góp dữ liệu."}</p>`}</div>
-    <div class="card"><h2>Từ khóa</h2><div class="chips">${kw.map((k) => `<span class="chip" style="cursor:default" title="${k.by === "ai" ? "AI đã dùng" : "Ứng dụng gợi ý"}">${k.by === "ai" ? "🔎" : "✎"} ${esc(clip(k.q, 70))}</span>`).join("") || '<span class="muted">—</span>'}</div></div>
+    <div class="card"><h2>Từ khóa</h2><div class="chips">${kw.map((k) => `<span class="chip" style="cursor:default" title="${k.by === "ai" ? "Đã dùng khi tìm" : "Từ khóa của ứng dụng"}">${k.by === "ai" ? "🔎" : "✎"} ${esc(clip(k.q, 70))}</span>`).join("") || '<span class="muted">—</span>'}</div></div>
     ${failed.length ? `<div class="card"><h2>Trang bỏ qua <span class="count">${failed.length}</span></h2>${failed.map((p) => `<div class="logrow fail"><span>${esc(p.error || "lỗi")}</span><a href="${esc(httpUrl(p.url))}" target="_blank" rel="noopener noreferrer">${esc(clip(p.url, 60))}</a></div>`).join("")}</div>` : ""}
     <div class="card"><h2>Nhật ký theo thời gian</h2>${entry.log.map((l) => `<div class="logrow ${l.kind === "error" ? "err" : l.ok === false ? "fail" : ""}"><time>${time(l.ts)}</time><span>${esc(l.msg)}</span></div>`).join("")}</div>`;
 }
@@ -160,7 +163,7 @@ export function renderHistoryItem(e) {
 export function renderTech(entry) {
   const tc = technologyComparison(entry);
   if (!tc.applicable) return `<div class="card"><p class="muted" style="margin:0">Hàng tiêu dùng: chỉ so sánh giá, ưu điểm, nhược điểm — không phân tích công nghệ.</p></div>`;
-  if (!tc.clusters.length) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang thu thập thông tin công nghệ…" : "Chưa có thông tin công nghệ của các hãng. Bấm “Tìm thêm dữ liệu mới” hoặc dùng Google Chế độ AI / khóa Gemini để có đủ."}</p></div>`;
+  if (!tc.clusters.length) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang thu thập thông tin công nghệ…" : "Chưa có thông tin công nghệ của các hãng. Bấm “Tìm thêm dữ liệu mới”, dùng Google trong Chrome hoặc nhập khóa Gemini để có đủ."}</p></div>`;
   const brandChip = (b) => `<span class="badge${b.isMain ? " good" : ""}" title="${esc(b.names?.join("; ") || "")}">${esc(b.brand)}${b.model ? " " + esc(b.model) : ""}</span>`;
   const claims = (list, cls, empty) => (list.length
     ? `<ul class="items ${cls}">${list.map((x) => `<li><span class="t">${esc(x.text)} <span class="muted small">(${esc(x.brand)})</span></span> ${chips(entry, x.srcIds, 2)}</li>`).join("")}</ul>`
@@ -175,4 +178,34 @@ export function renderTech(entry) {
       <h3 style="color:var(--bad);margin-top:10px">Nhược điểm của công nghệ</h3>${claims(c.drawbacks, "cons", "Chưa có thông tin nhược điểm.")}
     </div>`).join("");
   return summary + cards + `<p class="muted small">Gom từ công nghệ đã nhận diện của từng hãng và các ưu/nhược điểm có nhắc tên công nghệ. Mọi ý kèm nguồn; ô “?” là nguồn chưa kiểm chứng.</p>`;
+}
+
+const telLink = (p) => `<a href="tel:${esc(p.replace(/\s/g, ""))}">${esc(p)}</a>`;
+export function contactHtml(c) {
+  if (!c || !contactText(c)) return `<span class="muted">Chưa có thông tin liên hệ</span>`;
+  return [
+    c.phones?.length ? `<div><span class="muted">SĐT:</span> ${c.phones.map(telLink).join(", ")}</div>` : "",
+    c.emails?.length ? `<div><span class="muted">Email:</span> ${c.emails.map((e) => `<a href="mailto:${esc(e)}">${esc(e)}</a>`).join(", ")}</div>` : "",
+    c.zalo?.length ? `<div><span class="muted">Zalo:</span> ${c.zalo.map((z) => `<a href="https://zalo.me/${esc(z.replace(/\s/g, ""))}" target="_blank" rel="noopener noreferrer">${esc(z)}</a>`).join(", ")}</div>` : "",
+    c.address ? `<div><span class="muted">Địa chỉ:</span> ${esc(c.address)}</div>` : "",
+    c.contactUrl ? `<div><a href="${esc(httpUrl(c.contactUrl))}" target="_blank" rel="noopener noreferrer">Trang liên hệ</a></div>` : "",
+  ].join("");
+}
+
+// Tab "Nhà cung cấp": mọi NCC đã gặp khi đọc trang (kể cả trang không khớp model), kèm liên hệ đã lưu
+export function renderSuppliers(entry) {
+  const list = suppliersOf(entry);
+  if (!list.length) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang đọc các trang bán hàng…" : "Chưa đọc được trang bán hàng nào."}</p></div>`;
+  const withContact = list.filter((s) => s.contactText).length;
+  const cards = list.map((s) => `
+    <div class="pick">
+      <h3>${esc(s.name)} ${s.matched ? `<span class="badge good">bán đúng sản phẩm</span>` : `<span class="badge warn">chưa thấy đúng sản phẩm</span>`}</h3>
+      <div class="muted small">${esc(s.domain)}${s.brands.length ? " · hãng: " + esc(s.brands.join(", ")) : ""}</div>
+      ${s.minPrice != null ? `<div class="price">${money(s.minPrice)} <span class="muted small">giá thấp nhất · ${s.offers} sản phẩm</span></div>` : `<div class="muted small">Chưa có giá, cần hỏi báo giá</div>`}
+      <div class="contact">${contactHtml(s.contact)}</div>
+      <details><summary class="small">${s.pages.length} trang đã đọc</summary>${s.pages.map((p) => `<div class="small"><a href="${esc(httpUrl(p.url))}" target="_blank" rel="noopener noreferrer">${esc(clip(p.title || p.url, 70))}</a>${p.price ? " · " + money(p.price) : ""}${p.relevant ? "" : ' <span class="muted">(không khớp model)</span>'}</div>`).join("")}</details>
+    </div>`).join("");
+  return `<div class="card"><h2>Nhà cung cấp đã gặp <span class="count">${list.length} NCC · ${withContact} có liên hệ</span></h2>
+    <p class="muted small" style="margin:0 0 10px">Tên, liên hệ và các trang đã đọc của mọi website đã mở được lưu lại (kể cả khi trang đó không bán đúng sản phẩm), dùng chung cho các lần tìm sau.</p>
+    <div class="sup-grid">${cards}</div></div>`;
 }

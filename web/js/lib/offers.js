@@ -87,6 +87,85 @@ export function tableRows(entry) {
   }));
 }
 
+/**
+ * Danh sách NCC đã gặp (theo tên miền): tên, liên hệ, các trang đã đọc, số sản phẩm và giá thấp nhất.
+ * Gồm cả NCC chỉ có trang không khớp model, và NCC từ cache cũ (chưa có entry.suppliers) suy ra từ bảng.
+ */
+export function suppliersOf(entry) {
+  const map = new Map();
+  for (const s of Object.values(entry.suppliers ?? {})) map.set(s.domain, { domain: s.domain, name: s.name || "", pages: [...(s.pages ?? [])], matched: !!s.matched });
+  const rows = tableRows(entry);
+  for (const r of rows) {
+    const d = r.domain;
+    if (!d) continue;
+    const s = map.get(d) ?? { domain: d, name: "", pages: [], matched: false };
+    if (!map.has(d)) map.set(d, s);
+    if (!s.name && r.seller && r.seller !== d) s.name = r.seller;
+    if (r.read) s.matched = true;
+    if (!s.pages.some((p) => normUrl(p.url) === normUrl(r.url))) s.pages.push({ url: r.url, title: r.name || "", relevant: !!r.read, price: r.price ?? null });
+  }
+  return [...map.values()].map((s) => {
+    const mine = rows.filter((r) => r.domain === s.domain);
+    const prices = mine.map((r) => r.price).filter((p) => p != null);
+    const contact = entry.contacts?.[s.domain] ?? null;
+    return { ...s, name: s.name || s.domain, offers: mine.length, minPrice: prices.length ? Math.min(...prices) : null, brands: [...new Set(mine.map((r) => r.brand).filter(Boolean))].slice(0, 4), contact, contactText: contactText(contact) };
+  }).sort((a, b) => Number(b.matched) - Number(a.matched) || (a.minPrice ?? Infinity) - (b.minPrice ?? Infinity) || a.name.localeCompare(b.name, "vi"));
+}
+
+// ---------- lọc thông số kỹ thuật (đúng, không khớp chữ số một phần) ----------
+const spaced = (s) => " " + norm(s).replace(/(\d)[.,](?=\d{3}(?!\d))/g, "$1").replace(/(\d)([a-z])/g, "$1 $2").replace(/([a-z])(\d)/g, "$1 $2").replace(/[^a-z0-9.,]+/g, " ").replace(/[.,]+(?=\s)/g, "").trim() + " ";
+function numberIn(text) {
+  const m = String(text ?? "").match(/\d+(?:[.,]\d+)*/);
+  if (!m) return null;
+  const t = m[0];
+  if (/^\d{1,3}(\.\d{3})+$/.test(t)) return Number(t.replace(/\./g, ""));
+  if (/^\d{1,3}(,\d{3})+$/.test(t)) return Number(t.replace(/,/g, ""));
+  return Number(t.replace(",", "."));
+}
+// cụm chữ bắt đầu đúng đầu từ; số phải khớp trọn (150 không khớp 1500)
+function phraseTest(term) {
+  const toks = spaced(term).trim().split(" ").filter(Boolean);
+  if (!toks.length) return null;
+  const tail = /^[0-9.,]+$/.test(toks[toks.length - 1]) ? " " : "";
+  const needle = " " + toks.join(" ") + tail;
+  return (hay) => hay.includes(needle);
+}
+
+/**
+ * Bộ lọc thông số. Nhiều điều kiện cách nhau bằng ";" (hoặc "và"), tất cả phải đúng:
+ *  - "inverter"            : có thông số nhắc đúng từ đó (từ đầu từ; số phải khớp trọn)
+ *  - "công suất: 1500"     : thông số tên chứa "công suất" và giá trị chứa 1500
+ *  - "công suất>=1500"     : so sánh số (>, >=, <, <=, =); có đơn vị thì giá trị cũng phải có đơn vị đó
+ * Trả về hàm (specs) => boolean, hoặc null nếu không lọc.
+ */
+export function specFilter(text) {
+  const terms = String(text ?? "").split(/;|\s+và\s+|\s+and\s+/i).map((s) => s.trim()).filter(Boolean);
+  if (!terms.length) return null;
+  const tests = terms.map((term) => {
+    let m = term.match(/^(.+?)\s*(>=|<=|=>|=<|>|<|=)\s*(\d[\d.,]*)\s*([^\d\s]*)\s*$/);
+    if (m) {
+      const kt = phraseTest(m[1]), op = m[2].replace("=>", ">=").replace("=<", "<="), want = numberIn(m[3]), unit = norm(m[4]);
+      if (!kt || want == null) return () => false;
+      return (specs) => specs.some((s) => {
+        if (!kt(spaced(s.k))) return false;
+        const v = numberIn(s.v);
+        if (v == null || (unit && !spaced(s.v).includes(" " + unit))) return false;
+        return op === ">" ? v > want : op === ">=" ? v >= want : op === "<" ? v < want : op === "<=" ? v <= want : v === want;
+      });
+    }
+    m = term.match(/^([^:]{1,40}):\s*(.+)$/);
+    if (m) {
+      const kt = phraseTest(m[1]), vt = phraseTest(m[2]);
+      if (!kt || !vt) return () => true;
+      return (specs) => specs.some((s) => kt(spaced(s.k)) && vt(spaced(s.v)));
+    }
+    const pt = phraseTest(term);
+    if (!pt) return () => true;
+    return (specs) => specs.some((s) => pt(spaced(`${s.k} ${s.v}`)));
+  });
+  return (specs) => tests.every((t) => t(specs ?? []));
+}
+
 /** Dòng có dữ liệu được đọc từ ĐÚNG trang của dòng đó (giá/thông số/VAT lấy từ link). Dữ liệu cũ chưa có cờ: suy từ nguồn giá. */
 export const isRead = (o) => (o.readFromPage != null ? !!o.readFromPage : ["page", "jsonld", "meta", "text"].includes(o.priceVia));
 
@@ -123,6 +202,7 @@ const has = (hay, needle) => !needle || norm(hay).includes(norm(needle));
 export function applyView(rows, view = DEFAULT_VIEW) {
   const f = { ...DEFAULT_VIEW.filters, ...(view.filters ?? {}) };
   const pf = priceFilter(f.price);
+  const sf = specFilter(f.specs);
   let out = rows.filter((r) => {
     if ((view.source ?? "page") === "page" && !r.read) return false; // mặc định chỉ dòng đã đọc từ đúng trang
     if (view.kind === "same" && r.kind !== "same") return false;
@@ -131,7 +211,7 @@ export function applyView(rows, view = DEFAULT_VIEW) {
     if (!has(r.nameText, f.name)) return false;
     if (pf && !pf(r.price)) return false;
     if (f.vat && r.vat?.state !== f.vat) return false;
-    if (!has(r.specText, f.specs)) return false;
+    if (sf && !sf(r.specs)) return false;
     if (!has(`${r.seller} ${r.brand}`, f.ncc)) return false;
     if (!has(r.contactText, f.contact)) return false;
     if (!has(`${r.domain} ${r.url}`, f.link)) return false;
@@ -178,7 +258,7 @@ export function diagnose(entry, rowsShown = 0, hiddenUnread = 0) {
     title = "Chưa mở được trang web nào.";
     tips.push("Kiểm tra mạng, hoặc dán link trang bán hàng vào ô tìm kiếm.");
   } else if (rowsShown === 0 && hiddenUnread > 0) {
-    title = `Có ${hiddenUnread} dòng chưa đọc được từ đúng trang (chỉ là gợi ý của AI/Google/trang danh sách).`;
+    title = `Có ${hiddenUnread} dòng chưa đọc được từ đúng trang (chỉ là gợi ý từ Google/trang danh sách).`;
     tips.push("Chọn “Gồm cả dữ liệu chưa xác nhận” để xem, hoặc bấm “Tìm thêm NCC” để mở thêm trang.");
   } else if (rowsShown === 0) {
     title = "Các trang đã mở không phải trang bán đúng sản phẩm này (khác model).";
@@ -203,4 +283,4 @@ export function cellValue(row, colId) {
   }
 }
 
-export const PRICE_NOTE = { page: "đọc từ trang", jsonld: "đọc từ trang", meta: "đọc từ trang", text: "ước lượng từ chữ trên trang", ai: "AI/Google, chưa xác nhận", snippet: "trích từ kết quả tìm kiếm", listing: "từ trang danh sách, chưa mở trang sản phẩm" };
+export const PRICE_NOTE = { page: "đọc từ trang", jsonld: "đọc từ trang", meta: "đọc từ trang", text: "ước lượng từ chữ trên trang", ai: "Google, chưa xác nhận", snippet: "trích từ kết quả tìm kiếm", listing: "từ trang danh sách, chưa mở trang sản phẩm" };

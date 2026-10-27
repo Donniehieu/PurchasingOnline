@@ -7,8 +7,10 @@ import { extUpdateNotice } from "./lib/version.js";
 import { mountOfferTable } from "./table-ui.js";
 import { research, ask, STEPS } from "./lib/pipeline.js";
 import { INTENTS } from "./lib/answer.js";
-import { esc, clip } from "./lib/text.js";
-import { renderBanner, renderHeadline, renderVerdict, renderSummary, renderCompare, renderImages, renderTech, renderLog, renderSources, renderHistoryItem, chip } from "./render.js";
+import { esc, clip, parseVnd } from "./lib/text.js";
+import { parseNeed } from "./lib/need.js";
+import { renderAdvice } from "./advice-ui.js";
+import { renderBanner, renderHeadline, renderVerdict, renderSummary, renderCompare, renderImages, renderTech, renderLog, renderSources, renderHistoryItem, renderSuppliers, chip } from "./render.js";
 
 const $ = (id) => document.getElementById(id);
 const SETTINGS_KEY = "po-settings";
@@ -30,6 +32,7 @@ let current = null;          // entry đang hiển thị
 let runCtl = null;           // AbortController của lần chạy
 let renderQueued = false;
 const chats = new Map();     // key -> [{q, a}]
+const choices = new Map();   // key -> khóa sản phẩm người dùng đã chọn ở tab Tư vấn chọn
 
 // ---------- tiện ích giao diện ----------
 let toastTimer;
@@ -44,7 +47,7 @@ function toast(msg) {
 function friendly(e) {
   if (e instanceof ApiError) {
     if (e.status === 401 && e.extra?.needsCode) return "Máy chủ yêu cầu mã truy cập. Vào Cài đặt để nhập.";
-    if (e.status === 401) return e.message + " (Cài đặt → Khóa AI)";
+    if (e.status === 401) return e.message + " (Cài đặt → Khóa dịch vụ)";
     if (e.status === 429) return e.message + " Chờ một lúc rồi bấm Tìm hiểu lại.";
     return e.message;
   }
@@ -56,6 +59,7 @@ function showResult(entry) {
   current = entry;
   $("empty").hidden = true;
   $("result").hidden = false;
+  $("tabs").hidden = false;
   scheduleRender();
   renderAskChips();
 }
@@ -82,6 +86,8 @@ function render(entry) {
   $("verdict").hidden = !v;
   $("verdict").innerHTML = v;
   $("tab-summary").innerHTML = renderSummary(entry);
+  $("tab-advice").innerHTML = renderAdvice(entry, readNeed(), choices.get(entry.key) ?? entry.need?.choice ?? "");
+  $("tab-suppliers").innerHTML = renderSuppliers(entry);
   offerTable.update(entry);
   $("tab-compare").innerHTML = renderCompare(entry);
   $("tab-tech").innerHTML = renderTech(entry);
@@ -98,6 +104,8 @@ function render(entry) {
 function selectTab(name) {
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
   for (const p of document.querySelectorAll(".panel")) p.hidden = p.id !== "tab-" + name;
+  const panel = $("tab-" + name);
+  if (panel && panel.getBoundingClientRect().top < 0) panel.scrollIntoView({ block: "start", behavior: "smooth" }); // đang kéo xuống sâu: đưa về đầu phần vừa chọn
 }
 // nút "Tìm thêm dữ liệu mới" trong kết quả: tìm thêm trang mới rồi gộp vào dữ liệu đang xem
 document.addEventListener("click", (e) => {
@@ -128,7 +136,7 @@ function onEvent(ev) {
 }
 
 function setRunning(on) {
-  $("progress").hidden = false;
+  if (on) $("progress").hidden = false;
   $("btnGo").disabled = on;
   $("btnStop").hidden = !on;
   $("progress").querySelector(".live").classList.toggle("idle", !on);
@@ -146,6 +154,8 @@ async function run(text, { mode = "enrich", force = false, ocrText = "" } = {}) 
   setRunning(true);
   try {
     const entry = await research(input, { api, store, emit: onEvent, signal: runCtl.signal, mode: force ? "fresh" : mode, pageLimit: settings.pages });
+    entry.need = { ...readNeed(), choice: choices.get(entry.key) ?? entry.need?.choice ?? "" };
+    store.save(entry).catch(() => {});
     showResult(entry);
     $("progress").hidden = true; // chi tiết từng bước đã nằm trong tab Nhật ký
     toast(entry.fromCache ? "Lấy từ cache — không tốn lượt tìm mới" : "Hoàn tất — đã lưu vào cache");
@@ -153,6 +163,7 @@ async function run(text, { mode = "enrich", force = false, ocrText = "" } = {}) 
   } catch (e) {
     if (e.name === "AbortError") toast("Đã dừng");
     else {
+      $("progress").hidden = false;
       $("errorBox").hidden = false;
       $("errorBox").textContent = friendly(e);
       if (e instanceof ApiError && e.status === 401) openSettings();
@@ -168,6 +179,56 @@ $("form").addEventListener("submit", (e) => { e.preventDefault(); run($("q").val
 $("q").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && window.matchMedia("(pointer: fine)").matches) { e.preventDefault(); $("form").requestSubmit(); } });
 $("btnStop").addEventListener("click", () => runCtl?.abort());
 
+// ---------- nhu cầu (ngân sách, mục đích) ----------
+// Tự cắt từ chữ người dùng gõ để điền sẵn; chỉ dùng để gợi ý sản phẩm/NCC, KHÔNG dùng để tìm kiếm.
+const needTouched = new Set();
+const NEED_FIELDS = { purpose: "nPurpose", min: "nMin", max: "nMax", priority: "nPriority" };
+const moneyInput = (v) => (v == null ? "" : v % 1e6 === 0 ? (v / 1e6) + "tr" : String(v));
+function readNeed() {
+  const num = (id) => { const t = $(id).value.trim(); return t ? parseVnd(/^[0-9]+$/.test(t) && Number(t) < 1000 ? t + "tr" : t) : null; };
+  const lo = num("nMin"), hi = num("nMax");
+  return { budgetMin: lo, budgetMax: hi, purpose: $("nPurpose").value.trim(), priority: $("nPriority").value };
+}
+function fillNeed(n, { force = false } = {}) {
+  const set = (key, value) => {
+    const el = $(NEED_FIELDS[key]);
+    if (!force && needTouched.has(key)) return;
+    el.value = value ?? "";
+    el.closest("label")?.classList.toggle("filled", !!value);
+  };
+  set("purpose", n.purpose || "");
+  set("min", moneyInput(n.budgetMin ?? null));
+  set("max", moneyInput(n.budgetMax ?? null));
+  if (force) set("priority", n.priority || "balanced");
+  if (n.purpose || n.budgetMin != null || n.budgetMax != null) $("needBox").open = true;
+}
+let needTimer;
+$("q").addEventListener("input", () => {
+  clearTimeout(needTimer);
+  needTimer = setTimeout(() => { const t = $("q").value; if (t.trim()) fillNeed(parseNeed(t)); }, 350);
+});
+for (const [key, id] of Object.entries(NEED_FIELDS)) {
+  $(id).addEventListener("input", () => {
+    needTouched.add(key);
+    $(id).closest("label")?.classList.remove("filled");
+    clearTimeout(needTimer);
+    needTimer = setTimeout(() => { persistNeed(); scheduleRender(); }, 250);
+  });
+}
+function persistNeed() {
+  if (!current) return;
+  current.need = { ...readNeed(), choice: choices.get(current.key) ?? "" };
+  store.save(current).catch(() => {});
+}
+$("tab-advice").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pick]");
+  if (!b || !current) return;
+  choices.set(current.key, b.dataset.pick);
+  persistNeed();
+  $("tab-advice").innerHTML = renderAdvice(current, readNeed(), b.dataset.pick);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
 // ---------- hỏi đáp ----------
 function renderAskChips() {
   if (!current) return;
@@ -180,7 +241,7 @@ function msgHtml(m) {
   if (m.q) return `<div class="msg q">${esc(m.q)}</div>`;
   // [n] trong câu trả lời thành liên kết nguồn ngay bên cạnh ý đó
   const body = esc(m.text).replace(/\[(\d+)\]/g, (all, n) => chip(current, Number(n)) || all);
-  return `<div class="msg a">${body}<span class="via">${m.via === "cache" ? "Từ dữ liệu đã lưu" : m.mock ? "AI mẫu, chỉ dùng dữ liệu đã lưu" : "AI, chỉ dùng dữ liệu đã lưu"}</span></div>`;
+  return `<div class="msg a">${body}<span class="via">${m.via === "cache" ? "Từ dữ liệu đã lưu" : m.mock ? "Mẫu, chỉ dùng dữ liệu đã lưu" : "Chỉ dùng dữ liệu đã lưu"}</span></div>`;
 }
 async function doAsk(question) {
   if (!current || !question.trim()) return;
@@ -201,13 +262,19 @@ async function doAsk(question) {
 $("askForm").addEventListener("submit", (e) => { e.preventDefault(); doAsk($("askInput").value); });
 $("askChips").addEventListener("click", (e) => { const b = e.target.closest("[data-q]"); if (b) doAsk(b.dataset.q); });
 
-// ---------- ảnh -> chữ (OCR do AI đọc) ----------
+// ---------- ảnh -> chữ (đọc chữ/mã trên ảnh) ----------
+// Chọn file, dán (Ctrl+V / nút "Dán ảnh") hoặc kéo thả ảnh vào ô tìm kiếm.
 let ocrCtx = "";
+let previewUrl = "";
 $("btnPhoto").addEventListener("click", () => $("file").click());
-$("file").addEventListener("change", async () => {
-  const f = $("file").files?.[0];
-  $("file").value = "";
-  if (!f) return;
+$("file").addEventListener("change", () => { const f = $("file").files?.[0]; $("file").value = ""; if (f) readImage(f); });
+
+async function readImage(f) {
+  if (!f || !String(f.type || "image/").startsWith("image/")) { toast("Đây không phải ảnh"); return; }
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = URL.createObjectURL(f);
+  $("pastePreview").src = previewUrl;
+  $("pasteInfo").hidden = false;
   $("ocrNote").textContent = "Đang đọc ảnh…";
   try {
     const image = await shrink(f);
@@ -217,12 +284,44 @@ $("file").addEventListener("change", async () => {
     const text = [o.brand, o.name].filter(Boolean).join(" ").trim() || (o.keywords ?? [])[0] || "";
     const withModel = o.model && !text.toUpperCase().includes(String(o.model).toUpperCase()) ? `${text} ${o.model}` : text;
     $("q").value = withModel.trim();
+    $("q").dispatchEvent(new Event("input"));
     ocrCtx = (o.specs ?? []).slice(0, 4).join(" ");
     $("ocrNote").textContent = "Đã đọc từ ảnh — kiểm tra rồi bấm Tìm hiểu" + (r.mock ? " (mẫu)" : "");
   } catch (e) {
     $("ocrNote").textContent = "Không đọc được ảnh: " + friendly(e);
   }
+}
+function clearImage() {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = "";
+  $("pasteInfo").hidden = true;
+  $("pastePreview").removeAttribute("src");
+  $("ocrNote").textContent = "";
+  ocrCtx = "";
+}
+$("pasteClear").addEventListener("click", clearImage);
+const imageOf = (items) => [...(items ?? [])].find((it) => it.kind === "file" && String(it.type).startsWith("image/"));
+// Ctrl+V ở bất kỳ đâu trong trang: có ảnh trong clipboard thì đọc ảnh (chữ thì dán bình thường)
+document.addEventListener("paste", (e) => {
+  const it = imageOf(e.clipboardData?.items);
+  if (!it) return;
+  const f = it.getAsFile();
+  if (f) { e.preventDefault(); readImage(f); }
 });
+$("btnPaste").addEventListener("click", async () => {
+  try {
+    if (!navigator.clipboard?.read) throw new Error("no api");
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((t) => t.startsWith("image/"));
+      if (type) { readImage(new File([await item.getType(type)], "dan.png", { type })); return; }
+    }
+    toast("Trong clipboard chưa có ảnh. Sao chép ảnh rồi bấm lại.");
+  } catch { toast("Trình duyệt chưa cho đọc clipboard: bấm vào ô tìm kiếm rồi nhấn Ctrl+V (hoặc giữ lên ô nhập → Dán)."); $("q").focus(); }
+});
+const dz = $("dropZone");
+dz.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.items ?? [])].some((i) => i.kind === "file")) { e.preventDefault(); dz.classList.add("drag"); } });
+dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
+dz.addEventListener("drop", (e) => { dz.classList.remove("drag"); const f = [...(e.dataTransfer?.files ?? [])].find((x) => String(x.type).startsWith("image/")); if (f) { e.preventDefault(); readImage(f); } });
 $("q").addEventListener("input", () => { if (!$("q").value) ocrCtx = ""; });
 
 function shrink(file, max = 1280) {
@@ -253,6 +352,9 @@ async function openKey(key) {
   e.fromCache = true;
   chats.delete(key);
   $("progress").hidden = true;
+  needTouched.clear();
+  fillNeed(e.need ?? parseNeed(e.plan.query), { force: true });
+  if (e.need?.choice) choices.set(e.key, e.need.choice);
   showResult(e);
   selectTab("summary");
   $("drawer").hidden = true;
@@ -323,7 +425,7 @@ $("btnHealth").addEventListener("click", async () => {
     const ext = await bridge.status(true);
     const extTxt = ext.installed ? (ext.allowed ? "tiện ích Chrome: đã kết nối" : "tiện ích Chrome: CHƯA được phép (bấm biểu tượng tiện ích → Cho phép trang này)") : "tiện ích Chrome: chưa cài";
     const blockedHosts = Object.keys(limiter.blocked());
-    const ai = settings.provider === "free" ? "chế độ MIỄN PHÍ (không AI)" : settings.aiKey ? "dùng khóa bạn nhập" : h.mock ? "chế độ MẪU (chưa có khóa AI)" : h.serverKey.claude ? "máy chủ có khóa Claude" : h.serverKey.gemini ? "máy chủ có khóa Gemini" : "chế độ MIỄN PHÍ (không cần khóa, không có AI)";
+    const ai = settings.provider === "free" ? "chế độ MIỄN PHÍ" : settings.aiKey ? "dùng khóa bạn nhập" : h.mock ? "chế độ MẪU (chưa có khóa dịch vụ)" : h.serverKey.claude ? "máy chủ có khóa Claude" : h.serverKey.gemini ? "máy chủ có khóa Gemini" : "chế độ MIỄN PHÍ (không cần khóa)";
     $("healthOut").textContent = `Máy chủ: kết nối được · ${ai}${h.needsCode ? " · cần mã truy cập" : ""} · ${extTxt}${blockedHosts.length ? " · đang tạm ngừng: " + blockedHosts.join(", ") : ""}`;
   } catch { $("healthOut").textContent = "Không kết nối được máy chủ. Kiểm tra địa chỉ."; }
   settings = keep;
@@ -333,10 +435,10 @@ async function checkHealth() {
   try {
     const h = await api.health();
     const ext = await bridge.status();
-    if (ext.installed && ext.allowed && ["auto", "chrome"].includes(settings.provider)) { $("modeTag").textContent = "Google Chrome · Chế độ AI"; return; }
+    if (ext.installed && ext.allowed && ["auto", "chrome"].includes(settings.provider)) { $("modeTag").textContent = "Google Chrome"; return; }
     if (ext.installed && !ext.allowed && ["auto", "chrome"].includes(settings.provider)) { $("modeTag").textContent = "Tiện ích Chrome: bấm biểu tượng → Cho phép trang này"; return; }
     const free = settings.provider === "free" || (!settings.aiKey && !h.serverKey.claude && !h.serverKey.gemini && !h.mock);
-    $("modeTag").textContent = settings.provider !== "free" && h.mock && !settings.aiKey ? "Chế độ mẫu · dữ liệu hư cấu" : free ? "Tìm miễn phí · không cần khóa" : "AI tìm · cache · so sánh";
+    $("modeTag").textContent = settings.provider !== "free" && h.mock && !settings.aiKey ? "Chế độ mẫu · dữ liệu hư cấu" : free ? "Tìm miễn phí · không cần khóa" : "Tìm · lưu · so sánh";
   } catch { $("modeTag").textContent = "Không kết nối được máy chủ"; }
 }
 
@@ -371,7 +473,7 @@ async function checkExtUpdate() {
 
 // ---------- khởi động ----------
 const qs = new URLSearchParams(location.search);
-if (qs.get("q")) $("q").value = qs.get("q");
+if (qs.get("q")) { $("q").value = qs.get("q"); fillNeed(parseNeed($("q").value)); }
 store.prune({ days: settings.keepDays }).catch(() => {}).finally(refreshRecent); // tự xóa dữ liệu cũ
 checkHealth();
 checkExtUpdate();
