@@ -31,15 +31,17 @@ test("detectCategory/detectBrand", () => {
   assert.equal(detectBrand("nồi chiên Philips HD9200"), "Philips");
 });
 
-test("makePlan sinh từ khóa có model trong ngoặc kép, hàng tiêu dùng không hỏi công nghệ", () => {
+test("makePlan nhận diện model/ngành, từ khóa = chuỗi gõ nguyên vẹn + cụm hỏi", () => {
   const t = makePlan({ text: "Máy rửa chén Bosch SHD4080" });
   assert.equal(t.model, "SHD4080");
   assert.equal(t.category, "tech");
-  assert.ok(t.queries.some((q) => q.includes('"SHD4080"')));
-  assert.ok(t.queries.some((q) => /thông số|công nghệ/.test(q)));
+  assert.ok(t.queries.every((q) => q.startsWith("Máy rửa chén Bosch SHD4080 ")), "mọi từ khóa bắt đầu bằng chuỗi gõ nguyên vẹn");
+  assert.ok(t.queries.some((q) => q.includes("ưu điểm nhược điểm")));
+  assert.ok(t.queries.some((q) => q.includes("thông số") || q.includes("công nghệ")));
+  const c0 = makePlan({ text: "Dầu gội Clear 650g" });
+  assert.ok(!c0.queries.some((q) => q.includes("công nghệ") || q.includes("thông số")));
   const c = makePlan({ text: "Dầu gội Clear 650g" });
   assert.equal(c.category, "consumer");
-  assert.ok(!c.queries.some((q) => /công nghệ|thông số/.test(q)));
   assert.equal(makePlan({ text: "bút bi", category: "tech" }).category, "tech");
   assert.equal(cacheKey(makePlan({ text: "Bosch  SHD4080" })), cacheKey(makePlan({ text: "bosch shd4080" })));
 });
@@ -140,22 +142,20 @@ test("store: xuất/nạp một file cache", async () => {
   await assert.rejects(() => st2.importAll({ foo: 1 }));
 });
 
-test("từ khóa tìm lấy đúng chuỗi người dùng gõ trước, cắt gọn sau", async () => {
+test("từ khóa tìm: giữ nguyên chuỗi người dùng gõ (không cắt tên/mã) + cụm hỏi", async () => {
   const { makePlan, extractModel, exactQuery } = await import("../web/js/lib/plan.js");
   const { aiQuery } = await import("../web/js/lib/aitext.js");
   const { shopQuery } = await import("../web/js/lib/hybrid.js");
-  const typed = "Laptop Dell Inspiron 15 3520 i5-1235U 16GB giá rẻ";
+  const typed = "Laptop Dell Inspiron 15 3520 i5-1235U 16GB giá rẻ " + "mô tả dài ".repeat(30).trim();
   const plan = makePlan({ text: typed });
   assert.equal(plan.query, typed);
-  assert.equal(plan.queries[0], typed + " giá bán", "từ khóa đầu tiên là chuỗi gốc");
-  assert.ok(aiQuery(plan, 0).startsWith(typed), "Google Chế độ AI hỏi đúng chữ đã gõ");
-  assert.ok(aiQuery(plan, 1).startsWith(typed));
-  assert.ok(shopQuery(plan, 0).startsWith(typed), "lần đầu tìm cửa hàng bằng chuỗi gốc");
-  const p2 = makePlan({ text: "Nồi chiên không dầu Sunhouse SHD4030 giá rẻ nhất" });
-  assert.ok(shopQuery(p2, 0).startsWith("Nồi chiên không dầu Sunhouse SHD4030 giá rẻ nhất"));
-  assert.ok(shopQuery(p2, 1).startsWith("Sunhouse SHD4030 "), "lần bổ sung mới dùng bản cắt gọn: " + shopQuery(p2, 1));
+  assert.equal(plan.name.includes("mô tả dài mô tả dài mô tả dài mô tả dài mô tả dài mô tả dài"), true, "tên không bị cắt");
+  assert.ok(plan.queries.every((q) => q.startsWith(typed + " ")));
+  for (const v of [0, 1, 2, 3]) assert.ok(aiQuery(plan, v).includes(typed), "AI giữ nguyên chuỗi gõ");
+  for (const v of [0, 1, 2]) assert.ok(shopQuery(plan, v).startsWith(typed + " "));
+  assert.match(shopQuery(plan, 0), /giá bán$/);
+  assert.notEqual(shopQuery(plan, 0), shopQuery(plan, 1));
   assert.notEqual(extractModel(typed), "i5-1235U", "thông số CPU không phải mã model");
   assert.equal(extractModel("Máy lạnh Daikin FTKF25XVMV R32 2.5HP"), "FTKF25XVMV");
-  assert.equal(exactQuery("  a   b \n c "), "a b c");
-  assert.ok(exactQuery("từ ".repeat(200)).length <= 160);
+  assert.equal(exactQuery("  a   b " + String.fromCharCode(10) + " c "), "a b c");
 });

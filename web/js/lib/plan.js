@@ -67,12 +67,9 @@ export function detectBrand(text) {
   return best ? best.replace(/\b\w/g, (c) => c.toUpperCase()) : "";
 }
 
-/** Chuỗi người dùng gõ, giữ nguyên chữ; chỉ gom khoảng trắng và giới hạn độ dài (cắt ở ranh giới từ). */
-export function exactQuery(text, max = 160) {
-  const t = String(text ?? "").replace(/\s+/g, " ").trim();
-  if (t.length <= max) return t;
-  const cut = t.slice(0, max);
-  return cut.slice(0, Math.max(cut.lastIndexOf(" "), 40)).trim();
+/** Chuỗi người dùng gõ, giữ nguyên chữ; chỉ gom khoảng trắng thừa. Không cắt, không thêm chữ. */
+export function exactQuery(text) {
+  return String(text ?? "").replace(/\s+/g, " ").trim();
 }
 
 const FILLER =/\b(giá|giá bán|mua|tư vấn|so sánh|review|đánh giá|ưu nhược điểm|thông số|cho tôi|tìm|hãy|có tốt không|nên mua)\b/gi;
@@ -86,30 +83,15 @@ export function makePlan(input) {
   const model = (input.model || extractModel(raw)).trim();
   const brand = (input.brand || detectBrand(raw) || brandBeforeModel(raw, model)).trim();
   let name = raw.replace(FILLER, " ").replace(/\s+/g, " ").trim() || raw;
-  if (name.length > 90) name = name.split(" ").slice(0, 14).join(" ");
   const auto = !input.category || input.category === "auto";
   const guessed = detectCategory(raw);
   const category = auto ? (guessed === "unknown" ? "tech" : guessed) : input.category;
 
-  const base = name;
-  const exact = model ? `"${model}"` : `"${name}"`;
-  const queries = [];
-  const add = (q) => { q = q.replace(/\s+/g, " ").trim(); if (q && !queries.includes(q)) queries.push(q); };
-
-  // Từ khóa đầu tiên luôn là chuỗi người dùng gõ nguyên văn; các biến thể cắt gọn (model, tên) đến sau
-  add(`${exactQuery(raw)} giá bán`);
-  add(`${exact} ${model ? name.replace(model, "").trim() : ""} giá bán`);
-  add(`${exact} đánh giá ưu điểm nhược điểm`);
-  if (category === "tech") {
-    add(`${exact} thông số kỹ thuật công nghệ tính năng`);
-    add(`${base} so sánh với ${brand ? "đối thủ cùng phân khúc ngoài " + brand : "các hãng khác cùng phân khúc"}`);
-    add(`${model || base} specs review pros cons price Vietnam`);
-    add(`${base} nhược điểm công nghệ có tốt không`);
-  } else {
-    add(`${base} giá so sánh sản phẩm tương tự`);
-    add(`${base} review có tốt không`);
-    add(`${base} thay thế rẻ hơn tương đương`);
-  }
+  // Từ khóa: [chuỗi người dùng gõ, giữ nguyên] + cụm hỏi (giá, ưu/nhược điểm, thông số...). Không cắt tên/mã sản phẩm.
+  const typed = exactQuery(raw);
+  const queries = [`${typed} giá bán`, `${typed} đánh giá ưu điểm nhược điểm`];
+  if (category === "tech") queries.push(`${typed} thông số kỹ thuật công nghệ tính năng`, `${typed} so sánh với đối thủ cùng phân khúc`, `${typed} nhược điểm công nghệ có tốt không`);
+  else queries.push(`${typed} giá so sánh sản phẩm tương tự`, `${typed} review có tốt không`, `${typed} thay thế rẻ hơn tương đương`);
   const generic = genericName(name, model, brand);
   return {
     query: raw,

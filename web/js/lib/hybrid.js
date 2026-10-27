@@ -11,14 +11,8 @@ const hintKey = (h) => modelKey(h?.model) || norm(h?.name || "").slice(0, 24);
 export const FACTS_VERSION = 4; // v2: thông số, VAT, tên NCC; v3: liên hệ; v4: sửa nhận địa chỉ và Zalo
 export const pageKey = (url, hint) => normUrl(url) + "|" + hintKey(hint) + "|v" + FACTS_VERSION;
 // Truy vấn Google thường để ra trang bán hàng/NCC; đổi theo lần tìm để ra nơi bán khác
-// Lần đầu tìm bằng đúng chữ người dùng gõ; các lần bổ sung mới dùng bản cắt gọn (hãng + model, tên)
-export const shopQuery = (plan, variant = 0) => {
-  const v = Math.abs(variant) % 3;
-  const typed = exactQuery(plan.query);
-  const cut = plan.model ? [plan.brand, plan.model].filter(Boolean).join(" ") : plan.name;
-  const subject = v === 0 ? typed || cut : [cut, typed][v - 1] || cut;
-  return `${subject} ${["giá bán", "mua ở đâu giá tốt", "báo giá nhà cung cấp"][v]}`;
-};
+// Tìm cửa hàng: [chuỗi người dùng gõ, giữ nguyên] + cụm hỏi; lần bổ sung đổi cụm hỏi, không cắt tên/mã
+export const shopQuery = (plan, variant = 0) => `${exactQuery(plan.query) || plan.name} ${["giá bán", "mua ở đâu giá tốt", "báo giá nhà cung cấp"][Math.abs(variant) % 3]}`;
 export const googleAIUrl = (q) => "https://www.google.com/search?q=" + encodeURIComponent(q) + "&udm=50";
 
 const abortIf = (signal) => { if (signal?.aborted) throw new DOMException("Đã dừng", "AbortError"); };

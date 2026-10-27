@@ -35,7 +35,7 @@ const str = (v, max) => String(v ?? "").slice(0, max);
 function cleanPlan(p) {
   if (!p || typeof p !== "object") throw new AIError("Thiếu kế hoạch tìm kiếm.", 400);
   const plan = {
-    query: str(p.query, 300), name: str(p.name, 200), generic: str(p.generic, 80), model: str(p.model, 60), brand: str(p.brand, 60),
+    query: str(p.query, 500), name: str(p.name, 200), generic: str(p.generic, 80), model: str(p.model, 60), brand: str(p.brand, 60),
     category: p.category === "consumer" ? "consumer" : "tech", categoryAuto: !!p.categoryAuto,
     queries: Array.isArray(p.queries) ? p.queries.slice(0, 8).map((q) => str(q, 200)) : [],
     variant: Number.isInteger(p.variant) ? Math.abs(p.variant) % 50 : 0,
@@ -51,15 +51,14 @@ function cleanPlan(p) {
 async function freeSearch(task, plan, env) {
   const t0 = Date.now();
   const g = plan.generic || plan.name;
-  const base = [plan.brand, plan.model, plan.model ? plan.generic : plan.name].filter(Boolean).join(" ");
-  // mỗi lần tìm bổ sung dùng bộ từ khóa khác (variant) để ra nguồn khác; 1–2 truy vấn thôi vì DuckDuckGo chặn khi gửi dồn
+  // Sản phẩm: [chuỗi người dùng gõ, giữ nguyên] + cụm hỏi (giá, ưu/nhược điểm...). Không cắt tên/mã.
+  // Mỗi lần bổ sung đổi cụm hỏi để ra nguồn khác; 1–2 truy vấn thôi vì DuckDuckGo chặn khi gửi dồn.
+  // (So sánh hãng khác cần tìm theo loại sản phẩm nên dùng tên loại.)
   const v = (plan.variant ?? 0) % 3;
-  const m = plan.model || plan.name;
-  // Truy vấn đầu tiên dùng đúng chữ người dùng gõ; các truy vấn sau mới dùng bản cắt gọn (hãng/model/tên)
-  const typed = exactQuery(plan.query);
+  const typed = exactQuery(plan.query) || plan.name;
   const qs = task === "compare"
     ? [[`${g} giá`], [`${g} bán chạy nhất`], [`${g} nên mua hãng nào`]][v]
-    : [[`${typed || base} giá`, `${m} đánh giá ưu nhược điểm`], [`${typed || m} review thực tế người dùng`, `${base || m} mua ở đâu giá tốt`], [`${m} so sánh`, `${typed || m} thông số kỹ thuật`]][v];
+    : [[`${typed} giá`, `${typed} đánh giá ưu nhược điểm`], [`${typed} review thực tế người dùng`, `${typed} mua ở đâu giá tốt`], [`${typed} so sánh`, `${typed} thông số kỹ thuật`]][v];
   const found = await searchMany(qs, { limit: task === "compare" ? 8 : 30, gapMs: Number(env.SEARCH_GAP_MS ?? 700) });
   const { queries, errors } = found;
   // bỏ các trang đã có trong cache (đã đọc) để lần này ra trang MỚI
@@ -144,7 +143,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.7.1", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.7.3", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });

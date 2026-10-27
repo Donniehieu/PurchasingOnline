@@ -96,8 +96,11 @@ export function parseAnswer({ lines, cites }, plan = {}) {
   return out;
 }
 
-/** Chuỗi truy vấn gửi Chế độ AI: một câu hỏi gom đủ giá + ưu + nhược (+ công nghệ với hàng kỹ thuật). */
-// variant 0: câu hỏi gốc; các lần tìm bổ sung dùng cách hỏi khác để Google dẫn ra nguồn khác
+/**
+ * Chuỗi truy vấn gửi Chế độ AI: [chuỗi người dùng gõ, GIỮ NGUYÊN] + cụm hỏi (giá, ưu điểm, nhược điểm, công nghệ...).
+ * Không bao giờ cắt tên/mã sản phẩm; chỉ ghép thêm cụm hỏi phía sau.
+ */
+// variant 0: câu hỏi gốc; các lần tìm bổ sung dùng cụm hỏi khác để Google dẫn ra nguồn khác
 const TECH_VARIANTS = [
   (n) => `${n}: giá bán ở Việt Nam, thông số, công nghệ sử dụng, ưu điểm, nhược điểm`,
   (n) => `${n}: đánh giá thực tế của người dùng, lỗi hay gặp, độ bền, chế độ bảo hành`,
@@ -111,10 +114,7 @@ const CONSUMER_VARIANTS = [
   (n) => `${n} mua ở đâu giá tốt nhất`,
 ];
 export function aiQuery(plan, variant = plan.variant ?? 0) {
-  // Hỏi Google bằng đúng chữ người dùng gõ; chỉ khi không có chuỗi gốc mới dùng tên đã cắt gọn
-  const typed = exactQuery(plan.query);
-  const subject = [plan.brand, plan.model || plan.name].filter(Boolean).join(" ") || plan.name;
-  const name = typed || (plan.name && plan.model && !plan.name.includes(plan.model) ? `${plan.name} ${plan.model}` : plan.name || subject);
+  const name = exactQuery(plan.query) || plan.name;
   const list = plan.category === "consumer" ? CONSUMER_VARIANTS : TECH_VARIANTS;
   return list[Math.abs(variant) % list.length](name);
 }

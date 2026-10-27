@@ -153,8 +153,9 @@ test("knownOf, từ khóa biến thể và prompt dùng dữ liệu đã có", (
   const plan = makePlan({ text: TEXT });
   const qs = [0, 1, 2, 3].map((v) => aiQuery(plan, v));
   assert.equal(new Set(qs).size, 4, "4 cách hỏi khác nhau");
+  assert.ok(qs.every((q) => q.includes(TEXT)), "mọi cách hỏi giữ nguyên chuỗi người dùng gõ");
   assert.equal(aiQuery(plan, 4), qs[0], "vòng lại");
-  assert.ok(!qs.some((q) => /công nghệ/.test(aiQuery(makePlan({ text: "Dầu gội Clear 650g" }), 0))));
+  assert.ok(!aiQuery(makePlan({ text: "Dầu gội Clear 650g" }), 0).includes("công nghệ"));
   const e = newEntry(plan, "k");
   const k = knownOf(e);
   assert.deepEqual(k, { urls: [], pros: [], cons: [], brands: [] });
@@ -165,7 +166,7 @@ test("knownOf, từ khóa biến thể và prompt dùng dữ liệu đã có", (
   assert.match(comparePrompt({ ...plan, known: { brands: ["Aurora", "Kora"] }, queries: [] }, {}), /Đã có các hãng: Aurora, Kora/);
 });
 
-test("tìm miễn phí (DuckDuckGo): bộ từ khóa đổi theo lần tìm và loại bỏ trang đã đọc", async () => {
+test("tìm miễn phí (DuckDuckGo): từ khóa giữ nguyên chuỗi gõ + cụm hỏi, đổi cụm hỏi theo lần tìm, loại bỏ trang đã đọc", async () => {
   const bodies = [];
   const results = [["https://shop1.vn/a", "Zeta ZF-500 A"], ["https://shop9.vn/b", "Zeta ZF-500 B"], ["https://shop2.vn/c", "Zeta ZF-500 C"]];
   const html = results.map(([u, t]) => `<a rel="nofollow" class="result__a" href="${u}">${t}</a><a class="result__snippet" href="x">Giá 2.400.000đ</a>`).join("");
@@ -181,7 +182,8 @@ test("tìm miễn phí (DuckDuckGo): bộ từ khóa đổi theo lần tìm và 
     const q0 = bodies.splice(0).join("|");
     const v1 = await call(1, { urls: ["https://shop1.vn/a", "https://shop2.vn/c"], pros: [], cons: [], brands: [] });
     const q1 = bodies.splice(0).join("|");
-    assert.notEqual(q0, q1, "từ khóa khác nhau giữa các lần tìm");
+    assert.notEqual(q0, q1, "cụm hỏi khác nhau giữa các lần tìm");
+    assert.ok(q0.includes(TEXT) && q1.includes(TEXT), "chuỗi người dùng gõ được giữ nguyên ở mọi lần");
     assert.deepEqual(v1.sources.map((s) => s.url), ["https://shop9.vn/b"], "chỉ còn trang mới");
   } finally { globalThis.fetch = real; }
 });

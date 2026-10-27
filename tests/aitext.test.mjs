@@ -64,7 +64,10 @@ test("hàng tiêu dùng: không có công nghệ", () => {
   assert.ok(d.pros.length > 0);
 });
 
-test("aiQuery gom đủ nội dung, hàng tiêu dùng không hỏi công nghệ", () => {
-  assert.match(aiQuery(makePlan({ text: "Nồi chiên không dầu Sunhouse SHD4030" })), /công nghệ.*ưu điểm.*nhược điểm/);
-  assert.ok(!/công nghệ/.test(aiQuery(makePlan({ text: "Dầu gội Clear 650g" }))));
+test("aiQuery: giữ nguyên chuỗi người dùng gõ + cụm hỏi; hàng tiêu dùng không hỏi công nghệ", () => {
+  const t = "Nồi chiên không dầu Sunhouse SHD4030 5,5L";
+  assert.ok(aiQuery(makePlan({ text: t })).startsWith(t + ":"));
+  assert.match(aiQuery(makePlan({ text: t })), /công nghệ.*ưu điểm.*nhược điểm/);
+  const c = aiQuery(makePlan({ text: "Dầu gội Clear 650g" }));
+  assert.ok(c.startsWith("Dầu gội Clear 650g ") && !c.includes("công nghệ"));
 });
