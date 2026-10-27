@@ -6,6 +6,7 @@ import { createHybridApi } from "./lib/hybrid.js";
 import { extUpdateNotice } from "./lib/version.js";
 import { mountOfferTable } from "./table-ui.js";
 import { mountLinkInput } from "./link-ui.js";
+import { mountViewer } from "./viewer.js";
 import { newQuoteEntry, importLinks } from "./lib/quote.js";
 import { genKeys, competitorBrands, withInfo } from "./lib/keygen.js";
 import { expandResearch } from "./lib/expand.js";
@@ -75,6 +76,7 @@ function showResult(entry) {
   $("empty").hidden = true;
   $("result").hidden = false;
   $("tabs").hidden = false;
+  syncBusy();
   scheduleRender();
   renderAskChips();
 }
@@ -159,15 +161,36 @@ function onEvent(ev) {
   if (ev.type === "step") {
     const li = $("st-" + ev.id);
     if (li) { li.className = ev.status; li.querySelector("small").textContent = ev.text || ""; li.title = ev.text || ""; }
-    if (ev.status === "running" || ev.text) $("liveText").textContent = `${STEPS.find((s) => s.id === ev.id)?.label ?? ""}: ${ev.text || "đang chạy…"}`;
+    if (ev.status === "running" || ev.text) { $("liveText").textContent = `${STEPS.find((s) => s.id === ev.id)?.label ?? ""}: ${ev.text || "đang chạy…"}`; setBusyText(ev.text); }
   } else if (ev.type === "progress") {
     $("liveText").textContent = `Đọc link ${ev.done}/${ev.total} · ${ev.domain}`;
+    setBusyText(`link ${ev.done}/${ev.total} · ${ev.domain}`);
   } else if (ev.type === "entry") {
     if (!current || current.key !== ev.entry.key || current !== ev.entry) showResult(ev.entry); else scheduleRender();
   }
 }
 
+// Đang chạy: làm mờ dữ liệu phía sau, hiện vòng quay "Đang tìm kiếm, vui lòng chờ…" (có nút Dừng)
+function syncBusy() {
+  const on = !!runCtl && !$("result").hidden;
+  $("busy").hidden = !on;
+  $("result").classList.toggle("is-busy", on);
+}
+function setBusyText(t) { $("busyText").textContent = t || ""; }
+$("busyStop").addEventListener("click", () => { pending = null; runCtl?.abort(); });
+
+function setMode(m) {
+  const quote = m === "quote";
+  $("paneSearch").hidden = quote;
+  $("paneQuote").hidden = !quote;
+  $("modeSearch").setAttribute("aria-selected", String(!quote));
+  $("modeQuote").setAttribute("aria-selected", String(quote));
+}
+$("modeSearch").addEventListener("click", () => setMode("search"));
+$("modeQuote").addEventListener("click", () => setMode("quote"));
+
 function setRunning(on) {
+  syncBusy();
   if (on) $("progress").hidden = false;
   $("btnGo").disabled = on;
   $("btnStop").hidden = !on;
@@ -323,7 +346,9 @@ async function startSearch(text, { skipCards = false } = {}) {
   // đã có kết quả trong cache thì mở luôn, không hỏi lại
   let cached = null;
   try { cached = a.scenario === "url" ? null : await store.get(cacheKey(makePlan({ text, category: $("cat").value }))); } catch { /* bỏ qua */ }
-  if (a.needCards && !skipCards && !cached && $("mode").value !== "cache") {
+  const bk = cacheKey(makePlan({ text, ocrText: ocrCtx, category: $("cat").value }));
+  const saved = $("mode").value !== "cache" && a.scenario !== "url" ? savedFor(bk) : null;
+  if (a.needCards && !skipCards && !cached && !saved && $("mode").value !== "cache") {
     await showPreCards(text, a);
     // hai sản phẩm: phải chọn cái nào trước. Còn lại: tìm NGAY theo thông tin ban đầu, vừa tìm vừa hỏi; trả lời xong sẽ tự tìm bổ sung
     if (a.scenario !== "pair") run(text, { mode: $("mode").value, ocrText: ocrCtx, scenario: a.mode });
@@ -331,9 +356,8 @@ async function startSearch(text, { skipCards = false } = {}) {
   }
   $("preCards").hidden = true; pre = null;
   // đã từng trả lời cho từ khóa này: dùng lại thông tin đó để tìm bổ sung, không hỏi lại
-  const saved = $("mode").value !== "cache" && a.scenario !== "url" ? savedFor(cacheKey(makePlan({ text, ocrText: ocrCtx, category: $("cat").value }))) : null;
   if (saved) {
-    pending = { text, adds: saved.adds, baseKey: cacheKey(makePlan({ text, ocrText: ocrCtx, category: $("cat").value })), typeId: saved.typeId, analysis: analyzeInput(withInfo(text, saved.adds)) };
+    pending = { text, adds: saved.adds, baseKey: bk, typeId: saved.typeId, analysis: analyzeInput(withInfo(text, saved.adds)) };
     toast("Dùng lại thông tin bạn đã trả lời: " + saved.adds.join(" · "));
   }
   run(text, { mode: $("mode").value, ocrText: ocrCtx, scenario: a.mode });
@@ -558,9 +582,11 @@ async function addLinks(entry, items) {
   }
 }
 
+mountViewer();
+
 const quoteInput = mountLinkInput($("quoteHost"), {
   withName: true, submitLabel: "Lập bảng báo giá", toast,
-  onSubmit: ({ items, name }) => { $("quoteBox").open = true; addLinks(newQuoteEntry(name), items); },
+  onSubmit: ({ items, name }) => addLinks(newQuoteEntry(name), items),
 });
 
 // ---------- hỏi đáp ----------

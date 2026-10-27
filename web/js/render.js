@@ -47,7 +47,7 @@ export function renderHeadline(entry) {
       ${entry.runs?.length > 1 ? `<span class="badge">${entry.runs.length} lần tìm</span>` : ""}
       ${entry.ai ? `<span class="badge">${entry.ai.mock ? "Dữ liệu mẫu" : entry.ai.chrome ? "Google (Chrome)" : entry.ai.free ? "Tìm miễn phí" : esc(entry.ai.provider)}</span>` : ""}
     </div>
-    <div><h1>${esc(p.name || entry.plan.query)}</h1>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}</div>
+    <div><h1>${esc(p.name || entry.plan.query)}</h1>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}${entry.asked?.adds?.length ? `<div class="muted small">Thông tin bạn đã cung cấp: <b>${esc(entry.asked.adds.join(" · "))}</b> (đã lưu, dùng để tìm tiếp)</div>` : ""}</div>
     <div>
       ${entry.scenario === "explore" ? (s.price.count ? `<div class="price-big">${s.price.min !== s.price.max ? `${money(s.price.min)} – ${money(s.price.max)}` : money(s.price.median)}</div><div class="price-sub">Khoảng giá tham khảo của nhiều loại khác nhau. Bổ sung thông tin để có giá cụ thể.</div>` : `<div class="price-big muted">Chưa có giá cụ thể</div><div class="price-sub">Bổ sung hãng, mã hoặc thông số để tìm giá.</div>`) : s.price.count ? `<div class="price-big">${money(s.price.median)}</div><div class="price-sub">Giá trung bình · ${range}${s.price.count} nguồn ${chips(entry, s.price.items.map((i) => i.srcId), 3)}</div>` : `<div class="price-big muted">Chưa có giá xác thực</div><div class="price-sub">Nên hỏi báo giá nhà cung cấp.</div>`}
     </div>

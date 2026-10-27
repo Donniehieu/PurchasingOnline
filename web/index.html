@@ -32,45 +32,63 @@
   <!-- Các tab nằm trong thanh đầu trang nên luôn thấy, kể cả khi kéo thanh cuộn lên xuống -->
   <nav class="tabs" role="tablist" id="tabs" aria-label="Các phần kết quả" hidden>
     <button role="tab" data-tab="summary" aria-selected="true">Tổng hợp</button>
-    <button role="tab" data-tab="advice" aria-selected="false">Tư vấn chọn</button>
-    <button role="tab" data-tab="suppliers" aria-selected="false">Nhà cung cấp</button>
-    <button role="tab" data-tab="table" aria-selected="false">Bảng NCC</button>
     <button role="tab" data-tab="compare" aria-selected="false">So sánh</button>
     <button role="tab" data-tab="tech" aria-selected="false" id="tabTechBtn">Công nghệ</button>
+    <button role="tab" data-tab="suppliers" aria-selected="false">Nhà cung cấp</button>
+    <button role="tab" data-tab="table" aria-selected="false">Bảng NCC</button>
+    <button role="tab" data-tab="advice" aria-selected="false">Tư vấn chọn</button>
     <button role="tab" data-tab="images" aria-selected="false">Hình ảnh</button>
-    <button role="tab" data-tab="log" aria-selected="false">Nhật ký</button>
     <button role="tab" data-tab="ask" aria-selected="false">Hỏi đáp</button>
+    <button role="tab" data-tab="log" aria-selected="false">Nhật ký</button>
   </nav>
 </header>
 
 <main id="main">
   <div id="extBanner" class="alert info" hidden></div>
   <section class="card search" aria-label="Tìm sản phẩm" id="dropZone">
-    <form id="form" autocomplete="off">
-      <label for="q" class="sr-only">Tên sản phẩm hoặc mã model</label>
-      <textarea id="q" rows="2" maxlength="500" placeholder="Tên / mã model, hoặc dán link sản phẩm. Ví dụ: Tai nghe Sony WH-1000XM5. Có thể dán ảnh (Ctrl+V)." enterkeyhint="search"></textarea>
-      <div class="row">
-        <button type="button" id="btnPhoto" class="btn ghost" title="Chọn ảnh sản phẩm từ máy">
-          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-          Ảnh
-        </button>
-        <button type="button" id="btnCamera" class="btn ghost" title="Chụp ảnh sản phẩm bằng camera">Chụp ảnh</button>
-        <button type="button" id="btnPaste" class="btn ghost" title="Dán ảnh đang sao chép (hoặc bấm Ctrl+V trong trang)">Dán ảnh</button>
-        <label class="sr-only" for="cat">Loại hàng</label>
-        <select id="cat" class="btn ghost">
-          <option value="auto">Tự nhận loại hàng</option>
-          <option value="tech">Máy móc · thiết bị · gia dụng · điện tử</option>
-          <option value="consumer">Hàng tiêu dùng</option>
-        </select>
-        <button type="submit" id="btnGo" class="btn primary">Tìm hiểu</button>
-      </div>
-      <div id="pasteInfo" class="paste-info" hidden>
-        <img id="pastePreview" alt="Ảnh đã dán">
-        <span id="ocrNote" class="muted"></span>
-        <button type="button" id="pasteClear" class="chip">Bỏ ảnh</button>
-      </div>
-      <div id="intentHint" class="intent-hint" hidden aria-live="polite"></div>
-      <details class="need" id="needBox">
+    <div class="seg" role="tablist" aria-label="Chế độ">
+      <button type="button" class="seg-btn" id="modeSearch" role="tab" aria-selected="true">Tìm sản phẩm</button>
+      <button type="button" class="seg-btn" id="modeQuote" role="tab" aria-selected="false">Báo giá theo link</button>
+    </div>
+
+    <div id="paneSearch">
+      <form id="form" autocomplete="off">
+        <label for="q" class="sr-only">Tên sản phẩm hoặc mã model</label>
+        <textarea id="q" rows="2" maxlength="500" placeholder="Tên / mã model, hoặc dán link sản phẩm. Ví dụ: Tai nghe Sony WH-1000XM5. Có thể dán ảnh (Ctrl+V)." enterkeyhint="search"></textarea>
+        <div id="pasteInfo" class="paste-info" hidden>
+          <img id="pastePreview" alt="Ảnh đã dán">
+          <span id="ocrNote" class="muted"></span>
+          <button type="button" id="pasteClear" class="chip">Bỏ ảnh</button>
+        </div>
+        <div id="intentHint" class="intent-hint" hidden aria-live="polite"></div>
+        <div class="search-actions">
+          <div class="tools" role="group" aria-label="Tìm bằng ảnh">
+            <button type="button" id="btnPhoto" class="btn ghost sm" title="Chọn ảnh sản phẩm từ máy">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              Ảnh
+            </button>
+            <button type="button" id="btnCamera" class="btn ghost sm" title="Chụp ảnh sản phẩm bằng camera">Chụp</button>
+            <button type="button" id="btnPaste" class="btn ghost sm" title="Dán ảnh đang sao chép (hoặc bấm Ctrl+V trong trang)">Dán</button>
+          </div>
+          <button type="submit" id="btnGo" class="btn primary">Tìm hiểu</button>
+        </div>
+        <details class="opts">
+          <summary>Tùy chọn <span class="muted small">loại hàng · nhu cầu · cách dùng cache</span></summary>
+          <div class="opts-grid">
+            <label>Loại hàng
+              <select id="cat">
+                <option value="auto">Tự nhận loại hàng</option>
+                <option value="tech">Máy móc · thiết bị · gia dụng · điện tử</option>
+                <option value="consumer">Hàng tiêu dùng</option>
+              </select></label>
+            <label>Khi đã có trong cache
+              <select id="mode">
+                <option value="enrich">Tìm thêm trang mới, gộp vào cache</option>
+                <option value="cache">Chỉ xem cache, không tìm</option>
+                <option value="fresh">Làm lại từ đầu (xóa dữ liệu cũ)</option>
+              </select></label>
+          </div>
+          <details class="need" id="needBox">
         <summary>Nhu cầu của bạn <span class="muted small">(không bắt buộc · dùng để gợi ý sản phẩm, NCC)</span></summary>
         <div class="need-grid">
           <label>Mục đích sử dụng<input id="nPurpose" type="text" maxlength="80" placeholder="Ví dụ: gia đình 4 người, văn phòng, chơi game"></label>
@@ -80,24 +98,17 @@
         </div>
         <p id="nHint" class="muted small" style="margin:6px 0 0">Tự điền từ câu bạn gõ (ví dụ “dưới 5 triệu cho gia đình 4 người”), bạn có thể sửa. Các ô này <b>không dùng để tìm kiếm</b>: từ khóa tìm luôn là đúng chữ bạn nhập.</p>
       </details>
-      <div class="row small">
-        <label class="check">Khi đã có trong cache:
-          <select id="mode" class="btn ghost sm">
-            <option value="enrich">tìm thêm trang mới, gộp vào cache</option>
-            <option value="cache">chỉ xem cache, không tìm</option>
-            <option value="fresh">làm lại từ đầu (xóa dữ liệu cũ)</option>
-          </select></label>
-      </div>
-      <input type="file" id="file" accept="image/*" hidden>
-      <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
-    </form>
-  </section>
+        </details>
+        <input type="file" id="file" accept="image/*" hidden>
+        <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
+      </form>
+    </div>
 
-  <details class="card quote" id="quoteBox">
-    <summary><b>Báo giá NCC theo link có sẵn</b> <span class="muted small">dán nhiều link hoặc nạp file Excel → bảng so sánh + xuất Excel</span></summary>
-    <p class="muted small" style="margin:8px 0">Đã có sẵn link các nhà cung cấp? Ứng dụng mở từng link, đọc giá, VAT, thông số, liên hệ rồi lập Bảng NCC (cùng form với kết quả tìm kiếm) để so sánh và xuất file báo giá.</p>
-    <div id="quoteHost"></div>
-  </details>
+    <div id="paneQuote" hidden>
+      <p class="muted small" style="margin:12px 0 0">Đã có sẵn link các nhà cung cấp? Ứng dụng mở từng link, đọc giá, VAT, thông số, liên hệ rồi lập Bảng NCC để so sánh và xuất file Excel báo giá.</p>
+      <div id="quoteHost"></div>
+    </div>
+  </section>
 
   <section id="preCards" class="card precards" hidden aria-label="Câu hỏi trước khi tìm"></section>
 
@@ -109,17 +120,25 @@
 
   <section id="empty" class="card hint">
     <h2>Cách dùng nhanh</h2>
-    <ol>
-      <li>Nhập <b>tên hoặc mã model</b> (hoặc dán/chụp ảnh sản phẩm). Có thể ghi thêm ngân sách, mục đích.</li>
-      <li>Ứng dụng tìm trên web, lưu vào <b>cache</b>, rồi mở từng trang bán hàng để lấy giá, VAT, thông số, liên hệ nhà cung cấp.</li>
-      <li>Có sẵn link các nhà cung cấp? Mở mục <b>Báo giá NCC theo link</b>, dán link hoặc nạp file Excel để lập bảng so sánh báo giá.</li>
-      <li>Mở tab <b>Tư vấn chọn</b> để chọn sản phẩm rồi nhà cung cấp hợp nhu cầu và ngân sách. Hỏi tiếp bất kỳ lúc nào: câu trả lời lấy từ dữ liệu đã lưu, <b>ngắn gọn và gắn nguồn</b>.</li>
+    <ol class="how">
+      <li><b>Nhập</b> tên hoặc mã model (hoặc dán ảnh, link). Ứng dụng bắt đầu tìm ngay.</li>
+      <li><b>Trả lời vài câu hỏi</b> một lần duy nhất (bỏ qua được). Câu trả lời được lưu và tự dùng để tìm thêm hãng đối thủ, công nghệ.</li>
+      <li><b>Xem kết quả</b>: Tổng hợp (đúng sản phẩm bạn tìm) → So sánh → Công nghệ → Nhà cung cấp → Bảng NCC (xuất Excel).</li>
+      <li>Có sẵn link nhà cung cấp? Chọn <b>Báo giá theo link</b> ở trên và dán link hoặc nạp file Excel.</li>
     </ol>
     <p id="extHint" class="muted small" hidden>Muốn tìm bằng <b>Google</b> ngay trong Chrome của bạn (ít bị chặn 403)? <a href="ext/mua-hang-extension.zip" download>Tải tiện ích</a>, giải nén, rồi làm theo README.</p>
     <div id="recent" class="chips"></div>
   </section>
 
   <section id="result" hidden>
+    <div id="busy" class="busy" hidden role="status" aria-live="polite">
+      <div class="busy-box">
+        <div class="spin" aria-hidden="true"></div>
+        <b>Đang tìm kiếm, vui lòng chờ…</b>
+        <span id="busyText" class="muted small"></span>
+        <button type="button" id="busyStop" class="btn ghost sm">Dừng</button>
+      </div>
+    </div>
     <div id="banner"></div>
     <article id="headline" class="card headline"></article>
     <article id="verdict" class="card verdict" hidden></article>
@@ -305,6 +324,30 @@
     <div class="row end"><button type="button" id="camClose" class="btn ghost">Đóng</button><button type="button" id="camShot" class="btn primary">Chụp</button></div>
   </div>
 </dialog>
+<div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Xem ảnh lớn">
+  <div class="lb-bar">
+    <span id="lbCap" class="lb-cap"></span>
+    <span id="lbCount" class="muted small"></span>
+    <a id="lbOpen" class="btn ghost sm" href="#" target="_blank" rel="noopener noreferrer">Mở ảnh gốc</a>
+    <button type="button" id="lbClose" class="btn primary sm">Ẩn ảnh ✕</button>
+  </div>
+  <button type="button" id="lbPrev" class="lb-nav prev" aria-label="Ảnh trước">‹</button>
+  <div class="lb-stage">
+    <div id="lbSpin" class="spin" aria-hidden="true"></div>
+    <img id="lbImg" alt="">
+    <p id="lbErr" class="lb-err" hidden>Không tải được ảnh này. Bấm “Mở ảnh gốc” để xem ở trang nguồn.</p>
+  </div>
+  <button type="button" id="lbNext" class="lb-nav next" aria-label="Ảnh sau">›</button>
+</div>
+<div id="linkBusy" class="link-busy" hidden role="status" aria-live="polite">
+  <div class="busy-box">
+    <div class="spin" aria-hidden="true"></div>
+    <b>Đang mở trang, vui lòng chờ…</b>
+    <span id="linkBusyText" class="muted small"></span>
+    <span class="muted small">Trang mở ở thẻ mới; nếu chưa thấy, hãy chờ vài giây.</span>
+    <button type="button" id="linkBusyClose" class="btn ghost sm">Ẩn</button>
+  </div>
+</div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script type="module" src="js/app.js"></script>
 </body>
