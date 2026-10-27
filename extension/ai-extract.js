@@ -16,16 +16,23 @@ function extractGoogle() {
     href: a.href,
   }));
 
-  // Kết quả tìm kiếm thường: h3 nằm trong liên kết trực tiếp ra ngoài
+  // Kết quả tìm kiếm thường. Google trả liên kết dạng /goto?url=<mã hóa> (dẫn thẳng tới trang đích khi mở), hiếm khi là địa chỉ trực tiếp.
   const results = [];
   const seen = new Set();
   for (const h of main.querySelectorAll("h3")) {
     const a = h.closest("a");
-    if (!a || !/^https?:/.test(a.href) || isGoogle(a.hostname) || seen.has(a.href)) continue;
+    if (!a || seen.has(a.href)) continue;
+    const direct = /^https?:/.test(a.href) && !isGoogle(a.hostname);
+    const viaGoogle = isGoogle(a.hostname) && /^\/(goto|url)/.test(a.pathname);
+    if (!direct && !viaGoogle) continue;
     seen.add(a.href);
     const box = a.closest("[data-hveid], .g, div[jscontroller]") || a.parentElement;
     const full = clean(box ? box.innerText : "");
-    results.push({ url: a.href, title: clean(h.innerText), snippet: full.replace(clean(h.innerText), "").slice(0, 300) });
+    const title = clean(h.innerText);
+    // tên miền hiển thị dưới tiêu đề (dòng "https://www.mediamart.vn › ...")
+    const citeEl = box ? box.querySelector("cite") : null;
+    const site = clean(citeEl ? citeEl.innerText : (full.match(/https?:\/\/[^\s›]+/) || [""])[0]).split(/[\s›]/)[0];
+    results.push({ url: a.href, goto: viaGoogle, title, site, snippet: full.replace(title, "").slice(0, 300) });
   }
 
   const isAI = /udm=50/.test(url) || /Chế độ AI|AI Mode/i.test(document.title + " " + (document.querySelector("h1")?.innerText || ""));

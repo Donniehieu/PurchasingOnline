@@ -1,8 +1,9 @@
 // Trích dữ liệu từ HTML một trang sản phẩm: giá, ảnh, ưu điểm, nhược điểm, công nghệ.
 // Chỉ dùng regex (Worker không có DOM) và chặn kích thước để tiết kiệm CPU.
 import { norm, modelKey, decodeEntities, parseVnd, domainOf, clip, sentenceKey } from "./text.js";
+import { extractContacts } from "./contact.js";
 
-const MAX_HTML = 320_000; // giữ CPU thấp (Workers gói Free giới hạn ~10ms CPU mỗi lần gọi)
+const MAX_HTML = 240_000; // giữ CPU thấp (Workers gói Free giới hạn ~10ms CPU mỗi lần gọi)
 
 function attrs(tag) {
   const out = {};
@@ -309,5 +310,84 @@ export function extractFacts(htmlRaw, url, hint = {}) {
     tech,
     priceSentences: priceSentences(lines),
     listing: listing.slice(0, 20),
+    // cho bảng so sánh NCC
+    specs: relevant || prods.length ? extractSpecs(html, pick) : [],
+    vat: detectVat(text, pick),
+    seller: sellerOf(pick, metas, domain),
+    contact: extractContacts(htmlRaw.length > 600_000 ? htmlRaw.slice(0, 600_000) : htmlRaw, url),
   };
+}
+
+// ---------- Thông số kỹ thuật, VAT, tên NCC (cho bảng so sánh nhà cung cấp) ----------
+const SPEC_PRIORITY = ["model", "thuong hieu", "hang", "xuat xu", "san xuat tai", "cong suat", "dung tich", "dien ap", "tan so", "kich thuoc", "trong luong", "khoi luong", "chat lieu", "mau sac", "chuc nang", "cong nghe", "tinh nang", "hen gio", "nhiet do", "toc do", "do on", "bao hanh"];
+const NOT_SPEC = /^(gia|giá|so luong|số lượng|mua|dat hang|đặt hàng|chia se|chia sẻ|danh gia|đánh giá|binh luan|bình luận|xem them|xem thêm|tags?|ma san pham|mã sản phẩm|sku)$/i;
+
+const cellText = (h) => decodeEntities(String(h ?? "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+
+function addSpec(out, seen, k, v) {
+  k = cellText(k).replace(/[:：]\s*$/, "");
+  v = cellText(v);
+  if (!k || !v || k.length > 45 || v.length > 160 || k.length < 3) return;
+  if (/^[\d\W]+$/.test(k) || NOT_SPEC.test(k) || /^(\d+[.,]?\d*)$/.test(k)) return;
+  if (norm(k) === norm(v)) return;
+  const key = norm(k);
+  if (seen.has(key)) return;
+  // cùng giá trị và tên gần giống ("Công suất" / "Công suất đầu ra"): giữ cái đầu
+  const nv = norm(v);
+  if (out.some((o) => norm(o.v) === nv && (norm(o.k).includes(key) || key.includes(norm(o.k))))) return;
+  seen.add(key);
+  out.push({ k, v });
+}
+
+/** Thông số dạng cặp tên/giá trị: JSON-LD additionalProperty, <tr>, <dt>/<dd>, <li> hai ô con. */
+export function extractSpecs(html, pick = null) {
+  const out = [], seen = new Set();
+  for (const p of asArray(pick?.additionalProperty)) if (p && typeof p === "object") addSpec(out, seen, p.name, p.value ?? p.valueReference);
+  const h = html.length > 260_000 ? html.slice(0, 260_000) : html;
+  const body = h.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|template)\b[\s\S]*?<\/\1>/gi, " ");
+  const re = [
+    /<tr\b[^>]*>\s*<(?:th|td)\b[^>]*>([\s\S]{1,200}?)<\/(?:th|td)>\s*<(?:th|td)\b[^>]*>([\s\S]{1,400}?)<\/(?:th|td)>\s*<\/tr>/gi,
+    /<dt\b[^>]*>([\s\S]{1,200}?)<\/dt>\s*<dd\b[^>]*>([\s\S]{1,400}?)<\/dd>/gi,
+    /<li\b[^>]*>\s*<(div|span|p|strong|b|label)\b[^>]*>([\s\S]{1,200}?)<\/\1>\s*<(div|span|p|strong|b|a)\b[^>]*>([\s\S]{1,400}?)<\/\3>\s*<\/li>/gi,
+  ];
+  let n = 0;
+  for (const [i, r] of re.entries()) {
+    let m;
+    while ((m = r.exec(body)) && n++ < 400) {
+      if (i === 2) addSpec(out, seen, m[2], m[4]); else addSpec(out, seen, m[1], m[2]);
+    }
+  }
+  const rank = (s) => { const k = norm(s.k); const i = SPEC_PRIORITY.findIndex((p) => k.includes(p)); return i < 0 ? 99 : i; };
+  return out.map((s, i) => ({ ...s, i })).sort((a, b) => rank(a) - rank(b) || a.i - b.i).slice(0, 12).map(({ k, v }) => ({ k, v }));
+}
+
+/** VAT: { state: "included" | "excluded" | "rate" | "unknown", rate?, text } theo chữ trên trang hoặc dữ liệu có cấu trúc. */
+export function detectVat(text, pick = null) {
+  for (const o of asArray(pick?.offers)) {
+    const v = o?.priceSpecification?.valueAddedTaxIncluded ?? o?.valueAddedTaxIncluded;
+    if (v === true || v === "true") return { state: "included", text: "Đã gồm VAT (dữ liệu của trang)" };
+    if (v === false || v === "false") return { state: "excluded", text: "Chưa gồm VAT (dữ liệu của trang)" };
+  }
+  const t = " " + norm(text.slice(0, 120_000)) + " ";
+  const sentence = (re) => { const m = t.match(re); return m ? m[0].trim() : ""; };
+  const ex = sentence(/(gia\s+)?chua\s+(bao\s+gom\s+|gom\s+|co\s+)?vat|chua\s+vat|\+\s*vat|ngoai\s+vat|exclu(ding|sive of)\s+vat|price\s+excl\w*\s+vat/);
+  if (ex) return { state: "excluded", text: "Chưa gồm VAT (trang ghi: “" + ex + "”)" };
+  const inc = sentence(/(gia\s+)?da\s+(bao\s+gom\s+|gom\s+|co\s+)?vat|gia\s+bao\s+gom\s+vat|da\s+bao\s+gom\s+thue|inclu(ding|sive of)\s+vat|price\s+incl\w*\s+vat|vat\s+included/);
+  if (inc) return { state: "included", text: "Đã gồm VAT (trang ghi: “" + inc + "”)" };
+  const rate = t.match(/\bvat\s*(?:la\s*)?(\d{1,2})\s*%|\b(?:thue\s+)?gtgt\s*(\d{1,2})\s*%/);
+  if (rate) return { state: "rate", rate: Number(rate[1] || rate[2]), text: `VAT ${rate[1] || rate[2]}% (trang ghi)` };
+  return { state: "unknown", text: "Trang không ghi rõ VAT" };
+}
+
+/** Tên NCC (nơi bán): người bán trong dữ liệu có cấu trúc > og:site_name > tên miền. */
+export function sellerOf(pick, metas, domain) {
+  for (const o of asArray(pick?.offers)) {
+    const s = o?.seller;
+    const name = typeof s === "string" ? s : s?.name;
+    if (name) return clip(decodeEntities(String(name)), 60);
+  }
+  // og:site_name chỉ nhận khi đúng là tên (ngắn, không phải URL/tiêu đề trang); không thì dùng tên miền
+  const og = decodeEntities(metas?.["og:site_name"]?.[0] ?? "").trim();
+  const ok = og && og.length <= 32 && !/^https?:|\.[a-z]{2,}\/|\s[-–|]\s/i.test(og);
+  return clip(ok ? og : domain || "", 60);
 }

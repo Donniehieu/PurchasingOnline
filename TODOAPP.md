@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.5.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.7.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -88,6 +88,51 @@ Yêu cầu: với máy móc, thiết bị, gia dụng, điện tử, tóm tắt 
 - [ ] Việc gom nhóm dựa trên tên công nghệ: hai tên khác hẳn nhau cho cùng một công nghệ (vd tên tiếng Việt vs tên thương mại) sẽ bị tách; công nghệ chỉ được nhắc trong câu ưu/nhược điểm mà hãng không liệt kê thì chỉ được tính khi tên công nghệ ≥ 4 ký tự.
 - [ ] Chất lượng ưu/nhược điểm của công nghệ phụ thuộc AI/Google; chế độ miễn phí không AI thường không có hãng khác nên mục này ít nội dung.
 - [ ] Chưa thử với AI/Chrome thật.
+
+## 2f. Bảng so sánh NCC + xuất Excel (bản 2.6.0)
+
+Yêu cầu: scrawl Google → trang web thật + dùng cache → bảng so sánh NCC theo mẫu (STT, Tên sản phẩm/mã model, Đơn giá, VAT, Thông tin kỹ thuật bổ sung, NCC/hãng sản xuất, Link truy vấn thông tin); xuất .xlsx; xem trên web: ẩn/hiện, lọc, sắp xếp, giữ chuột kéo trái/phải.
+
+- [x] **Mô hình "offer"** (`web/js/lib/offers.js`): mỗi dòng = một trang NCC + một model; tạo khi đọc trang (giá, VAT, thông số, tên NCC, link), khi AI/Google nêu giá có nguồn (đánh dấu "chưa xác nhận" cho tới khi đọc trang), và từ trang liệt kê (hãng khác). Gộp qua các lần tìm (không nhân đôi, giá đọc từ trang thay giá AI). Cache cũ chưa có offers vẫn ra bảng (suy ra từ giá và hãng khác đã lưu).
+- [x] **Trích xuất từ trang thật** (`web/js/lib/extract.js`): thông số từ 3 kiểu markup (JSON-LD `additionalProperty`, bảng `<tr>`/`<dt><dd>`, `<li>` hai ô) — thử trên dienmayxanh.com, sunhouse.com.vn, dienmaycholon.com; VAT (đã gồm / chưa gồm / VAT x% / không ghi; dữ liệu cấu trúc thắng chữ); tên NCC (người bán > og:site_name ngắn > tên miền).
+- [x] **Google → trang bán hàng thật**: ngoài câu hỏi Chế độ AI, thêm một lượt Google thường ("<hãng> <model> giá bán / mua ở đâu giá tốt / báo giá nhà cung cấp", đổi theo lần tìm) để lấy các cửa hàng; giá trong đoạn trích Google vào bảng với nhãn "trích từ kết quả tìm kiếm". Tổng lượt mở Google mỗi lần tìm: 7 (hạn mức 8/10 phút).
+- [x] **Bảng trên web** (`web/js/table-ui.js`, `web/table.css`): ẩn/hiện cột (× và menu "Cột", nhớ lựa chọn), lọc nhanh + lọc từng cột (giá `<3tr`, `2tr-3tr`, `>2000000`; VAT; NCC/hãng; thông số), lọc cùng sản phẩm/hãng khác, sắp xếp (giá thiếu luôn ở cuối), STT đánh lại, giữ chuột kéo trái/phải (và lên/xuống), tiêu đề cố định, bấm ô thông số để mở rộng, nút "Tìm thêm NCC".
+- [x] **Xuất Excel** (`web/js/lib/xlsx-export.js`, ExcelJS tải khi bấm): đúng cột đang hiện và dòng đã lọc/sắp xếp, giá là số định dạng ₫, link bấm được, bộ lọc Excel, cố định dòng đầu, ghi chú ở ô giá chưa xác nhận, sheet "Thông tin" (nguồn, VAT, lưu ý). Đã đọc lại file bằng ExcelJS (test) và kiểm tra mọi phần XML hợp lệ trong trình duyệt.
+- [x] 11 test mới (`tests/offers.test.mjs`). Lỗi tìm thấy khi thử giao diện: bảng bị trùng dòng hãng khác (suy ra offer từ cache cũ so khớp sai khóa) → đã sửa + test.
+- [x] **Đã thử trên bản online (27/10/2026)**: tìm miễn phí "Nồi chiên không dầu Sunhouse SHD4030" → 13 trang đọc được, 8 dòng NCC thật (dienmaycholon, sunhouseviet, meta.vn, dienmayxanh, shopee...) với giá đọc từ trang, xuất Excel 8 dòng; không lỗi CPU. Dán 3 link (dienmayxanh, sunhouse.com.vn, dienmaycholon) → 3 dòng, mỗi dòng 12 thông số đúng (công suất 1700 W, dung tích, điện áp, xuất xứ...), hãng Sunhouse. Lần đầu cột thông số trống vì cache trang 7 ngày của trình duyệt còn bản cũ → đã thêm số phiên bản vào khóa cache trang (cache cũ tự bị bỏ qua). Sau đó DuckDuckGo chặn tạm thời vì mình tìm 2 lần liền (giới hạn đã biết).
+- [ ] **Chưa mở file .xlsx bằng Microsoft Excel/LibreOffice thật** (không có trong môi trường dựng); đã dùng ExcelJS (thư viện phổ biến) và kiểm tra cấu trúc, nhưng bạn nên mở thử một lần.
+- [ ] **VAT thường "Chưa rõ"**: trang bán lẻ ít khi ghi VAT; app không đoán. Trang B2B thường ghi "chưa VAT": sẽ được nhận ra.
+- [ ] **Thông số có thể khác nhau giữa các trang** (tên/cách viết); mỗi trang giữ nguyên chữ của trang đó, tối đa 12 dòng thông số ưu tiên công suất, dung tích, điện áp, kích thước...
+- [ ] **Giá Shopee/TikTok (vẽ bằng JavaScript)** không đọc được: dòng đó hiện "Liên hệ".
+- [ ] CPU Cloudflare Free: đọc thông số thêm khoảng 1 ms mỗi trang; tổng thời gian trích xuất mỗi trang ~7–11 ms trên máy dựng app, sát giới hạn ~10 ms; nếu gặp lỗi CPU ở trang nặng, trang đó bị bỏ qua và ghi log.
+- [ ] Chưa thử với Google/AI thật; chưa kiểm tra bảng trên điện thoại thật (đã thiết kế cuộn ngang).
+- [x] Sửa: giao diện không cập nhật khi tab/khung ở nền vì `requestAnimationFrame` bị tạm dừng → thêm `setTimeout` dự phòng.
+
+## 2g. Sửa "không load được dữ liệu NCC": mở đúng các trang trong Google (bản 2.7.0, tiện ích 1.2.0)
+
+**Nguyên nhân tìm được** (kiểm tra trực tiếp trên trang Google thật):
+1. **Kết quả Google không phải địa chỉ trực tiếp mà là liên kết `/goto?url=<mã hóa>`** (mở thì dẫn thẳng tới trang đích, đã thử: ra đúng trang linhkienlamphat.com). Bộ đọc cũ coi đó là "trang Google" nên bỏ hết → **không có trang cửa hàng nào được mở**. Đây là lỗi gốc.
+2. Phần chọn trang chỉ có 4 chỗ cho sản phẩm chính và các chỗ này bị nguồn AI trích dẫn chiếm hết, nên dù có kết quả cửa hàng cũng không được mở.
+3. Không có tiện ích: công cụ tìm miễn phí (DuckDuckGo) thường bị chặn → bảng trống, không giải thích gì.
+
+**Đã sửa**
+- [x] `extension/ai-extract.js`: nhận liên kết `/goto` của kết quả Google (kèm tên website, đoạn trích). Đã chạy thử trên trang Google thật: 8 kết quả.
+- [x] `web/js/lib/hybrid.js`: mở từng kết quả (tiện ích đi theo chuyển hướng), đọc trang thật, lấy **địa chỉ trang đích thật** làm link; bỏ Facebook/TikTok/YouTube (không có giá), mỗi website tối đa 2 link, Google chặn thì dừng, không mở trùng một liên kết.
+- [x] `pickPages`: trang cửa hàng từ Google/tìm kiếm được mở **trước** (ưu tiên trang có mã model), tối đa ~60% số trang; vẫn mở bài đánh giá được trích dẫn; mặc định 10 trang (6 khi tìm bổ sung). Chỉ dừng sớm khi đã đọc ≥ 5 NCC.
+- [x] **Dữ liệu chỉ từ đúng link**: mỗi dòng có cờ "đã đọc từ đúng trang"; giá AI/Google/trang danh sách là "chưa xác nhận" và **mặc định bị ẩn** (có lựa chọn "Gồm cả dữ liệu chưa xác nhận"). **Tên sản phẩm là link tới đúng trang đã lấy dữ liệu**.
+- [x] **NCC theo website hoặc hãng**: cột "NCC / hãng sản xuất" ghi cả hai; chọn **nhóm theo NCC (website)** hoặc **theo hãng** (có dòng tiêu đề nhóm, số dòng, giá thấp nhất).
+- [x] **Scrawl liên hệ** (`web/js/lib/contact.js`): SĐT/hotline, email, Zalo, địa chỉ, link trang "Liên hệ" — từ `tel:`/`mailto:`/`zalo.me`, dữ liệu cấu trúc Organization, header/footer; gộp theo website; NCC nào thiếu SĐT/email thì mở trang "Liên hệ" của họ (một lần, tối đa 3 trang mỗi lần tìm). Đã thử trên 5 trang thật (dienmayxanh, sunhouse.com.vn, dienmaycholon, meta.vn, linhkienlamphat): ra hotline, SĐT, email, địa chỉ. Cột "Liên hệ NCC" (lọc được, ẩn/hiện được, có trong Excel; SĐT/email/Zalo bấm được trên web).
+- [x] **Khi ít/không có dữ liệu, bảng nói rõ vì sao và cách làm** (`diagnose`): DuckDuckGo chặn → cài tiện ích Chrome / dán link / khóa Gemini; Google CAPTCHA → xác minh rồi "Tìm thêm NCC"; có dòng chưa xác nhận bị ẩn; trang khác model; trang chặn 403.
+- [x] 9 test mới (`tests/contact.test.mjs`) + test pipeline Chrome kiểm tra bảng ra nhiều NCC từ kết quả Google (link /goto), đọc từ đúng trang, có liên hệ.
+
+**Đã thử trên bản online (27/10/2026, dán link bán hàng thật vì DuckDuckGo đang chặn)**: dán 5 link → 5 dòng NCC (dienmaycholon, meta.vn, dienmayxanh, sunhouse.com.vn, linhkienlamphat), mỗi dòng giá + 12 thông số đọc từ đúng link, SĐT/hotline, email, địa chỉ, Zalo; NCC thiếu email/địa chỉ (dienmayxanh) được mở trang "Liên hệ" tự động và bổ sung. Không lỗi CPU. Lỗi gặp khi thử: cache trang cũ thiếu trường liên hệ (→ thêm số phiên bản cache trang, hiện là v4), chỉ nhận 3 link dán (→ nâng lên 8), Zalo lấy nhầm "plugins" và địa chỉ lấy nhầm "Điện thoại:" (→ đã lọc, có test). Một link tự đoán (linhkienlamphat) trả giá 109.000 ₫ có vẻ không đúng sản phẩm: giá luôn cần kiểm tra ở trang gốc.
+
+**Chưa kiểm chứng / giới hạn**
+- [ ] **Chưa chạy tiện ích trong Chrome thật**: việc tiện ích tải liên kết `/goto` bằng `fetch` (không cookie) và đi theo chuyển hướng chưa kiểm chứng (đã kiểm chứng khi mở bằng trình duyệt). Nếu Google chặn thì các dòng sẽ không ra và nhật ký ghi rõ.
+- [ ] Hạn mức Google: mỗi lần tìm ~6 lượt mở Google + ~10 lần mở liên kết `/goto` (giãn cách ≥ 2,5 giây, tổng ~40 giây). Nếu Google hỏi CAPTCHA, tiện ích đưa tab lên cho bạn xác minh.
+- [ ] Shopee/TikTok vẽ giá bằng JavaScript: dòng có link và liên hệ nhưng "Liên hệ" báo giá.
+- [ ] CPU Cloudflare Free: trích xuất mỗi trang ~8–12 ms trên máy dựng app, sát giới hạn ~10 ms; đã giảm cửa sổ đọc HTML còn 240 KB. Trang nặng có thể bị bỏ qua (có log).
+- [ ] Số điện thoại/địa chỉ đọc bằng quy tắc: có thể lấy nhầm hoặc thiếu; luôn kiểm tra ở trang gốc.
 
 ## 3. Tự xóa dữ liệu cũ
 

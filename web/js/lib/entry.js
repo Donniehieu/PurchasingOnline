@@ -2,6 +2,8 @@
 // đều được nạp vào đây kèm nguồn, rồi aggregate.js tổng hợp theo từng mục.
 import { normUrl, domainOf, parseVnd, sentenceKey, clip, decodeEntities, norm, modelKey } from "./text.js";
 import { priceStats } from "./aggregate.js";
+import { upsertOffer } from "./offers.js";
+import { mergeContact, hasContact } from "./contact.js";
 
 export const ENTRY_VERSION = 2;
 
@@ -36,16 +38,17 @@ export function logEvent(entry, kind, msg, extra = {}) {
   entry.updatedAt = Date.now();
 }
 
-export function addSource(entry, url, title = "", via = "ai", verified = true) {
+export function addSource(entry, url, title = "", via = "ai", verified = true, kind = "") {
   if (!url || !/^https?:\/\//i.test(url)) return null;
   const key = normUrl(url);
   let s = entry.sources.find((x) => x.key === key);
   if (!s) {
-    s = { id: entry.sources.length + 1, key, url, title: clip(decodeEntities(title), 120), domain: domainOf(url), via, verified };
+    s = { id: entry.sources.length + 1, key, url, title: clip(decodeEntities(title), 120), domain: domainOf(url), via, verified, kind };
     entry.sources.push(s);
   } else {
     if (!s.title && title) s.title = clip(decodeEntities(title), 120);
     if (verified && !s.verified) s.verified = true;
+    if (kind && !s.kind) s.kind = kind; // "shop" = trang cửa hàng trong kết quả tìm kiếm; "cite" = nguồn AI trích dẫn
   }
   return s.id;
 }
@@ -75,7 +78,7 @@ export function dropStalePrices(entry, days = 45) {
 // Kết quả bước "nhận diện + thông tin sản phẩm" của AI
 export function ingestProduct(entry, ai) {
   const d = ai.data ?? {};
-  for (const s of ai.sources ?? []) addSource(entry, s.url, s.title, "ai");
+  for (const s of ai.sources ?? []) addSource(entry, s.url, s.title, "ai", true, s.kind);
   if (Array.isArray(ai.queries)) for (const q of ai.queries) if (q && !entry.queries.includes(q)) entry.queries.push(q);
 
   if (d.category === "tech" || d.category === "consumer") {
@@ -98,6 +101,8 @@ export function ingestProduct(entry, ai) {
     if (srcId && entry.prices.some((p) => p.srcId === srcId && p.value === value)) continue;
     if (srcId) entry.prices = entry.prices.filter((p) => p.srcId !== srcId);
     entry.prices.push({ value, label: clip(pr.label || "", 80), srcId, via: "ai", verified: pr.verified !== false, ts: Date.now() });
+    const ps = srcId ? entry.sources.find((x) => x.id === srcId) : null;
+    if (ps && !/(^|.)google./.test(ps.domain)) upsertOffer(entry, { kind: "same", name: entry.product.name, model: entry.product.model, brand: entry.product.brand, seller: ps.domain, price: value, priceVia: pr.via || "ai", url: ps.url, srcId });
   }
   pushClaims(entry, entry.pros, d.pros);
   pushClaims(entry, entry.cons, d.cons);
@@ -117,7 +122,7 @@ export function ingestProduct(entry, ai) {
 // Kết quả bước "so sánh hãng khác" của AI
 export function ingestCompare(entry, ai) {
   const d = ai.data ?? {};
-  for (const s of ai.sources ?? []) addSource(entry, s.url, s.title, "ai");
+  for (const s of ai.sources ?? []) addSource(entry, s.url, s.title, "ai", true, s.kind);
   if (Array.isArray(ai.queries)) for (const q of ai.queries) if (q && !entry.queries.includes(q)) entry.queries.push(q);
   const seen = new Set(entry.alternatives.map((a) => (a.brand + a.model).toLowerCase()));
   for (const a of d.alternatives ?? []) {
@@ -148,6 +153,8 @@ export function ingestCompare(entry, ai) {
     for (const id of ids) if (id && !alt.srcIds.includes(id)) alt.srcIds.push(id);
     for (const t of alt.tech) t.srcId = alt.srcIds[0] ?? null; // nguồn chung của hãng này
     entry.alternatives.push(alt);
+    const as = alt.priceSrcId ? entry.sources.find((x) => x.id === alt.priceSrcId) : null;
+    if (alt.price && as) upsertOffer(entry, { kind: "other", name: alt.name, model: alt.model, brand: alt.brand, seller: as.domain, price: alt.price, priceVia: "ai", url: as.url, srcId: as.id });
   }
   entry.updatedAt = Date.now();
 }
@@ -195,6 +202,21 @@ export function ingestPage(entry, page, ctx = {}) {
       rec.found.images++;
     }
   }
+  // liên hệ của NCC (theo tên miền): lấy từ mọi trang đã đọc, kể cả trang không khớp model
+  if (page.contact) mergeSellerContact(entry, page.finalUrl || page.url, page.contact);
+  if (page.relevant || forAlt) {
+    const pr = page.product?.price;
+    upsertOffer(entry, {
+      kind: forAlt ? "other" : "same",
+      name: page.product?.name || page.h1 || page.title,
+      model: forAlt ? forAlt.model : entry.product.model || page.product?.sku || "",
+      brand: forAlt ? forAlt.brand : page.product?.brand || entry.product.brand,
+      seller: page.seller || page.domain,
+      price: pr?.value ?? (forAlt ? forAlt.price : null) ?? null,
+      priceVia: pr?.source ?? (forAlt && forAlt.price ? "ai" : "page"),
+      vat: page.vat, specs: page.specs, url: page.finalUrl || page.url, srcId, readFromPage: true,
+    });
+  }
   entry.pages.push(rec);
   const parts = Object.entries(rec.found).filter(([, n]) => n).map(([k, n]) => `${LABEL[k]} ${n}`);
   logEvent(entry, "page", `Đã mở ${page.domain}${page.relevant ? "" : " (không khớp model)"}: ${parts.join(", ") || "không có dữ liệu mới"}`, { url: page.url, ok: true, srcId });
@@ -230,10 +252,51 @@ export function ingestListing(entry, page) {
     });
     rec.found.price++;
     if (p.image) rec.found.images++;
+    upsertOffer(entry, { kind: "other", name: p.name, model: p.sku, brand: p.brand, seller: page.seller || page.domain, price: p.price, priceVia: "listing", vat: page.vat, specs: [], url: p.url || page.finalUrl || page.url, srcId: own ?? srcId, readFromPage: false });
   }
   entry.pages.push(rec);
   logEvent(entry, "page", `Đã mở ${page.domain} để tìm hãng khác: ${rec.found.price ? rec.found.price + " hãng mới" : "không có hãng mới"}`, { url: page.url, ok: true, srcId });
   return rec;
+}
+
+/** Gộp thông tin liên hệ vào entry.contacts[tên miền]. */
+export function mergeSellerContact(entry, url, contact) {
+  const d = domainOf(url);
+  if (!d || !contact) return;
+  entry.contacts ??= {};
+  entry.contacts[d] = mergeContact(entry.contacts[d], contact, hasContact(contact) ? url : "");
+}
+
+/** Các NCC đã đọc nhưng chưa có SĐT/email và có biết link trang "Liên hệ": tối đa max trang, mỗi NCC một lần. */
+export function sellersNeedingContact(entry, max = 3) {
+  const out = [];
+  const domains = new Set((entry.offers ?? []).filter((o) => o.readFromPage).map((o) => domainOf(o.url)));
+  for (const d of domains) {
+    const c = entry.contacts?.[d];
+    if (!c || c.fetchedContactPage || !c.contactUrl) continue;
+    if (c.phones?.length && (c.emails?.length || c.address)) continue; // đã đủ SĐT và (email hoặc địa chỉ)
+    out.push({ domain: d, url: c.contactUrl });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Kết quả đọc trang "Liên hệ" của một NCC. */
+export function ingestContactPage(entry, domain, page) {
+  entry.contacts ??= {};
+  const cur = entry.contacts[domain] ?? mergeContact(null, {});
+  cur.fetchedContactPage = true; // dù được hay không cũng không mở lại
+  entry.contacts[domain] = cur;
+  if (!page.ok) {
+    entry.pages.push({ url: page.url, finalUrl: page.url, ok: false, status: page.status ?? 0, title: "", ts: Date.now(), ms: page.ms ?? 0, relevant: false, error: page.error || "", for: "liên hệ", found: { price: 0, pros: 0, cons: 0, tech: 0, images: 0 } });
+    logEvent(entry, "page", `Trang liên hệ ${domain}: bỏ qua (${page.error || "không mở được"})`, { url: page.url, ok: false }); return false; }
+  mergeSellerContact(entry, page.finalUrl || page.url, page.contact);
+  entry.contacts[domain].fetchedContactPage = true;
+  const c = entry.contacts[domain];
+  const got = [c.phones?.length ? "SĐT" : "", c.emails?.length ? "email" : "", c.address ? "địa chỉ" : ""].filter(Boolean);
+  entry.pages.push({ url: page.url, finalUrl: page.finalUrl || page.url, ok: true, status: page.status ?? 200, title: clip(page.title || "", 120), ts: Date.now(), ms: page.ms ?? 0, relevant: false, error: "", for: "liên hệ", found: { price: 0, pros: 0, cons: 0, tech: 0, images: 0 } });
+  logEvent(entry, "page", `Đã mở trang liên hệ ${domain}: ${got.join(", ") || "không có thông tin mới"}`, { url: page.url, ok: true });
+  return true;
 }
 
 // Ưu/nhược điểm/công nghệ của một hãng khác, lấy từ Google Chế độ AI (nguồn là chính trang Google AI đó)

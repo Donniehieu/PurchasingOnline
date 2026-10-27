@@ -2,7 +2,7 @@
 // Không phải dữ liệu thật: ứng dụng luôn gắn nhãn "Dữ liệu mẫu" khi dùng chế độ này.
 
 const shell = (title, head, body) => `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${title}</title>${head}</head><body>
-<header><nav><a href="/">Trang chủ</a><a href="/sp">Sản phẩm</a><a href="/lh">Liên hệ</a></nav></header>${body}<footer>Bản quyền &copy; cửa hàng mẫu</footer></body></html>`;
+<header><nav><a href="/">Trang chủ</a><a href="/sp">Sản phẩm</a><a href="/lh">Liên hệ</a></nav></header>${body}<footer>Bản quyền &copy; cửa hàng mẫu. Hotline: 0901 234 567 Email: ban-hang@shop.test Địa chỉ: 12 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh</footer></body></html>`;
 
 export function mockPages(origin) {
   const img = (n) => `${origin}/mock/img/${n}.png`;
@@ -16,7 +16,8 @@ export function mockPages(origin) {
 <p>Giá bán: 2.490.000đ. Bảo hành 24 tháng.</p>
 <h2>Ưu điểm</h2><ul><li>Dung tích 5,5 lít đủ cho gia đình 4 người nấu một lần</li><li>Làm nóng nhanh chỉ 2 phút, tiết kiệm điện</li><li>Giỏ chiên chống dính, dễ vệ sinh trong máy rửa chén</li></ul>
 <h2>Nhược điểm</h2><ul><li>Quạt chạy hơi ồn ở mức nhiệt cao</li><li>Không có cửa sổ quan sát thức ăn</li></ul>
-<p>Sản phẩm dùng Công nghệ Rapid Air giúp luồng khí nóng lưu thông đều.</p></main>`
+<p>Sản phẩm dùng Công nghệ Rapid Air giúp luồng khí nóng lưu thông đều.</p>
+<h2>Thông số kỹ thuật</h2><table><tr><th>Công suất</th><td>1700 W</td></tr><tr><th>Dung tích</th><td>5,5 lít</td></tr><tr><th>Điện áp</th><td>220V / 50Hz</td></tr><tr><th>Bảo hành</th><td>24 tháng</td></tr></table></main>`
     ),
     "/mock/zeta-zf500-review.html": shell(
       "Đánh giá Zeta ZF-500: có đáng mua không?",
@@ -30,7 +31,7 @@ export function mockPages(origin) {
     "/mock/zeta-zf500-shop-b.html": shell(
       "Zeta ZF-500 | Cửa hàng B",
       `<meta property="product:price:amount" content="2.390.000"><meta property="product:price:currency" content="VND"><meta property="og:image" content="${img(3)}">`,
-      `<main><h1>Zeta ZF-500</h1><img src="${img(3)}" data-src="${img(3)}" alt="Zeta ZF-500 nồi chiên" width="500" height="500"><p>Giá ưu đãi 2.390.000đ - miễn phí vận chuyển.</p></main>`
+      `<main><h1>Zeta ZF-500</h1><img src="${img(3)}" data-src="${img(3)}" alt="Zeta ZF-500 nồi chiên" width="500" height="500"><p>Giá ưu đãi 2.390.000đ (đã bao gồm VAT) - miễn phí vận chuyển.</p><ul><li><span>Xuất xứ</span><span>Việt Nam</span></li><li><span>Trọng lượng</span><span>4,2 kg</span></li></ul></main>`
     ),
     "/mock/aurora-af300.html": shell(
       "Aurora AF-300 nồi chiên không dầu 4L",

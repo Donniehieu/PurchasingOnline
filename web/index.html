@@ -14,6 +14,7 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="table.css">
 </head>
 <body>
 <header class="top">
@@ -84,6 +85,7 @@
 
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-tab="summary" aria-selected="true">Tổng hợp</button>
+      <button role="tab" data-tab="table" aria-selected="false">Bảng NCC</button>
       <button role="tab" data-tab="compare" aria-selected="false">So sánh</button>
       <button role="tab" data-tab="tech" aria-selected="false" id="tabTechBtn">Công nghệ</button>
       <button role="tab" data-tab="images" aria-selected="false">Hình ảnh</button>
@@ -91,6 +93,7 @@
       <button role="tab" data-tab="ask" aria-selected="false">Hỏi đáp</button>
     </nav>
     <div id="tab-summary" class="panel" role="tabpanel"></div>
+    <div id="tab-table" class="panel" role="tabpanel" hidden></div>
     <div id="tab-compare" class="panel" role="tabpanel" hidden></div>
     <div id="tab-tech" class="panel" role="tabpanel" hidden></div>
     <div id="tab-images" class="panel" role="tabpanel" hidden></div>

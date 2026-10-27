@@ -7,6 +7,7 @@ import { createLimiter } from "../web/js/lib/limiter.js";
 import { createHybridApi, pageKey } from "../web/js/lib/hybrid.js";
 import { createMemoryStore } from "../web/js/lib/store.js";
 import { research, enough } from "../web/js/lib/pipeline.js";
+import { tableRows, applyView, DEFAULT_VIEW } from "../web/js/lib/offers.js";
 import { mockPages } from "../dev/mock-pages.mjs";
 import { ApiError } from "../web/js/lib/api.js";
 import { createBridge } from "../web/js/lib/bridge.js";
@@ -72,17 +73,23 @@ function fakeExtension({ blockHosts = [], dead = [], aiMode = true } = {}) {
     call: async (type, p) => {
       if (type === "googleAI") {
         log.ai.push(p.q);
-        if (!aiMode) return { ok: true, mode: "organic", lines: [], cites: [], results: [{ url: O + "/mock/zeta-zf500-shop-a.html", title: "Zeta ZF-500", snippet: "Giá 2.490.000đ" }] };
+        if (!aiMode) { const g = (c, title, site) => ({ url: "https://www.google.com/goto?url=" + c, goto: true, title, site, snippet: "" }); return { ok: true, mode: "organic", lines: [], cites: [], results: [g("S0", "Zeta ZF-500", "https://shop.test"), g("S2", "Zeta ZF-500 B", "https://shop-b.test")] }; }
         if (/Aurora|Nimbus|Kora|Vento/.test(p.q)) return { ok: true, mode: "ai", url: "g", cites: [{ label: "X", href: "https://www.google.com/goto?url=ALT" }], lines: [{ t: "Các ưu điểm nổi bật", c: [] }, { t: "Giá rẻ hơn Zeta khoảng hai mươi phần trăm, phù hợp bếp nhỏ", c: [0] }, { t: "Nhỏ gọn, dễ cất vào tủ bếp, dễ vệ sinh", c: [0] }, { t: "Các nhược điểm cần lưu ý", c: [] }, { t: "Dung tích nhỏ hơn, không hợp gia đình đông người", c: [0] }, { t: "Thông số kỹ thuật cốt lõi", c: [] }, { t: "Công nghệ làm nóng | Turbo Heat (làm nóng nhanh)", c: [] }] };
         return { ok: true, mode: "ai", url: "g", ...REAL };
       }
       if (type === "googleSearch") {
         log.search.push(p.q);
-        return { ok: true, mode: "organic", lines: [], cites: [], results: [{ url: O + "/mock/listing.html", title: "Nồi chiên không dầu", snippet: "" }, { url: O + "/mock/khong-ton-tai.html", title: "chết", snippet: "" }] };
+        const g = (code, title, site, snippet = "") => ({ url: "https://www.google.com/goto?url=" + code, goto: true, title, site, snippet });
+        const listing = /ZF-500|Zeta/i.test(p.q) ? null : [g("L0", "Nồi chiên không dầu", "https://shop.test"), g("DEAD", "chết", "https://dead.test")];
+        if (listing) return { ok: true, mode: "organic", lines: [], cites: [], results: listing };
+        return { ok: true, mode: "organic", lines: [], cites: [], results: [g("S0", "Zeta ZF-500 chính hãng", "https://shop.test"), g("S1", "Đánh giá Zeta ZF-500", "https://review.test"), g("S2", "Zeta ZF-500 | Cửa hàng B", "https://shop-b.test"), g("FB", "Facebook post", "https://facebook.com", "Facebook · Điện máy XANH"), g("S0", "trùng", "https://shop.test")] };
       }
       if (type === "fetchPage") {
         log.fetch.push(p.url);
-        const path = gotoMap.get(p.url) ?? new URL(p.url).pathname;
+        const gm = /goto\?url=(\w+)/.exec(p.url);
+        const GO = { S0: "/mock/zeta-zf500-shop-a.html", S1: "/mock/zeta-zf500-review.html", S2: "/mock/zeta-zf500-shop-b.html", L0: "/mock/listing.html", DEAD: "/mock/khong-ton-tai.html" };
+        if (gm && !/^T\d$/.test(gm[1]) && !GO[gm[1]]) return { ok: false, error: "HTTP 404" };
+        const path = gm && GO[gm[1]] ? GO[gm[1]] : gotoMap.get(p.url) ?? new URL(p.url).pathname;
         const host = new URL(p.url.startsWith("http") ? p.url : O).hostname;
         if (blockHosts.includes(host)) return { ok: false, blocked: true, status: 403, error: "403" };
         if (dead.includes(path)) return { ok: false, error: "Không kết nối được" };
@@ -136,7 +143,8 @@ test("hybrid: không có Chế độ AI thì dùng kết quả Google thường;
   const plan = { query: "x", name: "Nồi chiên Zeta ZF-500", model: "ZF-500", brand: "Zeta", category: "tech", generic: "nồi chiên", queries: [] };
   const org = await mkHybrid(fakeExtension({ aiMode: false })).api.search("product", plan);
   assert.equal(org.organic, true);
-  assert.equal(org.data.prices[0].value, 2490000);
+  assert.ok(org.sources.length >= 2 && org.sources.every((s) => s.url.startsWith(O + "/mock/") && s.kind === "shop"), "kết quả Google được mở và dùng địa chỉ trang thật");
+  assert.ok(!org.sources.some((s) => /facebook/i.test(s.url + s.title)), "bỏ mạng xã hội");
 
   const failing = { status: async () => ({ installed: true, allowed: true }), call: async () => ({ ok: false, blocked: true, error: "Google yêu cầu xác minh" }) };
   const server = { ...noServer(), search: async () => ({ ok: true, provider: "free", data: {}, sources: [], queries: [] }) };
@@ -185,13 +193,23 @@ test("pipeline với Google Chrome: Chế độ AI -> trang nguồn -> hãng kh�
   const withInsight = entry.alternatives.filter((a) => a.pros.length);
   assert.equal(withInsight.length, 3, "hỏi Google AI cho 3 hãng đầu; log: " + entry.log.filter((l) => l.kind === "error" || /Google AI/.test(l.msg)).map((l) => l.msg).join(" | "));
   assert.ok(withInsight[0].tech.some((t) => /Turbo Heat/.test(t.name)));
-  // số lần mở Google: 1 (sản phẩm) + 2 (tìm hãng) + 3 (từng hãng) = 6, dưới hạn mức 8 / 10 phút
-  assert.equal(ext.log.ai.length + ext.log.search.length, 6);
+  // số lần mở Google: 1 (sản phẩm) + 1 (trang cửa hàng) + 1 (tìm hãng) + 3 (từng hãng) = 6, dưới hạn mức 8 / 10 phút
+  assert.equal(ext.log.ai.length + ext.log.search.length, 6); // 1 AI + 1 Google thường (trang cửa hàng) + 1 tìm hãng + 3 hãng
   // không tải trùng URL
   assert.equal(new Set(ext.log.fetch).size, ext.log.fetch.length - ext.log.fetch.filter((u, i, a) => a.indexOf(u) !== i).length + 0 || true, true);
   const pageUrls = entry.pages.map((p) => p.url);
   assert.equal(new Set(pageUrls).size, pageUrls.length, "mỗi trang ghi log đúng 1 lần");
   assert.ok(entry.log.some((l) => /Google Chế độ AI trong Chrome/.test(l.msg)));
+
+  // bảng NCC: mỗi trang cửa hàng Google dẫn tới là một dòng, dữ liệu đọc từ đúng trang đó, kèm liên hệ
+  const rows = applyView(tableRows(entry), DEFAULT_VIEW);
+  const same = rows.filter((r) => r.kind === "same");
+  assert.ok(same.length >= 2, "nhiều NCC cùng sản phẩm: " + same.length);
+  assert.ok(rows.every((r) => r.read), "mặc định chỉ dòng đã đọc từ đúng trang");
+  assert.ok(same.every((r) => r.url.startsWith(O + "/mock/")), "link là trang thật đã mở");
+  assert.ok(same.some((r) => r.specs.length > 0 && r.price > 0), "giá và thông số lấy từ chính trang đó");
+  assert.ok(rows.some((r) => /0901 234 567/.test(r.contactText) && /ban-hang@shop.test/.test(r.contactText)), "có thông tin liên hệ");
+  assert.ok(entry.sources.some((s) => s.kind === "shop"), "nguồn từ kết quả Google được đánh dấu là trang cửa hàng");
 
   // tìm lại: dùng cache kết quả, không mở Google lần nào
   const n = ext.log.ai.length + ext.log.search.length + ext.log.fetch.length;
@@ -200,9 +218,11 @@ test("pipeline với Google Chrome: Chế độ AI -> trang nguồn -> hãng kh�
 });
 
 test("enough(): đủ dữ liệu thì dừng mở thêm trang sản phẩm chính", () => {
-  const e = { pages: [1, 2, 3, 4].map(() => ({ ok: true })), prices: [1, 2, 3, 4], pros: [1, 2, 3, 4], cons: [1, 2, 3], images: [1, 2, 3] };
+  const offers = ["a", "b", "c", "d", "e"].map((s) => ({ kind: "same", seller: s, readFromPage: true }));
+  const e = { pages: [1, 2, 3, 4, 5].map(() => ({ ok: true })), prices: [1, 2, 3, 4], pros: [1, 2, 3, 4], cons: [1, 2, 3], images: [1, 2, 3], offers };
   assert.equal(enough(e), true);
   assert.equal(enough({ ...e, cons: [1] }), false);
+  assert.equal(enough({ ...e, offers: offers.slice(0, 3) }), false, "chưa đủ NCC thì còn mở thêm trang cửa hàng");
 });
 
 test("bridge: gửi postMessage và nhận phản hồi; không có tiện ích thì hết giờ và báo chưa cài", async () => {

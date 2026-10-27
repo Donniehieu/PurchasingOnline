@@ -29,7 +29,7 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
  * Tải một trang HTML (không vượt CAPTCHA, không thử lại). Theo chuyển hướng tối đa 4 lần,
  * kiểm tra lại từng chặng; đọc tối đa maxBytes.
  */
-export async function fetchHtml(rawUrl, { timeoutMs = 9000, maxBytes = 320_000, allowLocal = false, fetchImpl = fetch } = {}) {
+export async function fetchHtml(rawUrl, { timeoutMs = 9000, maxBytes = 300_000, allowLocal = false, fetchImpl = fetch } = {}) {
   const t0 = Date.now();
   let current = rawUrl;
   for (let hop = 0; hop <= 4; hop++) {

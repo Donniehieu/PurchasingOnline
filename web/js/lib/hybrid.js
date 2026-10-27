@@ -1,12 +1,16 @@
 // API "lai": ưu tiên Google trong Chrome của người dùng (qua tiện ích), rồi mới tới máy chủ (AI có khóa / tìm miễn phí).
 // Mọi lần đọc trang đều đi qua bộ giới hạn (giãn cách theo tên miền, tự ngắt khi 403) và cache trang 7 ngày.
 import { ApiError } from "./api.js";
-import { extractFacts, priceFromSnippet } from "./extract.js";
+import { extractFacts } from "./extract.js";
 import { parseAnswer, aiQuery } from "./aitext.js";
 import { normUrl, domainOf, modelKey, norm } from "./text.js";
 
 const hintKey = (h) => modelKey(h?.model) || norm(h?.name || "").slice(0, 24);
-export const pageKey = (url, hint) => normUrl(url) + "|" + hintKey(hint);
+// Đổi số này khi cấu trúc dữ liệu trang thay đổi: cache trang cũ (thiếu trường mới) tự bị bỏ qua
+export const FACTS_VERSION = 4; // v2: thông số, VAT, tên NCC; v3: liên hệ; v4: sửa nhận địa chỉ và Zalo
+export const pageKey = (url, hint) => normUrl(url) + "|" + hintKey(hint) + "|v" + FACTS_VERSION;
+// Truy vấn Google thường để ra trang bán hàng/NCC; đổi theo lần tìm để ra nơi bán khác
+export const shopQuery = (plan, variant = 0) => `${plan.model ? [plan.brand, plan.model].filter(Boolean).join(" ") : plan.name} ${["giá bán", "mua ở đâu giá tốt", "báo giá nhà cung cấp"][Math.abs(variant) % 3]}`;
 export const googleAIUrl = (q) => "https://www.google.com/search?q=" + encodeURIComponent(q) + "&udm=50";
 
 const abortIf = (signal) => { if (signal?.aborted) throw new DOMException("Đã dừng", "AbortError"); };
@@ -54,6 +58,43 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
   }
 
   // ---------- tìm qua Google trong Chrome ----------
+  // Kết quả Google là liên kết /goto?url=<mã hóa>: mở từng cái (tiện ích đi theo chuyển hướng) để biết trang đích thật và đọc luôn dữ liệu.
+  // Bỏ mạng xã hội/video (không có giá); mỗi website tối đa 2 liên kết; Google chặn thì dừng.
+  const JUNK = /facebook|tiktok|youtube|instagram|pinterest|zalo\.me|twitter/i;
+  const hostOfSite = (site) => domainOf(/^https?:/.test(site || "") ? site : "https://" + (site || ""));
+  async function resolveGoogleResults(results, { hint, max, signal, kind, perSite = 2 }) {
+    const out = [], seenUrl = new Set(), seenGoto = new Set(), perHost = new Map();
+    for (const x of results ?? []) {
+      if (out.length >= max) break;
+      if (seenGoto.has(x.url)) continue; // cùng một liên kết kết quả: không mở hai lần
+      seenGoto.add(x.url);
+      if (JUNK.test(`${x.site} ${(x.snippet || "").slice(0, 120)} ${x.goto ? "" : x.url}`)) continue;
+      const hint0 = hostOfSite(x.site);
+      if (hint0 && (perHost.get(hint0) ?? 0) >= perSite) continue;
+      abortIf(signal);
+      let url = x.url, facts = null;
+      if (x.goto) {
+        const rr = await limiter.run("google.com", async () => {
+          const r = await bridge.call("fetchPage", { url: x.url }, 45000);
+          return r.ok ? r : { ok: false, blocked: !!r.blocked, error: r.message || r.error, retryAfter: r.retryAfter };
+        });
+        if (!rr.ok) { if (rr.blocked) break; continue; }
+        url = rr.finalUrl;
+        facts = { ...extract(rr.html, rr.finalUrl, hint), url: rr.finalUrl, finalUrl: rr.finalUrl, status: rr.status, ms: rr.ms };
+        await store.putPage(pageKey(rr.finalUrl, hint), facts);
+      }
+      const k = normUrl(url);
+      if (seenUrl.has(k)) continue;
+      seenUrl.add(k);
+      const host = domainOf(url);
+      if ((perHost.get(host) ?? 0) >= perSite) continue;
+      perHost.set(host, (perHost.get(host) ?? 0) + 1);
+      if (hint0) perHost.set(hint0, (perHost.get(hint0) ?? 0) + (hint0 === host ? 0 : 1));
+      out.push({ url, title: facts?.title || x.title, snippet: x.snippet, kind });
+    }
+    return out;
+  }
+
   async function chromeProduct(plan, signal) {
     const t0 = Date.now();
     const q = aiQuery(plan, plan.variant ?? 0);
@@ -64,10 +105,9 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
     const hint = { model: plan.model, name: plan.name, brand: plan.brand };
 
     if (r.mode !== "ai") {
-      // Chế độ AI không có (khu vực/tài khoản): dùng kết quả tìm kiếm thường của Google
-      const results = r.results ?? [];
-      const prices = results.map((x) => ({ x, v: priceFromSnippet(x.title + ". " + x.snippet) })).filter((y) => y.v).map(({ x, v }) => ({ value: v, label: domainOf(x.url) + " (trích từ kết quả Google)", source: x.url }));
-      return { ok: true, task: "product", data: { category: plan.category, product: { name: plan.name, brand: plan.brand, model: plan.model, summary: "" }, prices, pros: [], cons: [], technologies: [], specs: [] }, sources: results.map((x) => ({ url: x.url, title: x.title })), queries: [q], provider: "chrome", model: "Google (kết quả thường)", ms: Date.now() - t0, chrome: true, organic: true };
+      // Chế độ AI không có (khu vực/tài khoản): dùng kết quả tìm kiếm thường của Google, mở từng trang để đọc
+      const found = await resolveGoogleResults(r.results, { hint, max: 8, signal, kind: "shop" });
+      return { ok: true, task: "product", data: { category: plan.category, product: { name: plan.name, brand: plan.brand, model: plan.model, summary: "" }, prices: [], pros: [], cons: [], technologies: [], specs: [] }, sources: found.map((x) => ({ url: x.url, title: x.title, kind: "shop" })), queries: [q], provider: "chrome", model: "Google (kết quả thường)", ms: Date.now() - t0, chrome: true, organic: true, shops: found.length };
     }
 
     const d = parseAnswer(r, plan);
@@ -77,7 +117,7 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
     const byLabel = new Map();
     for (const [i, sc] of [...score].sort((a, b) => b[1] - a[1])) { const l = norm(r.cites[i]?.label); if (l && !byLabel.has(l)) byLabel.set(l, { i, sc }); }
     const resolved = new Map(); // nhãn nguồn -> { url, title }
-    for (const [label, { i }] of [...byLabel].slice(0, plan.variant ? 3 : 5)) {
+    for (const [label, { i }] of [...byLabel].slice(0, plan.variant ? 2 : 3)) {
       abortIf(signal);
       const href = r.cites[i].href;
       const rr = await limiter.run("google.com", async () => {
@@ -101,22 +141,39 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
       specs: d.specs,
     };
     const sources = [{ url: aiUrl, title: "Google Chế độ AI: " + q }, ...[...resolved.values()].map((x) => ({ url: x.url, title: x.title }))];
-    return { ok: true, task: "product", data, sources, queries: [q], provider: "chrome", model: "Google Chế độ AI", ms: Date.now() - t0, chrome: true, resolved: resolved.size, cached: !!r.cached };
+    const queries = [q];
+    // Thêm một lượt Google thường: mở các trang bán hàng THẬT trong kết quả (liên kết /goto dẫn thẳng tới trang đích)
+    // để lấy giá, thông số, liên hệ của từng nhà cung cấp cho bảng NCC. Dữ liệu lấy từ đúng trang đó.
+    let shops = 0;
+    try {
+      const sq = shopQuery(plan, plan.variant ?? 0);
+      const sr = await bridge.call("googleSearch", { q: sq }, 90000);
+      abortIf(signal);
+      if (sr.ok) {
+        queries.push(sq);
+        const seen = new Set(sources.map((x) => normUrl(x.url)));
+        for (const x of await resolveGoogleResults(sr.results, { hint, max: 8, signal, kind: "shop" })) {
+          if (seen.has(normUrl(x.url))) continue;
+          seen.add(normUrl(x.url));
+          sources.push({ url: x.url, title: x.title, kind: "shop" });
+          shops++;
+        }
+      }
+    } catch (e) { if (e.name === "AbortError") throw e; /* không có lượt tìm thêm vẫn dùng được kết quả AI */ }
+    return { ok: true, task: "product", data, sources, queries, provider: "chrome", model: "Google Chế độ AI", ms: Date.now() - t0, chrome: true, resolved: resolved.size, shops, cached: !!r.cached };
   }
 
   async function chromeCompare(plan, signal) {
     const t0 = Date.now();
     const g = plan.generic || plan.name;
-    const QS = [[`${g} giá`, `${g} so sánh các hãng`], [`${g} bán chạy nhất`, `${g} tốt nhất tầm giá`], [`${g} nên mua hãng nào`, `${g} giá rẻ`]];
-    const qs = QS[(plan.variant ?? 0) % QS.length];
-    const seen = new Set(), sources = [];
-    for (const q of qs) {
-      abortIf(signal);
-      const r = await bridge.call("googleSearch", { q }, 90000);
-      if (!r.ok) { if (sources.length) break; throw new ApiError(r.message || r.error || "Google không phản hồi", 0, { chrome: true, blocked: !!r.blocked }); }
-      for (const x of r.results ?? []) { const k = normUrl(x.url); if (!seen.has(k)) { seen.add(k); sources.push({ url: x.url, title: x.title }); } }
-    }
-    return { ok: true, task: "compare", discover: true, data: { alternatives: [] }, sources, queries: qs, provider: "chrome", model: "Google", ms: Date.now() - t0, chrome: true };
+    // một truy vấn thôi (hạn mức Google); mở các trang cửa hàng trong kết quả để lấy các hãng khác từ danh sách sản phẩm
+    const QS = [`${g} giá`, `${g} bán chạy nhất`, `${g} nên mua hãng nào`];
+    const q = QS[(plan.variant ?? 0) % QS.length];
+    const r = await bridge.call("googleSearch", { q }, 90000);
+    abortIf(signal);
+    if (!r.ok) throw new ApiError(r.message || r.error || "Google không phản hồi", 0, { chrome: true, blocked: !!r.blocked });
+    const sources = await resolveGoogleResults(r.results, { hint: { model: "", name: g, brand: "" }, max: 5, signal, kind: "shop" });
+    return { ok: true, task: "compare", discover: true, data: { alternatives: [] }, sources: sources.map((x) => ({ url: x.url, title: x.title, kind: "shop" })), queries: [q], provider: "chrome", model: "Google", ms: Date.now() - t0, chrome: true };
   }
 
   return {

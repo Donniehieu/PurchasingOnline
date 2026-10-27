@@ -4,6 +4,7 @@ import { createBridge } from "./lib/bridge.js";
 import { createLimiter } from "./lib/limiter.js";
 import { createHybridApi } from "./lib/hybrid.js";
 import { extUpdateNotice } from "./lib/version.js";
+import { mountOfferTable } from "./table-ui.js";
 import { research, ask, STEPS } from "./lib/pipeline.js";
 import { INTENTS } from "./lib/answer.js";
 import { esc, clip } from "./lib/text.js";
@@ -62,8 +63,17 @@ function showResult(entry) {
 function scheduleRender() {
   if (renderQueued) return;
   renderQueued = true;
-  requestAnimationFrame(() => { renderQueued = false; if (current) render(current); });
+  // rAF bị trình duyệt tạm dừng khi tab ở nền: dùng thêm setTimeout để dữ liệu vẫn được vẽ
+  const go = () => { if (!renderQueued) return; renderQueued = false; if (current) render(current); };
+  requestAnimationFrame(go);
+  setTimeout(go, 120);
 }
+
+// bảng NCC dựng một lần (giữ nguyên ô lọc, thứ tự sắp xếp, cột ẩn khi dữ liệu cập nhật)
+const offerTable = mountOfferTable($("tab-table"), {
+  toast,
+  onMore: () => { if (current && !runCtl) { $("q").value = current.plan.query; run(current.plan.query, { mode: "enrich" }); } },
+});
 
 function render(entry) {
   $("banner").innerHTML = renderBanner(entry);
@@ -72,6 +82,7 @@ function render(entry) {
   $("verdict").hidden = !v;
   $("verdict").innerHTML = v;
   $("tab-summary").innerHTML = renderSummary(entry);
+  offerTable.update(entry);
   $("tab-compare").innerHTML = renderCompare(entry);
   $("tab-tech").innerHTML = renderTech(entry);
   // hàng tiêu dùng không phân tích công nghệ: ẩn tab

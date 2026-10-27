@@ -1,8 +1,8 @@
 // Điều phối một lần tìm hiểu: AI tìm trước -> lưu cache -> mở các trang nguồn -> tổng hợp.
 // Mỗi bước phát sự kiện ngay (emit) để giao diện hiện kết quả đến đâu làm đến đó.
 import { makePlan, cacheKey } from "./plan.js";
-import { newEntry, ingestProduct, ingestCompare, ingestPage, ingestListing, ingestAltInsight, dropStalePrices, logEvent } from "./entry.js";
-import { domainOf, normUrl, clip } from "./text.js";
+import { newEntry, ingestProduct, ingestCompare, ingestPage, ingestListing, ingestAltInsight, dropStalePrices, sellersNeedingContact, ingestContactPage, logEvent } from "./entry.js";
+import { domainOf, normUrl, clip, modelKey } from "./text.js";
 import { summarize } from "./aggregate.js";
 import { addSource } from "./entry.js";
 const URL_RE = /https?:\/\/[^\s<>"']+/gi;
@@ -21,7 +21,10 @@ export const STEPS = [
 
 const aborted = (signal) => { if (signal?.aborted) throw new DOMException("Đã dừng", "AbortError"); };
 
-/** Chọn các trang đáng mở: trang AI trích dẫn cho sản phẩm chính trước, rồi trang của đối thủ. */
+/**
+ * Chọn các trang đáng mở. Ưu tiên (1) link người dùng dán, (2) các TRANG CỬA HÀNG trong kết quả Google/tìm kiếm
+ * (mỗi trang là một NCC cho bảng so sánh), (3) nguồn AI trích dẫn (bài đánh giá), (4) vài trang của hãng khác.
+ */
 export function pickPages(entry, limit = 10, perHostCap = 2) {
   const bySrc = new Map(entry.sources.map((s) => [s.id, s]));
   const used = (ids) => ids.map((i) => bySrc.get(i)).filter(Boolean);
@@ -29,22 +32,29 @@ export function pickPages(entry, limit = 10, perHostCap = 2) {
   for (const c of [...entry.prices, ...entry.pros, ...entry.cons, ...entry.tech]) if (c.srcId) mainCited.set(c.srcId, (mainCited.get(c.srcId) ?? 0) + 1);
   const out = [];
   const seen = new Set(entry.pages.map((p) => normUrl(p.url))); // trang đã mở thì không mở lại
-  const perHost = new Map(); // tối đa 2 trang mỗi tên miền để không dồn yêu cầu vào một nơi
+  const perHost = new Map(); // tối đa N trang mỗi tên miền để không dồn yêu cầu vào một nơi
   const push = (s, alt = null) => {
-    if (!s || seen.has(s.key) || SKIP_HOSTS.test(domainOf(s.url)) || /\.(pdf|jpe?g|png|webp|mp4)(\?|$)/i.test(s.url)) return;
+    if (!s || seen.has(s.key) || SKIP_HOSTS.test(domainOf(s.url)) || /\.(pdf|jpe?g|png|webp|mp4)(\?|$)/i.test(s.url)) return false;
     const h = domainOf(s.url);
-    if ((perHost.get(h) ?? 0) >= perHostCap) return;
+    if ((perHost.get(h) ?? 0) >= perHostCap) return false;
     perHost.set(h, (perHost.get(h) ?? 0) + 1);
     seen.add(s.key);
     out.push({ url: s.url, srcId: s.id, alt });
+    return true;
   };
   for (const u of entry.seeds ?? []) push(entry.sources.find((s) => s.url === u));
-  const mainIds = [...mainCited.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
-  const altCap = entry.alternatives.length ? Math.min(entry.alternatives.length, 4) : 0;
-  const mainCap = Math.max(1, limit - altCap);
-  for (const id of mainIds) { if (out.length >= mainCap) break; push(bySrc.get(id)); }
-  // chỗ trống thì lấy trang từ kết quả tìm kiếm của AI chưa được trích
   const altSrc = new Set(entry.alternatives.flatMap((a) => a.srcIds));
+  const altCap = entry.alternatives.length ? Math.min(entry.alternatives.length, 3) : 0;
+  const mainCap = Math.max(1, limit - altCap);
+  // trang cửa hàng: ưu tiên trang có mã model trong tiêu đề/địa chỉ
+  const mk = modelKey(entry.product.model);
+  const shops = entry.sources.filter((s) => s.kind === "shop" && !altSrc.has(s.id)).sort((a, b) => Number(mk && modelKey(b.title + b.url).includes(mk)) - Number(mk && modelKey(a.title + a.url).includes(mk)));
+  const shopCap = Math.max(1, Math.ceil(limit * 0.6));
+  let nShop = 0;
+  for (const s of shops) { if (nShop >= shopCap || out.length >= mainCap) break; if (push(s)) nShop++; }
+  const mainIds = [...mainCited.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  for (const id of mainIds) { if (out.length >= mainCap) break; push(bySrc.get(id)); }
+  // chỗ trống thì lấy nguồn khác chưa được trích
   for (const s of entry.sources) { if (out.length >= mainCap) break; if (!altSrc.has(s.id)) push(s); }
   for (const a of entry.alternatives) {
     if (out.length >= limit) break;
@@ -58,7 +68,8 @@ export function pickPages(entry, limit = 10, perHostCap = 2) {
 /** Đủ dữ liệu để kết luận: không cần mở thêm trang cho sản phẩm chính (giảm số yêu cầu). */
 export function enough(entry) {
   const readOk = entry.pages.filter((x) => x.ok).length;
-  return readOk >= 4 && entry.prices.length >= 4 && entry.pros.length >= 4 && entry.cons.length >= 3 && entry.images.length >= 3;
+  const sellers = new Set((entry.offers ?? []).filter((o) => o.readFromPage && o.kind === "same").map((o) => o.seller)).size;
+  return readOk >= 5 && sellers >= 5 && entry.prices.length >= 4 && entry.pros.length >= 4 && entry.cons.length >= 3 && entry.images.length >= 3;
 }
 
 async function pool(items, size, fn, signal) {
@@ -78,14 +89,14 @@ async function pool(items, size, fn, signal) {
  * opts: { api, store, emit, signal, force, pageLimit, concurrency }
  * Trả về entry (cũng đã lưu vào store).
  */
-export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 8, enrichPageLimit = 5, concurrency = 3, perHostCap = 2, freeGapMs = 4000 }) {
+export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 10, enrichPageLimit = 6, concurrency = 3, perHostCap = 2, freeGapMs = 4000 }) {
   const step = (id, status, text = "") => emit({ type: "step", id, status, text });
   const publish = (entry) => emit({ type: "entry", entry });
   if (force) mode = "fresh";
 
   step("plan", "running");
   // Link dán vào ô nhập: đọc thẳng trang đó (không cần công cụ tìm kiếm), lấy tên sản phẩm từ trang
-  const seeds = [...new Set(String(input.text ?? "").match(URL_RE) ?? [])].slice(0, 3);
+  const seeds = [...new Set(String(input.text ?? "").match(URL_RE) ?? [])].slice(0, 8);
   if (seeds.length) {
     const rest = String(input.text).replace(URL_RE, " ").replace(/\s+/g, " ").trim();
     let name = rest;
@@ -271,6 +282,17 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
       }, signal);
       const ok = entry.pages.filter((x) => x.ok).length;
       step("pages", "done", `${ok}/${picks.length} trang đọc được`);
+    }
+
+    // 5) Trang "Liên hệ" của các NCC chưa có SĐT/email (mỗi NCC một lần, tối đa vài trang mỗi lần tìm)
+    for (const c of sellersNeedingContact(entry, enriching ? 2 : 3)) {
+      aborted(signal);
+      step("pages", "running", `trang liên hệ · ${c.domain}`);
+      let page;
+      try { page = await api.page(c.url, {}, signal); }
+      catch (e) { if (e.name === "AbortError" || e.status === 401) throw e; page = { ok: false, url: c.url, error: e.message }; }
+      ingestContactPage(entry, c.domain, page);
+      publish(entry);
     }
 
     if (!enriching && !entry.prices.length && !entry.pros.length && !entry.cons.length && !entry.pages.some((x) => x.ok)) {

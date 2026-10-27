@@ -13,7 +13,8 @@ Không cần Python, không cần cài tiện ích trình duyệt. Chạy online
 5. **Cache**: toàn bộ kết quả lưu trên thiết bị (IndexedDB). Tìm lại cùng sản phẩm: app **hiện dữ liệu cũ ngay**, rồi **tìm thêm trang mới và gộp vào cache cũ** (không mở lại trang đã đọc, không xóa dữ liệu cũ). Muốn chỉ xem lại không tìm, chọn “chỉ xem cache”. Xuất/nạp thành **một file `.json`** ở ngăn *Lịch sử*.
 6. **Hỏi đáp**: các nút Giá / Ưu điểm / Nhược điểm / Công nghệ / Nên chọn trả lời **tức thì từ cache**. Câu hỏi tự do gửi AI nhưng **chỉ kèm dữ liệu đã cache** (không tìm web mới).
 7. **So sánh công nghệ** (tab **Công nghệ**, chỉ máy móc / thiết bị / gia dụng / điện tử): gom công nghệ của các hãng theo từng loại (ví dụ Rapid Air, Inverter), cho biết **hãng nào dùng chung / riêng**, **ưu điểm và nhược điểm của từng công nghệ** kèm nguồn, và có đoạn **tóm tắt** ở đầu. Hỏi nhanh bằng nút “So sánh công nghệ”.
-8. **So sánh & chọn tối ưu**: chỉ dùng dữ liệu đã thu thập. Điểm = giá + tỉ lệ ưu/nhược (làm mịn để sản phẩm nhiều dữ liệu không tự thắng) + số nguồn xác nhận (+ công nghệ với hàng kỹ thuật).
+8. **Bảng so sánh NCC** (tab **Bảng NCC**, mọi loại hàng): mỗi dòng là một nhà cung cấp/hãng, lấy từ các **trang web thật** mà Google (Chế độ AI và kết quả thường) dẫn tới và từ cache. Cột đúng mẫu: **STT · Tên sản phẩm / mã model · Đơn giá · VAT · Thông tin kỹ thuật bổ sung · NCC / hãng sản xuất · Liên hệ NCC · Link truy vấn thông tin**. **Bấm tên sản phẩm là mở đúng trang đã lấy dữ liệu**; giá, VAT, thông số đọc từ chính link đó (mặc định bảng chỉ hiện dòng đã đọc từ đúng trang, có tùy chọn xem cả dữ liệu chưa xác nhận của AI/Google). NCC ghi theo tên website và hãng; có thể **nhóm theo NCC hoặc theo hãng**. **Liên hệ** (SĐT, email, Zalo, địa chỉ) lấy từ header/footer/dữ liệu cấu trúc của trang, và từ trang “Liên hệ” của NCC nếu trang sản phẩm không có. Giá, VAT (chỉ ghi khi trang nêu rõ), thông số (bảng thông số, dữ liệu cấu trúc) và tên NCC đọc trực tiếp từ trang; link là trang gốc. Trên web: **ẩn/hiện cột** (dấu × và nút “Cột”), **lọc** (ô lọc nhanh + ô lọc từng cột, lọc giá như `<3tr`, `2tr-3tr`), **sắp xếp** (bấm tên cột), **giữ chuột kéo trái/phải** để xem các cột. Nút **Xuất Excel (.xlsx)** xuất đúng bảng đang xem (cột đang hiện, dòng đã lọc và sắp xếp), có bộ lọc Excel, cố định dòng đầu, link bấm được, sheet “Thông tin” ghi nguồn và lưu ý. Nút “Tìm thêm NCC” mở thêm trang mới và gộp vào bảng.
+9. **So sánh & chọn tối ưu**: chỉ dùng dữ liệu đã thu thập. Điểm = giá + tỉ lệ ưu/nhược (làm mịn để sản phẩm nhiều dữ liệu không tự thắng) + số nguồn xác nhận (+ công nghệ với hàng kỹ thuật).
 
 **Phân loại hàng**: máy móc / thiết bị / gia dụng / điện tử → so sánh cả **tính năng, công nghệ và ưu nhược điểm của công nghệ**. Hàng tiêu dùng → chỉ **giá, ưu điểm, nhược điểm** so với sản phẩm tương tự, không nói công nghệ.
 
@@ -31,7 +32,7 @@ npm run dev
 
 Mở http://localhost:8787. Chưa có khóa AI thì app chạy **chế độ mẫu** (sản phẩm và hãng hư cấu, có nhãn “Dữ liệu mẫu”) để bạn thấy toàn bộ luồng. Có khóa: sao `.dev.vars.example` thành `.dev.vars`, điền khóa, chạy lại. Trên Windows có thể bấm đúp `run.bat`.
 
-Kiểm thử: `npm test` (77 test: từ khóa, trích xuất trang, tổng hợp, chọn tối ưu, cache, luồng đầy đủ, bảo mật).
+Kiểm thử: `npm test` (97 test: từ khóa, trích xuất trang, tổng hợp, chọn tối ưu, cache, luồng đầy đủ, bảo mật).
 
 ## Dùng Google trong Chrome (ưu tiên, miễn phí, ít bị 403)
 

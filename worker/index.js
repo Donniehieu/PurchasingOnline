@@ -78,7 +78,7 @@ async function freeSearch(task, plan, env) {
       if (v) data.prices.push({ value: v, label: domainOf(r.url) + " (trích từ kết quả tìm kiếm)", source: r.url });
     }
   }
-  return { ok: true, task, data, sources: sorted.map((r) => ({ url: r.url, title: r.title })), queries, provider: "free", model: "duckduckgo+bing", ms: Date.now() - t0, free: true, discover: task === "compare", errors };
+  return { ok: true, task, data, sources: sorted.map((r) => ({ url: r.url, title: r.title, kind: "shop" })), queries, provider: "free", model: "duckduckgo+bing", ms: Date.now() - t0, free: true, discover: task === "compare", errors };
 }
 
 async function handleSearch(request, env, origin) {
@@ -139,7 +139,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.5.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.7.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });
