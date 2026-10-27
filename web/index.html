@@ -164,7 +164,6 @@
     <div class="drawer-foot">
       <button id="btnExport" class="btn ghost sm">Xuất file cache</button>
       <button id="btnImport" class="btn ghost sm">Nạp file cache</button>
-      <button id="btnClear" class="btn ghost sm danger">Xóa cache…</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
   </div>
@@ -297,7 +296,7 @@
     <div class="spanel" data-spanel="data" hidden>
       <label>Tự xóa dữ liệu đã lưu sau
         <select id="sKeep"><option value="7">7 ngày</option><option value="14">14 ngày</option><option value="30">30 ngày</option><option value="90">90 ngày</option></select></label>
-      <p class="muted small" style="margin:0">Xuất, nạp hoặc xóa toàn bộ dữ liệu ở mục <b>Lịch sử đã lưu</b> (biểu tượng đồng hồ góc trên bên phải). Danh bạ nhà cung cấp được xuất cùng file cache.</p>
+      <div class="row" style="margin:0"><button type="button" id="btnClear" class="btn ghost danger">Xóa cache…</button></div>
       <p class="muted small" style="margin:0">iPhone: mở bằng Safari → Chia sẻ → “Thêm vào MH chính”. Android/Chrome: menu ⋮ → “Cài đặt ứng dụng”.</p>
     </div>
 
