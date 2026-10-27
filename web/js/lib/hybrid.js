@@ -248,6 +248,7 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
       return { ok: true, data: parseAnswer(r, { category: plan.category }), url: googleAIUrl(q), query: q };
     },
 
+    discover: (...a) => server.discover(...a),
     ask: (...a) => server.ask(...a),
     ocr: (...a) => server.ocr(...a),
     health: (...a) => server.health(...a),

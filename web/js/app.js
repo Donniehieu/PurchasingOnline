@@ -5,12 +5,18 @@ import { createLimiter } from "./lib/limiter.js";
 import { createHybridApi } from "./lib/hybrid.js";
 import { extUpdateNotice } from "./lib/version.js";
 import { mountOfferTable } from "./table-ui.js";
+import { mountLinkInput } from "./link-ui.js";
+import { newQuoteEntry, importLinks } from "./lib/quote.js";
+import { genKeys, competitorBrands, withInfo } from "./lib/keygen.js";
+import { expandResearch } from "./lib/expand.js";
+import { catalogNames } from "./lib/techkb.js";
+import { TYPES } from "./lib/kb.js";
 import { research, ask, STEPS } from "./lib/pipeline.js";
 import { INTENTS } from "./lib/answer.js";
 import { esc, clip, parseVnd } from "./lib/text.js";
 import { parseNeed } from "./lib/need.js";
 import { renderAdvice } from "./advice-ui.js";
-import { analyzeInput, preCards, composeQuery, learnFromCache } from "./lib/intent.js";
+import { analyzeInput, preCards, composeQuery, learnFromCache, detectType } from "./lib/intent.js";
 import { makePlan, cacheKey } from "./lib/plan.js";
 import { adviseProducts } from "./lib/advisor.js";
 import { featuresFromRGBA } from "./lib/imagesim.js";
@@ -85,6 +91,7 @@ function scheduleRender() {
 const offerTable = mountOfferTable($("tab-table"), {
   toast,
   onAdvice: () => selectTab("advice"),
+  onAddLinks: (items) => (current ? addLinks(current, items) : toast("Chưa có bảng nào: hãy tìm sản phẩm hoặc lập bảng báo giá trước")),
   onMore: () => { if (current && !runCtl) { $("q").value = current.plan.query; run(current.plan.query, { mode: "enrich" }); } },
 });
 
@@ -99,7 +106,7 @@ function render(entry) {
   $("tab-suppliers").innerHTML = renderSuppliers(entry);
   offerTable.update(entry);
   $("tab-compare").innerHTML = renderCompare(entry);
-  $("tab-tech").innerHTML = renderTech(entry);
+  $("tab-tech").innerHTML = renderTech(entry, readNeed());
   // hàng tiêu dùng không phân tích công nghệ: ẩn tab
   $("tabTechBtn").hidden = entry.category !== "tech";
   if (entry.category !== "tech" && !$("tab-tech").hidden) selectTab("summary");
@@ -139,6 +146,8 @@ function onEvent(ev) {
     const li = $("st-" + ev.id);
     if (li) { li.className = ev.status; li.querySelector("small").textContent = ev.text || ""; li.title = ev.text || ""; }
     if (ev.status === "running" || ev.text) $("liveText").textContent = `${STEPS.find((s) => s.id === ev.id)?.label ?? ""}: ${ev.text || "đang chạy…"}`;
+  } else if (ev.type === "progress") {
+    $("liveText").textContent = `Đọc link ${ev.done}/${ev.total} · ${ev.domain}`;
   } else if (ev.type === "entry") {
     if (!current || current.key !== ev.entry.key || current !== ev.entry) showResult(ev.entry); else scheduleRender();
   }
@@ -182,12 +191,13 @@ async function run(text, { mode = "enrich", force = false, ocrText = "", scenari
     runCtl = null;
     setRunning(false);
     scheduleRender();
+    maybeExpand(); // người dùng đã trả lời xong trong lúc tìm: chạy tiếp các từ khóa bổ sung
   }
 }
 
 $("form").addEventListener("submit", (e) => { e.preventDefault(); startSearch($("q").value); });
 $("q").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && window.matchMedia("(pointer: fine)").matches) { e.preventDefault(); $("form").requestSubmit(); } });
-$("btnStop").addEventListener("click", () => runCtl?.abort());
+$("btnStop").addEventListener("click", () => { pending = null; runCtl?.abort(); });
 
 // ---------- nhu cầu (ngân sách, mục đích) ----------
 // Tự cắt từ chữ người dùng gõ để điền sẵn; chỉ dùng để gợi ý sản phẩm/NCC, KHÔNG dùng để tìm kiếm.
@@ -294,11 +304,17 @@ $("q").addEventListener("input", () => { pre = null; $("preCards").hidden = true
 async function startSearch(text, { skipCards = false } = {}) {
   text = String(text ?? "").trim();
   if (!text) { toast("Nhập tên hoặc mã sản phẩm trước"); $("q").focus(); return; }
+  pending = null; // tìm mới: bỏ yêu cầu tìm bổ sung của lần trước
   const a = analyzeInput(text);
   // đã có kết quả trong cache thì mở luôn, không hỏi lại
   let cached = null;
   try { cached = a.scenario === "url" ? null : await store.get(cacheKey(makePlan({ text, category: $("cat").value }))); } catch { /* bỏ qua */ }
-  if (a.needCards && !skipCards && !cached && $("mode").value !== "cache") { await showPreCards(text, a); return; }
+  if (a.needCards && !skipCards && !cached && $("mode").value !== "cache") {
+    await showPreCards(text, a);
+    // hai sản phẩm: phải chọn cái nào trước. Còn lại: tìm NGAY theo thông tin ban đầu, vừa tìm vừa hỏi; trả lời xong sẽ tự tìm bổ sung
+    if (a.scenario !== "pair") run(text, { mode: $("mode").value, ocrText: ocrCtx, scenario: a.mode });
+    return;
+  }
   $("preCards").hidden = true; pre = null;
   run(text, { mode: $("mode").value, ocrText: ocrCtx, scenario: a.mode });
 }
@@ -306,7 +322,7 @@ async function startSearch(text, { skipCards = false } = {}) {
 async function showPreCards(text, a, forcedType = "") {
   const hints = a.type ? learnFromCache(await store.list().catch(() => []), a.type.id) : null;
   const keep = pre?.text === text && !forcedType ? pre.answers : {};
-  pre = { text, forcedType, analysis: a, hints, cards: preCards(a, { hints }), answers: keep };
+  pre = { text, forcedType, analysis: a, hints, cards: preCards(a, { hints }), answers: keep, step: 0, baseKey: cacheKey(makePlan({ text, ocrText: ocrCtx, category: $("cat").value })) };
   renderPreCards();
   $("preCards").hidden = false;
   $("preCards").scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -318,21 +334,65 @@ function needSelected(c, need) {
   return c.options.find((o) => o.value === `${lo}:${hi}`)?.value ?? "";
 }
 
+const answered = (c) => (c.kind === "need" ? !!needSelected(c, readNeed()) : !!(pre.answers[c.id]?.value || pre.answers[c.id]?.custom));
+const NO_INFO = "chưa có (từ khóa giữ đúng chữ bạn gõ)";
+
+// Hỏi từng câu một: Quay lại / Bỏ qua / Tiếp. Câu trả lời điền vào từ khóa bổ sung (xem finishWizard).
 function renderPreCards() {
   if (!pre) return;
-  const query = composeQuery(pre.text, pre.cards, pre.answers);
+  const total = pre.cards.length;
+  if (!total) { finishWizard(); return; }
+  const i = Math.min(pre.step, total - 1);
+  const c = pre.cards[i];
   const need = readNeed();
-  const cardHtml = pre.cards.map((c, i) => {
-    const sel = c.kind === "need" ? needSelected(c, need) : c.kind === "type" ? pre.forcedType : pre.answers[c.id]?.value;
-    const chips = c.options.map((o) => `<button type="button" class="chip${sel === o.value ? " on" : ""}" data-pc="${esc(c.id)}" data-v="${esc(o.value)}" aria-pressed="${sel === o.value}">${esc(o.label)}${o.cached ? ' <span class="muted">(đã gặp)</span>' : ""}</button>`).join("");
-    const other = c.kind === "query" ? `<input type="text" class="pc-other" data-pcx="${esc(c.id)}" maxlength="40" placeholder="Khác: tự nhập" value="${esc(pre.answers[c.id]?.custom ?? "")}">` : "";
-    return `<div class="qcard"><div class="q-title"><span class="q-num">${i + 1}</span>${esc(c.title)}</div><div class="chips">${chips}</div>${other}</div>`;
-  }).join("");
-  $("preCards").innerHTML = `<h2>Hỏi nhanh để tìm đúng sản phẩm <span class="count">${esc(pre.analysis.label)} · bỏ qua được</span></h2>
-    <p class="muted small" style="margin:0 0 10px">Các câu hỏi lấy từ ngân hàng câu hỏi có sẵn theo loại hàng và từ các lần tìm đã lưu trên máy, không tốn lượt tìm. Chọn đến đâu hay đến đó; bỏ qua cũng được.</p>
-    <div class="qcards">${cardHtml}</div>
-    <p class="pc-preview">Sẽ tìm: <b>${esc(query)}</b></p>
-    <div class="row" style="margin-top:8px"><button type="button" class="btn primary" data-pc-go="1" style="margin-left:0">Tìm với thông tin này</button><button type="button" class="btn ghost" data-pc-skip="1">Bỏ qua, tìm luôn</button><button type="button" class="btn ghost" data-pc-cancel="1">Hủy</button></div>`;
+  const sel = c.kind === "need" ? needSelected(c, need) : c.kind === "type" ? pre.forcedType : pre.answers[c.id]?.value;
+  const chips = c.options.map((o) => `<button type="button" class="chip${sel === o.value ? " on" : ""}" data-pc="${esc(c.id)}" data-v="${esc(o.value)}" aria-pressed="${sel === o.value}">${esc(o.label)}${o.cached ? ' <span class="muted">(đã gặp)</span>' : ""}</button>`).join("");
+  const other = c.kind === "query" ? `<input type="text" class="pc-other" data-pcx="${esc(c.id)}" maxlength="40" placeholder="${c.options.length ? "Khác: tự nhập" : "Tự nhập"}" value="${esc(pre.answers[c.id]?.custom ?? "")}">` : "";
+  const dots = pre.cards.map((x, k) => `<span class="wz-dot${k === i ? " cur" : answered(x) ? " done" : ""}" aria-hidden="true"></span>`).join("");
+  const isPair = pre.analysis.scenario === "pair";
+  const busy = !isPair && runCtl ? "Đang tìm theo thông tin ban đầu… " : "";
+  const last = i === total - 1;
+  $("preCards").innerHTML = `<h2>Hỏi nhanh để tìm đúng sản phẩm <span class="count">câu ${i + 1}/${total} · ${esc(pre.analysis.label)}</span></h2>
+    <p class="muted small" style="margin:0 0 10px">${busy}${isPair ? "" : "Trả lời xong, ứng dụng tự tìm bổ sung theo từ khóa sinh từ chữ bạn gõ + thông tin trả lời + hãng đối thủ + công nghệ. "}Bỏ qua câu nào cũng được.</p>
+    <div class="wz-dots" role="presentation">${dots}</div>
+    <div class="qcard"><div class="q-title"><span class="q-num">${i + 1}</span>${esc(c.title)}</div><div class="chips">${chips}</div>${other}</div>
+    <p class="pc-preview">${isPair ? "Sẽ tìm: " : "Thông tin thêm vào từ khóa: "}<b>${esc(wizardPreview())}</b></p>
+    <div class="row" style="margin-top:8px">
+      <button type="button" class="btn ghost" data-pc-back="1" style="margin-left:0"${i === 0 ? " disabled" : ""}>Quay lại</button>
+      <button type="button" class="btn ghost" data-pc-skip="1">Bỏ qua</button>
+      <button type="button" class="btn primary" data-pc-next="1"${answered(c) ? "" : " disabled"}>${last ? (isPair ? "Tìm sản phẩm này" : "Xong, tìm bổ sung") : "Tiếp"}</button>
+      <button type="button" class="btn ghost" data-pc-cancel="1">${isPair ? "Hủy" : "Đóng, không tìm bổ sung"}</button>
+    </div>`;
+}
+
+// chữ thêm vào từ khóa từ các câu đã trả lời (thẻ "need" chỉ là nhu cầu, không thêm vào từ khóa)
+function wizardAdds(p = pre) {
+  return p.cards.filter((c) => c.kind === "query" && !c.options.some((o) => o.replace)).map((c) => p.answers[c.id]).filter(Boolean).map((a) => String(a.custom || a.add || "").trim()).filter(Boolean);
+}
+const wizardPreview = () => (pre.analysis.scenario === "pair" ? composeQuery(pre.text, pre.cards, pre.answers) : wizardAdds().join(" · ") || NO_INFO);
+
+function stepWizard(delta) {
+  pre.step += delta;
+  if (pre.step >= pre.cards.length) return finishWizard();
+  renderPreCards();
+}
+
+function finishWizard() {
+  const p = pre;
+  $("preCards").hidden = true;
+  pre = null;
+  if (!p) return;
+  if (p.analysis.scenario === "pair") {
+    // hai sản phẩm: tìm cái đã chọn (mặc định cái đầu), đủ thông tin nên dựng bảng NCC
+    const t = composeQuery(p.text, p.cards, p.answers);
+    const chosen = t === p.text ? p.analysis.signals.parts[0] : t;
+    $("q").value = chosen;
+    run(chosen, { mode: $("mode").value, ocrText: ocrCtx, scenario: "full" });
+    return;
+  }
+  const adds = wizardAdds(p);
+  pending = { text: p.text, adds, baseKey: p.baseKey, typeId: p.analysis.type?.id ?? "", analysis: analyzeInput(withInfo(p.text, adds)) };
+  maybeExpand();
 }
 
 // nút "Bổ sung thông tin" (kịch bản thiếu thông tin): mở lại thẻ câu hỏi cho từ khóa đang xem
@@ -363,24 +423,13 @@ $("preCards").addEventListener("click", async (e) => {
     renderPreCards();
     return;
   }
-  if (e.target.closest("[data-pc-go]")) {
-    // tìm với thông tin đã điền: chuỗi tìm = chữ bạn gõ + các lựa chọn (hiện trong ô tìm để bạn thấy)
-    const text = composeQuery(pre.text, pre.cards, pre.answers);
-    const a2 = analyzeInput(text, { forcedType: pre.forcedType });
-    $("q").value = text;
-    $("preCards").hidden = true;
-    pre = null;
-    intentHint();
-    run(text, { mode: $("mode").value, ocrText: ocrCtx, scenario: a2.mode });
-  } else if (e.target.closest("[data-pc-skip]")) {
-    // bỏ qua hết: chỉ "khám phá" (giá, sản phẩm tương đương, ưu nhược điểm), chưa dựng bảng NCC
-    const isPair = pre.analysis.scenario === "pair";
-    const t = isPair ? pre.analysis.signals.parts[0] : pre.text;
-    $("preCards").hidden = true;
-    pre = null;
-    if (isPair) $("q").value = t;
-    run(t, { mode: $("mode").value, ocrText: ocrCtx, scenario: isPair ? "full" : "explore" });
-  } else if (e.target.closest("[data-pc-cancel]")) { $("preCards").hidden = true; pre = null; }
+  if (e.target.closest("[data-pc-next]")) stepWizard(1);
+  else if (e.target.closest("[data-pc-skip]")) {
+    const c = pre.cards[Math.min(pre.step, pre.cards.length - 1)];
+    if (c.kind === "query") delete pre.answers[c.id];
+    stepWizard(1);
+  } else if (e.target.closest("[data-pc-back]")) { if (pre.step > 0) { pre.step--; renderPreCards(); } }
+  else if (e.target.closest("[data-pc-cancel]")) { $("preCards").hidden = true; pre = null; }
 });
 $("preCards").addEventListener("input", (e) => {
   const inp = e.target.closest("[data-pcx]");
@@ -389,8 +438,89 @@ $("preCards").addEventListener("input", (e) => {
   const cur = pre.answers[id] ?? {};
   if (inp.value.trim()) pre.answers[id] = { ...cur, custom: inp.value.trim() };
   else { delete cur.custom; if (cur.value) pre.answers[id] = cur; else delete pre.answers[id]; }
+  const next = $("preCards").querySelector("[data-pc-next]");
+  if (next) next.disabled = !answered(pre.cards[Math.min(pre.step, pre.cards.length - 1)]);
   const el = $("preCards").querySelector(".pc-preview b");
-  if (el) el.textContent = composeQuery(pre.text, pre.cards, pre.answers);
+  if (el) el.textContent = wizardPreview();
+});
+
+// ---------- tìm bổ sung theo từ khóa tự sinh ----------
+// Chạy SAU lần tìm ban đầu (đang chạy theo chữ bạn gõ), cộng dồn vào cùng bản ghi cache.
+let pending = null; // { text, adds, baseKey, typeId, analysis }
+async function maybeExpand() {
+  if (!pending || runCtl) return;
+  const p = pending;
+  pending = null;
+  let entry = current?.key === p.baseKey ? current : null;
+  if (!entry) entry = await store.get(p.baseKey).catch(() => null);
+  if (!entry) { toast("Lần tìm đầu chưa có dữ liệu nên bỏ qua tìm bổ sung"); return; }
+  runCtl = new AbortController();
+  const signal = runCtl.signal;
+  setRunning(true);
+  $("errorBox").hidden = true;
+  $("steps").innerHTML = `<li id="st-pages" class="running"><b>Tìm bổ sung theo từ khóa mới</b><small></small></li>`;
+  try {
+    const type = TYPES.find((t) => t.id === p.typeId) ?? detectType(`${entry.plan.query} ${entry.product.name}`)?.type ?? null;
+    const learned = type ? learnFromCache(await store.list().catch(() => []), type.id).brands : [];
+    const mainBrand = entry.product.brand || entry.plan.brand || "";
+    const generic = entry.plan.generic || type?.label.toLowerCase() || p.text;
+    const keys = genKeys({
+      typed: p.text, adds: p.adds, generic, category: entry.category, mainBrand,
+      brands: competitorBrands({ entry, type, mainBrand, learned, max: 3 }),
+      techNames: type ? catalogNames(type.id) : [], max: 14,
+    });
+    showResult(entry);
+    const o = runOptions();
+    const stats = await expandResearch(entry, keys, { api, store, emit: onEvent, signal, kind: generic, concurrency: o.concurrency, perHostCap: o.perHostCap, maxPages: o.enrichPageLimit });
+    if (p.analysis.mode === "full") entry.scenario = "full"; // đã bổ sung đủ thông tin: dựng bảng NCC
+    entry.need = { ...readNeed(), choice: choices.get(entry.key) ?? entry.need?.choice ?? "", answers: answersOf(entry) };
+    await store.save(entry).catch(() => {});
+    showResult(entry);
+    $("progress").hidden = true;
+    toast(stats.keys ? `Tìm bổ sung xong: ${stats.keys} từ khóa, ${stats.links} link mới, ${stats.pages} trang đã đọc` : "Chưa tìm bổ sung được: công cụ tìm kiếm miễn phí đang chặn hoặc không có kết quả (xem tab Nhật ký). Thử lại sau ít phút.");
+    await refreshRecent();
+  } catch (e) {
+    if (e.name === "AbortError") toast("Đã dừng tìm bổ sung");
+    else { $("progress").hidden = false; $("errorBox").hidden = false; $("errorBox").textContent = friendly(e); }
+  } finally {
+    runCtl = null;
+    setRunning(false);
+    scheduleRender();
+  }
+}
+
+// ---------- báo giá NCC theo link có sẵn ----------
+async function addLinks(entry, items) {
+  if (runCtl) { toast("Đang chạy một việc khác: chờ xong hoặc bấm Dừng"); return; }
+  runCtl = new AbortController();
+  setRunning(true);
+  $("errorBox").hidden = true;
+  $("steps").innerHTML = `<li id="st-links" class="running"><b>Đọc link nhà cung cấp</b><small></small></li>`;
+  entry.scenario = "full"; // người dùng đã chọn link: dựng bảng NCC ngay
+  showResult(entry);
+  selectTab("table");
+  try {
+    const o = runOptions();
+    const st = await importLinks(entry, items, { api, store, emit: onEvent, signal: runCtl.signal, concurrency: o.concurrency });
+    showResult(entry);
+    $("progress").hidden = true;
+    toast(st.added ? `Đã đọc ${st.ok}/${st.added} link${st.failed ? `, ${st.failed} link lỗi (vẫn có dòng trong bảng)` : ""}${st.skipped ? `, bỏ ${st.skipped} link trùng` : ""}` : "Các link này đã có trong bảng");
+    quoteInput.clear();
+    offerTable.linkInput.clear();
+    await refreshRecent();
+  } catch (e) {
+    if (e.name === "AbortError") toast("Đã dừng, giữ các dòng đã đọc");
+    else { $("progress").hidden = false; $("errorBox").hidden = false; $("errorBox").textContent = friendly(e); }
+  } finally {
+    runCtl = null;
+    setRunning(false);
+    scheduleRender();
+  }
+}
+
+const quoteInput = mountLinkInput($("quoteHost"), {
+  withName: true, submitLabel: "Lập bảng báo giá", toast,
+  onSubmit: ({ items, name }) => { $("quoteBox").open = true; addLinks(newQuoteEntry(name), items); },
 });
 
 // ---------- hỏi đáp ----------

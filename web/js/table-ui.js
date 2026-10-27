@@ -2,6 +2,7 @@
 import { OFFER_COLUMNS, tableRows, applyView, DEFAULT_VIEW, PRICE_NOTE, VAT_LABEL, diagnose } from "./lib/offers.js";
 import { exportOffersXlsx } from "./lib/xlsx-export.js";
 import { esc, money, clip } from "./lib/text.js";
+import { mountLinkInput, quoteStatusHtml } from "./link-ui.js";
 
 const KEY = "po-table-view-v2"; // v2: mặc định hiện cả dòng chưa đọc từ trang (đánh dấu rõ), không ẩn như trước
 const FILTER_COLS = ["name", "price", "vat", "specs", "ncc", "contact", "link"];
@@ -15,7 +16,7 @@ function save(state) {
   try { localStorage.setItem(KEY, JSON.stringify({ hidden: [...state.hidden], sort: state.view.sort, source: state.view.source, group: state.view.group })); } catch { /* chế độ riêng tư */ }
 }
 
-export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onAdvice = () => {} } = {}) {
+export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onAdvice = () => {}, onAddLinks = () => {} } = {}) {
   const saved = loadSaved();
   const state = {
     view: { ...DEFAULT_VIEW, filters: { ...DEFAULT_VIEW.filters }, source: saved.source || "all", group: saved.group || DEFAULT_VIEW.group, sort: saved.sort && "col" in saved.sort ? saved.sort : { ...DEFAULT_VIEW.sort } },
@@ -27,6 +28,11 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onA
 
   host.innerHTML = `
     <div class="card tbl-card">
+      <details class="tbl-add">
+        <summary><b>Thêm link NCC có sẵn</b> <span class="muted small">dán một hoặc nhiều link, hoặc nạp file Excel → thêm dòng vào bảng, xuất Excel báo giá</span></summary>
+        <div class="tbl-add-host"></div>
+      </details>
+      <div class="tbl-qstat"></div>
       <div class="tbl-explore" hidden>
         <h2>Chưa đủ thông tin để so sánh nhà cung cấp</h2>
         <p class="muted" style="margin:0 0 10px">Bạn mới nhập thông tin chung nên các trang tìm được là nhiều loại sản phẩm khác nhau. Hãy <b>bổ sung hãng, mã hoặc thông số</b> rồi ứng dụng sẽ tìm nhà cung cấp đúng sản phẩm đó và dựng bảng so sánh.</p>
@@ -67,6 +73,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onA
   $(".tbl-src").value = state.view.source;
   $(".tbl-grp").value = state.view.group;
   const diag = $(".tbl-diag");
+  const linkInput = mountLinkInput($(".tbl-add-host"), { submitLabel: "Đọc giá và thêm vào bảng", onSubmit: ({ items }) => onAddLinks(items), toast });
   const table = $(".otbl"), tbody = $("tbody"), hrow = $("tr.h"), frow = $("tr.f"), wrap = $(".tbl-wrap"), info = $(".tbl-info"), menu = $(".tbl-colmenu");
 
   // ----- đầu bảng (dựng một lần: ô lọc không bị mất khi dữ liệu cập nhật) -----
@@ -140,6 +147,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onA
 
   function render() {
     if (!state.entry) return;
+    $(".tbl-qstat").innerHTML = quoteStatusHtml(state.entry);
     const explore = state.entry.scenario === "explore" && !state.raw;
     host.querySelector(".tbl-explore").hidden = !explore;
     host.querySelector(".tbl-main").hidden = explore;
@@ -239,6 +247,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onA
   applySortMarks();
   return {
     update(entry) { if (state.entry?.key !== entry.key) state.raw = false; state.entry = entry; render(); },
+    linkInput,
     get view() { return state.view; },
     get shown() { return state.shown; },
     visibleIds,

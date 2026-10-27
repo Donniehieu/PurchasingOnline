@@ -163,3 +163,10 @@ Xem **TODOAPP.md** (danh sách lỗi đã sửa và việc chưa kiểm chứng)
 | `tests/` | Test (`npm test`) |
 | `TODOAPP.md` | Nhật ký lỗi đã sửa, việc còn lại |
 | `docs/`, `purchasing/`, `app.py`, `templates/` | Bản cũ (tiện ích Chrome, Flask). Không còn dùng, có thể xóa. Hướng dẫn cũ: `README-legacy.md` |
+
+## Báo giá NCC theo link, tìm bổ sung, công nghệ theo nhóm (2.15)
+
+- **Báo giá NCC theo link**: ở trang chủ (mục "Báo giá NCC theo link có sẵn") hoặc trong tab *Bảng NCC* ("Thêm link NCC có sẵn"), dán một hoặc nhiều link, hoặc nạp file Excel (.xlsx), CSV, TXT. Mỗi link thành một dòng trong Bảng NCC (giá, VAT, thông số, liên hệ); link lỗi vẫn có dòng. Bấm *Xuất Excel* để lấy file báo giá.
+- **Hỏi từng câu (Quay lại / Bỏ qua / Tiếp)**: lần tìm đầu chạy ngay theo chữ bạn gõ; trả lời xong, ứng dụng tự tìm bổ sung và cộng dồn vào cùng cache.
+- **Từ khóa tự sinh**: giữ nguyên chữ bạn gõ + thông tin trả lời + cụm hỏi mặc định (giá, ưu/nhược điểm, chất lượng, công nghệ); rồi tìm hãng đối thủ và với mỗi hãng: loại sản phẩm + hãng + giá / chất lượng / ưu nhược điểm / công nghệ. Dùng `POST /api/discover` (tìm miễn phí, không tốn hạn mức AI).
+- **Tab Công nghệ**: bản đồ công nghệ của cả nhóm sản phẩm (ví dụ máy lọc nước: RO, UF, Nano, UV…), sản phẩm đang tìm có gì, và gợi ý công nghệ tối ưu theo ưu tiên (giá rẻ / cân bằng / chất lượng / bền). Ngân hàng công nghệ nằm ở `web/js/lib/techkb.js` (điểm là nhận định tham khảo, có thể chỉnh).

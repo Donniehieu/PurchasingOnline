@@ -38,6 +38,8 @@ export function createApi(getSettings, fetchImpl = (...a) => fetch(...a)) {
   return {
     search: (task, plan, product, signal) => call("/api/search", { task, plan, product }, signal),
     page: (url, hint, signal, opts = {}) => call("/api/page", { url, hint, ...(opts.deep ? { deep: true } : {}) }, signal),
+    /** Tìm link mới theo từ khóa (không dùng AI). Trả về { results: [{url, title, snippet}] }. */
+    discover: (queries, signal) => call("/api/discover", { queries }, signal),
     ask: (question, context, signal) => call("/api/ask", { question, context }, signal),
     ocr: (image, signal) => call("/api/ocr", { image }, signal),
     /** Tải ảnh web qua máy chủ (để đọc điểm ảnh, tính độ giống). Trả về Blob hoặc null. */

@@ -7,6 +7,7 @@ const BRANDS = [
   "bosch", "makita", "dewalt", "stanley", "ingco", "total", "milwaukee", "hikoki", "ryobi", "black+decker", "karcher", "kärcher", "dyson", "ecovacs", "roborock", "dreame", "shark",
   "kangaroo", "sunhouse", "kangaroo", "bluestone", "lock&lock", "tefal", "philips", "russell hobbs", "sanaky", "ariston", "ferroli", "rinnai", "paloma", "kocher", "hafele", "hafele",
   "siemens", "schneider", "abb", "omron", "mitsubishi electric", "delta", "fuji", "yaskawa", "ls electric", "autonics", "fluke", "grundfos", "pentax", "ebara",
+  "karofi", "mutosi", "coway", "wika", "yamaki", "asahi", "kitz", "yamato", "nutifood", "dutch lady", "abbott",
   "canon", "epson", "brother", "hp", "logitech", "jbl", "bose", "sennheiser", "anker", "baseus", "garmin", "gopro", "dji", "tp-link", "d-link", "ubiquiti",
   "vinamilk", "th true milk", "nestle", "unilever", "p&g", "colgate", "clear", "sunsilk", "dove", "omo", "comfort", "sunlight", "lifebuoy", "pepsi", "coca-cola", "nescafe", "trung nguyen", "g7", "acecook", "masan",
 ];
@@ -65,6 +66,16 @@ export function detectBrand(text) {
     if (t.includes(key) && b.length > best.length) best = b;
   }
   return best ? best.replace(/\b\w/g, (c) => c.toUpperCase()) : "";
+}
+
+/** Mọi hãng có trong danh sách được nhắc trong đoạn chữ (theo thứ tự xuất hiện trong danh sách). */
+export function detectBrands(text) {
+  const t = " " + norm(text).replace(/[^a-z0-9&+\- ]/g, " ") + " ";
+  const out = [];
+  for (const b of BRANDS) {
+    if (t.includes(" " + stripAccents(b) + " ")) { const label = b.replace(/\b\w/g, (c) => c.toUpperCase()); if (!out.includes(label)) out.push(label); }
+  }
+  return out;
 }
 
 /** Chuỗi người dùng gõ, giữ nguyên chữ; chỉ gom khoảng trắng thừa. Không cắt, không thêm chữ. */

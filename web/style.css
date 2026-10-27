@@ -270,3 +270,20 @@ dialog::backdrop { background: rgba(15, 18, 40, .55); -webkit-backdrop-filter: b
   .cmp td::before { content: attr(data-label); display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
 }
 @media print { .top, .search, #progress, #empty, .ask-form, .drawer { display: none !important; } .panel[hidden] { display: grid !important; } }
+
+/* Báo giá NCC theo link, thẻ hỏi từng câu */
+.quote > summary, .tbl-add > summary { cursor: pointer; }
+.lk { display: grid; gap: 8px; margin-top: 8px; }
+.lk-name { display: grid; gap: 4px; font-size: .9rem; }
+.lk-name input, .lk-text { width: 100%; font: inherit; font-size: 16px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
+.lk-text { resize: vertical; min-height: 84px; }
+.lk .row { margin-top: 0; }
+.lk-count { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; }
+.lk-ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.lk-ul li { overflow-wrap: anywhere; }
+.tbl-add { margin-bottom: 8px; }
+.tbl-qstat:not(:empty) { margin-bottom: 8px; }
+.wz-dots { display: flex; gap: 6px; margin-bottom: 10px; }
+.wz-dot { width: 24px; height: 6px; border-radius: 99px; background: var(--line); }
+.wz-dot.done { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.wz-dot.cur { background: var(--accent); }

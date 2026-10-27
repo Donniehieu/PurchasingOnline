@@ -5,6 +5,7 @@ import { CATEGORY_LABELS } from "./lib/plan.js";
 import { MAX_IMAGES } from "./lib/entry.js";
 import { suppliersOf } from "./lib/offers.js";
 import { contactText } from "./lib/contact.js";
+import { techLandscape, PRIORITY_LABEL } from "./lib/techkb.js";
 
 const RUN_LABEL = { pages: "trang", prices: "giá", pros: "ưu điểm", cons: "nhược điểm", tech: "công nghệ", images: "ảnh", alts: "hãng" };
 const SECTION_LABEL = { price: "Giá", pros: "Ưu điểm", cons: "Nhược điểm", tech: "Công nghệ", images: "Hình ảnh" };
@@ -166,8 +167,41 @@ export function renderHistoryItem(e) {
     <span class="sub">${s.price.median ? money(s.price.median) + " · " : ""}${e.alternatives.length} hãng so sánh · ${esc(dateTime(e.updatedAt))}${status}${e.ai?.mock ? " · mẫu" : ""}</span></button>`;
 }
 
+// Bản đồ công nghệ của cả NHÓM sản phẩm (không chỉ sản phẩm đang tìm): phân loại, sản phẩm đang tìm có gì, gợi ý tối ưu
+export function renderLandscape(entry, need = {}) {
+  if (entry.category !== "tech") return "";
+  const land = techLandscape(entry, need);
+  if (!land) return "";
+  const pill = (i, best) => [
+    best.some((b) => b.id === i.id) ? `<span class="badge good">tối ưu nhất</span>` : "",
+    i.has ? `<span class="badge good">sản phẩm bạn tìm có</span>` : "",
+    `<span class="badge">${i.role === "core" ? "chọn một trong nhóm" : "có thể bổ sung"}</span>`,
+    i.products || i.notes ? `<span class="badge">thấy ở ${i.products} sản phẩm${i.notes ? `, ${i.notes} bài viết` : ""}</span>` : "",
+  ].join(" ");
+  const list = (a, cls) => `<ul class="items ${cls}">${a.map((x) => `<li><span class="t">${esc(x)}</span></li>`).join("")}</ul>`;
+  const groups = land.groups.concat([...new Set(land.items.filter((i) => i.role === "addon").map((i) => i.group))]).map((g) => {
+    const rows = land.items.filter((i) => i.group === g).sort((a, b) => b.score - a.score);
+    return `<h3 style="margin:14px 0 6px">${esc(g)}</h3><div class="sup-grid">${rows.map((i) => `
+      <div class="pick"><h3>${esc(i.name)} <span class="muted small">điểm ${i.score.toFixed(1)}/10</span></h3>
+        <div class="chips" style="margin-bottom:6px">${pill(i, land.best)}</div>
+        <p class="small" style="margin:0 0 6px">${esc(i.what)}</p>
+        <h3 style="color:var(--good);font-size:.85rem">Ưu điểm</h3>${list(i.pros, "pros")}
+        <h3 style="color:var(--bad);font-size:.85rem;margin-top:6px">Nhược điểm</h3>${list(i.cons, "cons")}
+        <p class="muted small" style="margin:6px 0 0">Hợp với: ${esc(i.bestFor)}</p></div>`).join("")}</div>`;
+  }).join("");
+  return `<div class="card verdict"><h2>Công nghệ của cả nhóm “${esc(land.label)}” <span class="count">ưu tiên: ${esc(PRIORITY_LABEL[land.priority])}</span></h2>
+    <ul class="items">${land.summary.map((l) => `<li><span class="t">${esc(l)}</span></li>`).join("")}</ul>
+    <p class="muted small" style="margin:8px 0 0">Đổi ưu tiên ở tab “Tư vấn chọn” (Nhu cầu của bạn) để gợi ý thay đổi theo giá rẻ, chất lượng hay độ bền.</p></div>
+    <div class="card"><h2>Phân loại và so sánh công nghệ <span class="count">${land.items.length}</span></h2>${groups}
+    <p class="muted small">Điểm là nhận định tham khảo (chất lượng, chi phí, độ bền) từ ngân hàng công nghệ có sẵn của ứng dụng, cộng thêm khi công nghệ xuất hiện ở nhiều sản phẩm đã đọc. Không phải kết quả đo: hãy đối chiếu thông số và nguồn của từng sản phẩm.</p></div>`;
+}
+
+export function renderTech(entry, need = {}) {
+  return renderLandscape(entry, need) + renderTechClusters(entry);
+}
+
 // Tab "Công nghệ": hãng nào dùng công nghệ nào, ưu/nhược điểm của từng công nghệ (chỉ hàng kỹ thuật)
-export function renderTech(entry) {
+function renderTechClusters(entry) {
   const tc = technologyComparison(entry);
   if (!tc.applicable) return `<div class="card"><p class="muted" style="margin:0">Hàng tiêu dùng: chỉ so sánh giá, ưu điểm, nhược điểm — không phân tích công nghệ.</p></div>`;
   if (!tc.clusters.length) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang thu thập thông tin công nghệ…" : "Chưa có thông tin công nghệ của các hãng. Bấm “Tìm thêm dữ liệu mới”, dùng Google trong Chrome hoặc nhập khóa Gemini để có đủ."}</p></div>`;

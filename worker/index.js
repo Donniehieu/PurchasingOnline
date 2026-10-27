@@ -133,6 +133,16 @@ async function handlePage(request, env) {
   return json({ ...facts, url: str(body.url, 1000), finalUrl: got.finalUrl, status: got.status, ms: got.ms });
 }
 
+// Tìm link mới theo từ khóa bổ sung (công cụ tìm miễn phí, không tốn hạn mức AI)
+async function handleDiscover(request, env) {
+  const body = await readBody(request, 6_000);
+  const queries = (Array.isArray(body.queries) ? body.queries : []).slice(0, 4).map((q) => str(q, 200).replace(/\s+/g, " ").trim()).filter(Boolean);
+  if (!queries.length) throw new AIError("Chưa có từ khóa.", 400);
+  const found = await searchMany(queries, { limit: 20, gapMs: Number(env.SEARCH_GAP_MS ?? 700) });
+  if (!found.results.length) throw new AIError("Công cụ tìm kiếm miễn phí không trả kết quả" + (found.errors.length ? " (" + found.errors.join("; ") + ")" : "") + ".", 502);
+  return json({ ok: true, results: found.results.map((r) => ({ url: r.url, title: r.title, snippet: r.snippet, query: r.query })), queries: found.queries });
+}
+
 async function handleImage(request, env) {
   const body = await readBody(request, 3_000);
   const got = await fetchImage(str(body.url, 1000), { allowLocal: env.ALLOW_LOCAL === "1" });
@@ -171,7 +181,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.13.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY, openai: !!env.OPENAI_API_KEY, custom: !!(env.CUSTOM_AI_KEY && env.CUSTOM_AI_URL) }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.15.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY, openai: !!env.OPENAI_API_KEY, custom: !!(env.CUSTOM_AI_KEY && env.CUSTOM_AI_URL) }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });
@@ -179,6 +189,7 @@ export async function handle(request, env = {}) {
       case "/api/search": return await handleSearch(request, env, url.origin);
       case "/api/page": return await handlePage(request, env);
       case "/api/image": return await handleImage(request, env);
+      case "/api/discover": return await handleDiscover(request, env);
       case "/api/ask": return await handleAsk(request, env, url.origin);
       case "/api/ocr": return await handleOcr(request, env, url.origin);
       default: return fail("Không có API này.", 404);
