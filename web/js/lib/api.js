@@ -28,6 +28,16 @@ export function createApi(getSettings, fetchImpl = (...a) => fetch(...a)) {
     page: (url, hint, signal) => call("/api/page", { url, hint }, signal),
     ask: (question, context, signal) => call("/api/ask", { question, context }, signal),
     ocr: (image, signal) => call("/api/ocr", { image }, signal),
+    /** Tải ảnh web qua máy chủ (để đọc điểm ảnh, tính độ giống). Trả về Blob hoặc null. */
+    async image(url, signal) {
+      const s = getSettings();
+      const headers = { "content-type": "application/json" };
+      if (s.appCode) headers["x-app-code"] = s.appCode;
+      try {
+        const res = await fetchImpl((s.apiBase || "").replace(/\/+$/, "") + "/api/image", { method: "POST", headers, body: JSON.stringify({ url }), signal });
+        return res.ok && /^image\//.test(res.headers.get("content-type") || "") ? await res.blob() : null;
+      } catch (e) { if (e?.name === "AbortError") throw e; return null; }
+    },
     async health() {
       const s = getSettings();
       const res = await fetchImpl((s.apiBase || "").replace(/\/+$/, "") + "/api/health");

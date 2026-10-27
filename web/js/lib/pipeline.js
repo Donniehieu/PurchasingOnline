@@ -3,6 +3,7 @@
 import { makePlan, cacheKey } from "./plan.js";
 import { hasContact, mergeContact } from "./contact.js";
 import { PAGE_LOGIC_VERSION } from "./entry.js";
+import { rankBySimilarity } from "./imagesim.js";
 import { newEntry, ingestProduct, ingestCompare, ingestPage, ingestListing, ingestAltInsight, dropStalePrices, sellersNeedingContact, ingestContactPage, logEvent } from "./entry.js";
 import { domainOf, normUrl, clip, modelKey } from "./text.js";
 import { summarize } from "./aggregate.js";
@@ -92,7 +93,7 @@ async function pool(items, size, fn, signal) {
  * opts: { api, store, emit, signal, force, pageLimit, concurrency }
  * Trả về entry (cũng đã lưu vào store).
  */
-export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 12, enrichPageLimit = 10, explorePageLimit = 6, concurrency = 3, perHostCap = 2, freeGapMs = 4000, contactPages = true, stopEarly = true, imageLimit = 5, imageLimitAlt = 5 }) {
+export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 12, enrichPageLimit = 10, explorePageLimit = 6, concurrency = 3, perHostCap = 2, freeGapMs = 4000, contactPages = true, stopEarly = true, imageLimit = 5, imageLimitAlt = 5, refImage = null, imageFeatures = null }) {
   const step = (id, status, text = "") => emit({ type: "step", id, status, text });
   const publish = (entry) => emit({ type: "entry", entry });
   if (force) mode = "fresh";
@@ -286,7 +287,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
         let page;
         try { page = await api.page(p.url, hint, signal); }
         catch (e) { if (e.name === "AbortError" || e.status === 401) throw e; page = { ok: false, url: p.url, error: e.message }; }
-        ingestPage(entry, page, { alt: p.alt, forLabel: p.alt ? p.alt.brand : "", imageLimit, imageLimitAlt });
+        ingestPage(entry, page, { alt: p.alt, forLabel: p.alt ? p.alt.brand : "", imageLimit, imageLimitAlt, imageKeep: refImage && imageFeatures ? { main: imageLimit * 4, alt: imageLimitAlt * 3 } : null });
         step("pages", "running", `${++done}/${picks.length} · ${domainOf(p.url)}`);
         publish(entry);
       }, signal);
@@ -294,6 +295,16 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
       step("pages", "done", `${ok}/${picks.length} trang đọc được`);
     }
 
+    // Có ảnh tham chiếu: ưu tiên ảnh giống hoặc gần giống nhất (không cần giống hệt), giữ đúng số ảnh đã chọn
+    if (refImage && imageFeatures) {
+      aborted(signal);
+      step("pages", "running", "xếp ảnh theo độ giống ảnh của bạn…");
+      const main = await rankBySimilarity(entry.images, refImage, imageFeatures, { keep: imageLimit });
+      entry.images.splice(0, entry.images.length, ...main.ranked);
+      for (const a of entry.alternatives) if (a.images.length > 1) { const r = await rankBySimilarity(a.images, refImage, imageFeatures, { keep: imageLimitAlt, maxFetch: 8 }); a.images.splice(0, a.images.length, ...r.ranked); }
+      entry.refImage = true;
+      logEvent(entry, "plan", main.best != null ? `Ảnh: xếp theo độ giống ảnh tham chiếu, giống nhất ${Math.round(main.best * 100)}%${main.failed ? ` (${main.failed} ảnh không tải được)` : ""}` : "Ảnh: không tải được ảnh nào để so với ảnh tham chiếu");
+    }
     seedFromDirectory(entry, dir);
     // 5) Trang "Liên hệ" của các NCC chưa có SĐT/email (mỗi NCC một lần, tối đa vài trang mỗi lần tìm)
     for (const c of scenario === "explore" || !contactPages ? [] : sellersNeedingContact(entry, enriching ? 2 : 3)) {

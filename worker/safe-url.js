@@ -102,3 +102,40 @@ async function readLimited(res, maxBytes, type) {
   const cs = (type.match(/charset=([\w-]+)/i) || [])[1] || (new TextDecoder("utf-8").decode(buf.subarray(0, 2048)).match(/<meta[^>]+charset=["']?([\w-]+)/i) || [])[1] || "utf-8";
   try { return new TextDecoder(cs).decode(buf); } catch { return new TextDecoder("utf-8").decode(buf); }
 }
+
+/** Tải một ảnh công khai (tối đa maxBytes) để trình duyệt tính độ giống ảnh. Kiểm tra SSRF từng chặng chuyển hướng. */
+export async function fetchImage(rawUrl, { timeoutMs = 8000, maxBytes = 1_500_000, allowLocal = false, fetchImpl = fetch } = {}) {
+  let current = rawUrl;
+  for (let hop = 0; hop <= 3; hop++) {
+    const chk = checkUrl(current, { allowLocal });
+    if (!chk.ok) return { ok: false, error: chk.reason };
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const res = await fetchImpl(chk.url.href, { redirect: "manual", signal: ctl.signal, headers: { "user-agent": UA, accept: "image/avif,image/webp,image/*,*/*;q=0.8", referer: chk.url.origin + "/" } });
+      if ([301, 302, 303, 307, 308].includes(res.status)) { const loc = res.headers.get("location"); if (!loc) return { ok: false, error: "Chuyển hướng lỗi" }; current = new URL(loc, chk.url).href; continue; }
+      if (!res.ok) return { ok: false, error: "HTTP " + res.status };
+      const type = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      if (!/^image\/(jpeg|png|webp|gif|avif)$/.test(type)) return { ok: false, error: "Không phải ảnh" };
+      const len = Number(res.headers.get("content-length") || 0);
+      if (len > maxBytes) return { ok: false, error: "Ảnh quá lớn" };
+      const reader = res.body.getReader();
+      const chunks = [];
+      let total = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > maxBytes) { try { await reader.cancel(); } catch { /* bỏ */ } return { ok: false, error: "Ảnh quá lớn" }; }
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) { bytes.set(c, off); off += c.length; }
+      return { ok: true, bytes, type };
+    } catch (e) {
+      return { ok: false, error: e?.name === "AbortError" ? "Quá thời gian chờ" : "Không kết nối được" };
+    } finally { clearTimeout(timer); }
+  }
+  return { ok: false, error: "Chuyển hướng quá nhiều" };
+}

@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.11.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.13.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -251,6 +251,13 @@ Các dòng THIẾU còn lại trong lần chạy cuối đều là trang tin t�
 
 ### Tab Cài đặt cấu hình
 Cài đặt chia 3 tab: **Tìm kiếm** (mẫu Nhanh / Cân bằng / Đầy đủ hoặc tự chỉnh: số trang khi đủ/khi thiếu thông tin/mỗi lần tìm thêm, số ảnh sản phẩm chính và mỗi hãng khác, số trang đọc cùng lúc, tối đa trang mỗi website, bật/tắt trang liên hệ NCC, bật/tắt DuckDuckGo+Bing qua tiện ích, dừng sớm khi đủ), **Kết nối** (máy chủ, nguồn tìm, khóa, mã, kiểm tra kết nối, tiện ích), **Dữ liệu** (tự xóa sau N ngày). Mọi giá trị được ép vào khoảng an toàn; có hiệu lực ngay từ lần tìm kế tiếp.
+
+## 2o. Thẻ câu hỏi không hỏi loại hàng, bố cục khít ngang, ảnh giống ảnh tham chiếu, hướng dẫn khóa (bản 2.13.0)
+
+- **Thẻ câu hỏi:** bỏ câu "Bạn đang tìm loại sản phẩm nào?". Chưa nhận ra loại hàng thì dùng đúng chuỗi bạn gõ, chỉ có ô **tự gõ thêm** (hãng, mã, thông số), bỏ qua được; kèm đối tượng và ngân sách.
+- **Bố cục:** khít đúng chiều ngang màn hình, không tràn ngang, không bị kéo lệch khi vuốt ngang. Chỉ cho phóng to, không cho thu nhỏ dưới khổ màn hình (`minimum-scale=1`). Đã kiểm tra ở 320px trên mọi tab (lưới nhà cung cấp và thanh công cụ bảng NCC đã sửa chỗ tràn).
+- **Ảnh theo ảnh tham chiếu:** khi bạn đưa ảnh (chọn/dán/chụp), app lưu "dấu vân tay" của ảnh (hình dạng dHash 64 bit + biểu đồ màu), tìm nhiều ảnh ứng viên hơn rồi **xếp giống/gần giống nhất lên trước**, giữ đúng số ảnh đã chọn; mỗi ảnh có nhãn "giống N%". Không cần giống hệt. Ảnh web được tải qua máy chủ (`/api/image`, chặn mạng nội bộ, chỉ nhận ảnh ≤1,5 MB) để đọc điểm ảnh. Đây là so sánh gần đúng về dáng và màu, không nhận diện vật thể: ảnh khác góc chụp hoặc nền khác có thể điểm thấp.
+- **Hướng dẫn khóa trong Cài đặt → Kết nối:** từng bước lấy khóa Gemini (miễn phí), Claude, cài tiện ích Google trong Chrome và nguồn miễn phí; mục tương ứng tự mở theo nguồn tìm đang chọn; dán khóa sai dạng/sai nguồn thì báo ngay.
 
 ## 3. Tự xóa dữ liệu cũ
 

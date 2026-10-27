@@ -44,14 +44,14 @@ test("thẻ câu hỏi: 3–5 thẻ theo loại hàng, bỏ câu đã trả lờ
   assert.ok(milk.some((c) => c.id === "volume"));
   const withBudget = preCards(analyzeInput("laptop dưới 15 triệu cho sinh viên"));
   assert.ok(!withBudget.some((c) => c.id === "budget"), "đã có ngân sách thì không hỏi lại");
-  // chưa biết loại hàng: hỏi loại trước
+  // chưa biết loại hàng: KHÔNG bắt chọn loại; dùng đúng chuỗi gõ, chỉ cho tự gõ thêm (bỏ qua được)
   const unk = preCards(analyzeInput("quà tặng dưới 500k"));
-  assert.equal(unk[0].kind, "type");
-  assert.ok(unk[0].options.length >= 10);
+  assert.ok(!unk.some((c) => c.kind === "type"), "không hỏi loại sản phẩm");
+  assert.equal(unk[0].id, "extra");
+  assert.equal(unk[0].options.length, 0, "chỉ ô tự gõ");
+  assert.equal(composeQuery("quà tặng dưới 500k", unk, { extra: { custom: "bình giữ nhiệt" } }), "quà tặng dưới 500k bình giữ nhiệt");
+  assert.equal(composeQuery("quà tặng dưới 500k", unk, {}), "quà tặng dưới 500k", "bỏ qua thì giữ nguyên chuỗi gõ");
   assert.equal(preCards(analyzeInput("Sony WH-1000XM5")).length, 0, "đủ thông tin thì không có thẻ");
-  // chọn loại -> hỏi tiếp theo loại đó
-  const picked = analyzeInput("quà tặng", { forcedType: "milk" });
-  assert.equal(picked.type.id, "milk");
 });
 
 test("chuỗi tìm = chuỗi người dùng gõ + lựa chọn (giữ nguyên chữ gõ, không trùng lặp); thẻ nhu cầu không vào chuỗi tìm", () => {
@@ -179,4 +179,64 @@ test("cấu hình: số trang, số ảnh, tắt trang liên hệ có hiệu l�
   assert.equal(lean.imageLimit, 1);
   const rich = await research({ text: "Nồi chiên không dầu Zeta ZF-500" }, { perHostCap: 99, api, store: createMemoryStore(), imageLimit: 12, imageLimitAlt: 8 });
   assert.ok(rich.images.length >= lean.images.length);
+});
+
+// ---- ảnh tham chiếu: ưu tiên ảnh giống hoặc gần giống ----
+import { featuresFromRGBA, similarity, rankBySimilarity } from "../web/js/lib/imagesim.js";
+import { fetchImage } from "../worker/safe-url.js";
+
+const solid = (w, h, [r, g, b]) => { const d = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < d.length; i += 4) { d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255; } return d; };
+const gradient = (w, h, flip, [r, g, b]) => { const d = new Uint8ClampedArray(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = Math.round(255 * ((flip ? w - 1 - x : x) / (w - 1))); const i = (y * w + x) * 4; d[i] = Math.min(255, v * r / 255 + 20); d[i + 1] = Math.min(255, v * g / 255 + 20); d[i + 2] = Math.min(255, v * b / 255 + 20); d[i + 3] = 255; } return d; };
+const feat = (flip, rgb) => featuresFromRGBA(gradient(16, 16, flip, rgb), gradient(9, 8, flip, rgb));
+
+test("độ giống ảnh: ảnh cùng dáng/màu gần giống điểm cao; khác màu hoặc khác dáng điểm thấp; thiếu dữ liệu = 0", () => {
+  const ref = feat(false, [255, 80, 40]);
+  const same = similarity(ref, feat(false, [255, 80, 40]));
+  const near = similarity(ref, feat(false, [235, 100, 60]));
+  const otherColor = similarity(ref, feat(false, [40, 80, 255]));
+  const mirrored = similarity(ref, feat(true, [255, 80, 40]));
+  assert.equal(same, 1);
+  assert.ok(near > otherColor && near > mirrored, `gần giống ${near} > khác màu ${otherColor}, khác dáng ${mirrored}`);
+  assert.ok(near >= 0.8, "gần giống vẫn được điểm cao (không cần giống hệt): " + near);
+  assert.equal(similarity(null, ref), 0);
+  assert.equal(featuresFromRGBA(solid(16, 16, [10, 10, 10]), solid(9, 8, [10, 10, 10])).hash.length, 64);
+});
+
+test("rankBySimilarity: xếp giống nhất trước, giữ đúng số ảnh, ảnh không tải được xuống cuối (không bỏ)", async () => {
+  const ref = feat(false, [255, 80, 40]);
+  const table = { a: feat(false, [40, 80, 255]), b: feat(false, [250, 85, 45]), c: null, d: feat(false, [235, 100, 60]) };
+  const imgs = ["a", "b", "c", "d"].map((u) => ({ url: u, score: 1 }));
+  const r = await rankBySimilarity(imgs, ref, async (u) => table[u], { keep: 3 });
+  assert.deepEqual(r.ranked.map((x) => x.url), ["b", "d", "a"]);
+  assert.equal(r.failed, 1);
+  assert.ok(r.best > 0.9);
+  const all = await rankBySimilarity(imgs, ref, async (u) => table[u]);
+  assert.equal(all.ranked.at(-1).url, "c");
+});
+
+test("pipeline có ảnh tham chiếu: giữ nhiều ứng viên rồi xếp theo độ giống, ghi độ giống vào ảnh", async () => {
+  const ref = feat(false, [255, 80, 40]);
+  const asked = [];
+  const e = await research({ text: "Nồi chiên không dầu Zeta ZF-500" }, { perHostCap: 99, api, store: createMemoryStore(), imageLimit: 2, imageLimitAlt: 1, refImage: ref,
+    imageFeatures: async (u) => { asked.push(u); return /img\/(\d)/.test(u) && Number(u.match(/img\/(\d)/)[1]) % 2 ? feat(false, [250, 85, 45]) : feat(true, [40, 80, 255]); } });
+  assert.equal(e.refImage, true);
+  assert.ok(asked.length >= 1, "đã so ảnh");
+  assert.ok(e.images.length <= 2);
+  assert.ok(e.images.every((i) => i.sim != null || e.images.length === 0));
+  const sims = e.images.map((i) => i.sim ?? -1);
+  assert.deepEqual(sims, [...sims].sort((a, b) => b - a), "giống nhất đứng trước");
+  assert.ok(e.log.some((l) => /xếp theo độ giống ảnh tham chiếu/.test(l.msg)));
+});
+
+test("tải ảnh hộ trình duyệt: chặn địa chỉ nội bộ, chỉ nhận ảnh, giới hạn dung lượng", async () => {
+  assert.equal((await fetchImage("http://10.0.0.5/a.png")).ok, false);
+  assert.equal((await fetchImage("http://localhost/a.png")).ok, false);
+  const png = new Uint8Array([137, 80, 78, 71]);
+  const mk = (type, body, status = 200, len) => async () => new Response(body, { status, headers: { "content-type": type, ...(len ? { "content-length": String(len) } : {}) } });
+  const ok = await fetchImage("https://img.vn/a.png", { fetchImpl: mk("image/png", png) });
+  assert.equal(ok.ok, true); assert.equal(ok.type, "image/png"); assert.equal(ok.bytes.length, 4);
+  assert.equal((await fetchImage("https://img.vn/a", { fetchImpl: mk("text/html", "<html>") })).ok, false);
+  assert.equal((await fetchImage("https://img.vn/a.png", { fetchImpl: mk("image/png", png, 200, 9_999_999) })).ok, false);
+  const redirect = async (u) => (String(u).includes("img.vn") ? new Response(null, { status: 302, headers: { location: "http://127.0.0.1/x.png" } }) : new Response(png, { headers: { "content-type": "image/png" } }));
+  assert.equal((await fetchImage("https://img.vn/a.png", { fetchImpl: redirect })).ok, false, "chuyển hướng vào mạng nội bộ bị chặn");
 });

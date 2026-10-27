@@ -65,3 +65,15 @@ test("cấu hình tìm kiếm: mẫu có sẵn, ép vào khoảng an toàn, nh�
   assert.deepEqual(cfgFromSettings({}), DEFAULT_CFG);
   for (const p of Object.values(PRESETS)) assert.deepEqual(normalizeCfg(p.cfg), p.cfg, "mẫu nằm trong khoảng cho phép");
 });
+
+test("kiểm tra khóa dán vào cài đặt: đúng dạng, sai nguồn, quá ngắn", async () => {
+  const { keyHint } = await import("../web/js/lib/config.js");
+  assert.equal(keyHint("gemini", "").level, "");
+  assert.equal(keyHint("gemini", "AIzaSyA-1234567890abcdefghijklmnop").level, "ok");
+  assert.equal(keyHint("auto", "sk-ant-api03-abcdefghijklmnopqrstuvwxyz").level, "ok");
+  assert.equal(keyHint("claude", "AIzaSyA-1234567890abcdefghijklmnop").level, "warn");
+  assert.equal(keyHint("gemini", "sk-ant-api03-abcdefghijklmnopqrstuvwxyz").level, "warn");
+  assert.equal(keyHint("gemini", "AIza").level, "warn");
+  assert.equal(keyHint("gemini", "AIzaSyA 1234567890abcdefghijklmnop").level, "warn");
+  assert.equal(keyHint("gemini", "xyzxyzxyzxyzxyzxyzxyzxyzxyz").level, "warn");
+});

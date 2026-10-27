@@ -6,7 +6,7 @@ import { norm } from "./text.js";
 import { makePlan } from "./plan.js";
 import { FACETS, facetValues } from "./cards.js";
 import { parseNeed } from "./need.js";
-import { TYPES, TYPE_PICKER } from "./kb.js";
+import { TYPES } from "./kb.js";
 
 const URL_RE = /https?:\/\/[^\s<>"']+/gi;
 const hasNonAscii = (s) => [...s].some((c) => c.charCodeAt(0) > 127);
@@ -124,7 +124,8 @@ export function preCards(analysis, { hints = null, max = 5 } = {}) {
   const need = parseNeed(typed);
   const hasBudget = need.budgetMin != null || need.budgetMax != null;
   if (!analysis.type) {
-    cards.push({ ...TYPE_PICKER, kind: "type" });
+    // chưa nhận ra loại hàng: KHÔNG bắt chọn loại, dùng đúng chuỗi người dùng gõ; chỉ cho tự gõ thêm (bỏ qua được)
+    cards.push({ id: "extra", kind: "query", title: "Muốn ghi thêm gì về sản phẩm? (tự gõ hãng, mã, thông số… hoặc bỏ qua)", options: [] });
     cards.push(NEED_CARDS.audience);
     if (!hasBudget) cards.push(NEED_CARDS.budget);
     return cards.slice(0, max);

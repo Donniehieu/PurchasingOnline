@@ -13,7 +13,8 @@ import { renderAdvice } from "./advice-ui.js";
 import { analyzeInput, preCards, composeQuery, learnFromCache } from "./lib/intent.js";
 import { makePlan, cacheKey } from "./lib/plan.js";
 import { adviseProducts } from "./lib/advisor.js";
-import { cfgFromSettings, normalizeCfg, PRESETS, matchPreset } from "./lib/config.js";
+import { featuresFromRGBA } from "./lib/imagesim.js";
+import { cfgFromSettings, normalizeCfg, PRESETS, matchPreset, keyHint } from "./lib/config.js";
 import { renderBanner, renderHeadline, renderVerdict, renderSummary, renderCompare, renderImages, renderTech, renderLog, renderSources, renderHistoryItem, renderSuppliers, chip } from "./render.js";
 
 const $ = (id) => document.getElementById(id);
@@ -429,6 +430,20 @@ $("askChips").addEventListener("click", (e) => { const b = e.target.closest("[da
 // Chọn file, dán (Ctrl+V / nút "Dán ảnh") hoặc kéo thả ảnh vào ô tìm kiếm.
 let ocrCtx = "";
 let previewUrl = "";
+// Ảnh tham chiếu của người dùng: lưu dấu vân tay (dHash + màu) để ưu tiên các ảnh tìm được giống hoặc gần giống nhất
+let refFeatures = null;
+async function featuresOfBlob(blob) {
+  const bmp = await createImageBitmap(blob);
+  const draw = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(bmp, 0, 0, w, h); return x.getImageData(0, 0, w, h).data; };
+  const f = featuresFromRGBA(draw(16, 16), draw(9, 8));
+  bmp.close?.();
+  return f;
+}
+// ảnh web tải qua máy chủ (tránh lỗi CORS khi đọc điểm ảnh)
+async function webImageFeatures(url) {
+  const blob = await serverApi.image(url);
+  return blob ? featuresOfBlob(blob) : null;
+}
 $("btnPhoto").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", () => { const f = $("file").files?.[0]; $("file").value = ""; if (f) readImage(f); });
 
@@ -439,6 +454,7 @@ async function readImage(f) {
   $("pastePreview").src = previewUrl;
   $("pasteInfo").hidden = false;
   $("ocrNote").textContent = "Đang đọc ảnh…";
+  featuresOfBlob(f).then((x) => { refFeatures = x; }).catch(() => { refFeatures = null; });
   try {
     const image = await shrink(f);
     const r = await api.ocr(image);
@@ -461,6 +477,7 @@ function clearImage() {
   $("pastePreview").removeAttribute("src");
   $("ocrNote").textContent = "";
   ocrCtx = "";
+  refFeatures = null;
 }
 $("pasteClear").addEventListener("click", clearImage);
 
@@ -588,7 +605,7 @@ $("btnClear").addEventListener("click", async () => {
 // Cấu hình tìm kiếm (số trang, ảnh, luồng...) lấy từ settings.cfg
 function runOptions() {
   const c = cfgFromSettings(settings);
-  return { pageLimit: c.pagesFull, explorePageLimit: c.pagesExplore, enrichPageLimit: c.pagesEnrich, imageLimit: c.images, imageLimitAlt: c.imagesAlt, concurrency: c.concurrency, perHostCap: c.perHost, contactPages: c.contactPages, stopEarly: c.stopEarly };
+  return { pageLimit: c.pagesFull, explorePageLimit: c.pagesExplore, enrichPageLimit: c.pagesEnrich, imageLimit: c.images, imageLimitAlt: c.imagesAlt, concurrency: c.concurrency, perHostCap: c.perHost, contactPages: c.contactPages, stopEarly: c.stopEarly, refImage: refFeatures, imageFeatures: refFeatures ? webImageFeatures : null };
 }
 function fillCfg(c) {
   for (const el of $("dlg").querySelectorAll("[data-cfg]")) {
@@ -617,6 +634,17 @@ $("dlg").addEventListener("click", (e) => {
   if (e.target.closest("#btnCancel")) $("dlg").close();
 });
 $("dlg").addEventListener("input", (e) => { if (e.target.closest("[data-cfg]")) fillCfg(readCfg()); });
+// hướng dẫn lấy khóa: mở đúng mục theo nguồn đang chọn; báo ngay khi dán khóa sai dạng
+function updateKeyGuide() {
+  const p = $("sProvider").value;
+  const want = p === "auto" ? "" : p;
+  for (const d of $("keyGuides").querySelectorAll("[data-guide]")) d.open = !!want && d.dataset.guide === want;
+  const h = keyHint(p, $("sKey").value);
+  $("keyHint").className = "small " + h.level;
+  $("keyHint").textContent = h.text;
+}
+$("sProvider").addEventListener("change", updateKeyGuide);
+$("sKey").addEventListener("input", updateKeyGuide);
 
 function openSettings() {
   $("sApi").value = settings.apiBase;
@@ -625,6 +653,7 @@ function openSettings() {
   $("sKeep").value = String(settings.keepDays);
   $("sCode").value = settings.appCode;
   fillCfg(cfgFromSettings(settings));
+  updateKeyGuide();
   selectSettingsTab("search");
   $("healthOut").textContent = "";
   if (!$("dlg").open) $("dlg").showModal();

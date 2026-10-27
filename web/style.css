@@ -31,6 +31,13 @@
 }
 
 * { box-sizing: border-box; }
+/* Luôn khít chiều ngang màn hình: không tràn ngang, không bị kéo lệch; chỉ phóng to được, không thu nhỏ hơn khổ màn hình */
+html, body { width: 100%; max-width: 100%; overflow-x: clip; }
+body { min-width: 320px; }
+main, .card, .panel, .qcards, .pick-grid, .sup-grid, .chips { min-width: 0; }
+main { grid-template-columns: minmax(0, 1fr); }
+img, video, canvas, svg, table { max-width: 100%; }
+.card, .alert, .why, .chat, .msg, li, p, h1, h2, h3, a { overflow-wrap: anywhere; }
 html { -webkit-text-size-adjust: 100%; scroll-padding-top: 130px; }
 body { margin: 0; background: var(--bg) var(--bg-grad) no-repeat; background-attachment: fixed; color: var(--text); font: 15px/1.55 "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
 h1, h2, h3 { line-height: 1.25; margin: 0 0 .5em; letter-spacing: -.01em; }
@@ -174,7 +181,7 @@ details > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .adv-steps li { padding: 4px 12px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: .82rem; font-weight: 600; }
 .adv-steps li.on { background: var(--accent-soft); color: var(--accent); }
 .ask-list { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
-.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px; }
 .pick { display: grid; gap: 8px; align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); transition: border-color .15s, transform .15s var(--ease), box-shadow .15s; }
 .pick:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
 .pick.best { border-color: var(--good); background: linear-gradient(180deg, var(--good-soft), var(--surface) 55%); }
@@ -185,10 +192,10 @@ details > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .pick .warn-line { font-size: .82rem; color: var(--warn); margin: 0; }
 .pick .contact { font-size: .85rem; display: grid; gap: 2px; }
 .pick .specs-mini { font-size: .8rem; color: var(--muted); }
-.sup-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.sup-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
 .score-pill { float: right; font-size: .75rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
 
-.qcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.qcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
 .qcard { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); display: grid; gap: 10px; align-content: start; }
 .q-title { display: flex; gap: 8px; align-items: flex-start; font-weight: 600; }
 .q-num { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .75rem; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
@@ -238,6 +245,11 @@ dialog::backdrop { background: rgba(15, 18, 40, .55); -webkit-backdrop-filter: b
 .settings label.check2 { display: flex; gap: 8px; align-items: center; font-weight: 500; }
 .settings label.check2 input { width: auto; }
 .settings input[type=range] { padding: 0; border: 0; }
+.keyguides { display: grid; gap: 6px; }
+.keyguide { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 12px; background: var(--surface-2); }
+.keyguide[open] { background: var(--accent-soft); }
+.keyguide ol { margin: 6px 0; padding-left: 20px; display: grid; gap: 4px; }
+#keyHint.ok { color: var(--good); } #keyHint.warn { color: var(--warn); }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: #1d2040; color: #fff; padding: 11px 18px; border-radius: 999px; opacity: 0; pointer-events: none; transition: .25s var(--ease); z-index: 60; max-width: calc(100% - 32px); font-size: .9rem; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 

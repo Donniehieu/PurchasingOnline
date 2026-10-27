@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
   <title>Mua hàng thông minh</title>
   <meta name="description" content="Tìm, so sánh và chọn sản phẩm, nhà cung cấp phù hợp nhu cầu và ngân sách: giá, ưu nhược điểm, công nghệ, kèm nguồn.">
   <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)">
@@ -198,6 +198,42 @@
         <input id="sKey" type="password" placeholder="sk-ant-… hoặc AIza…" autocomplete="off"></label>
       <label>Mã truy cập <small>(nếu chủ ứng dụng đặt)</small>
         <input id="sCode" type="password" autocomplete="off"></label>
+      <div id="keyHint" class="small" aria-live="polite"></div>
+      <div class="keyguides" id="keyGuides">
+        <h3 style="margin:4px 0">Hướng dẫn lấy khóa theo từng nguồn tìm</h3>
+        <details class="keyguide" data-guide="gemini">
+          <summary>Gemini (Google) — có khóa miễn phí</summary>
+          <ol>
+            <li>Mở <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a> và đăng nhập tài khoản Google.</li>
+            <li>Bấm <b>Create API key</b>, chọn một project (hoặc tạo mới).</li>
+            <li>Sao chép khóa (bắt đầu bằng <code>AIza</code>).</li>
+            <li>Ở đây: chọn nguồn tìm <b>Gemini</b>, dán khóa vào ô <b>Khóa dịch vụ</b>, bấm <b>Kiểm tra kết nối</b> rồi <b>Lưu</b>.</li>
+          </ol>
+          <p class="muted small">Gói miễn phí có giới hạn số lượt mỗi phút/ngày; hết lượt thì app tự dùng cách tìm miễn phí. Khóa chỉ lưu trên thiết bị này.</p>
+        </details>
+        <details class="keyguide" data-guide="claude">
+          <summary>Claude (Anthropic) — cần nạp tiền</summary>
+          <ol>
+            <li>Mở <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com → Settings → API keys</a> và đăng nhập.</li>
+            <li>Vào mục thanh toán (Billing) nạp một khoản nhỏ; chưa nạp thì khóa không dùng được.</li>
+            <li>Bấm <b>Create Key</b>, đặt tên, sao chép khóa (bắt đầu bằng <code>sk-ant-</code>; chỉ hiện một lần).</li>
+            <li>Ở đây: chọn nguồn tìm <b>Claude</b>, dán khóa vào ô <b>Khóa dịch vụ</b>, <b>Kiểm tra kết nối</b>, <b>Lưu</b>.</li>
+          </ol>
+        </details>
+        <details class="keyguide" data-guide="chrome">
+          <summary>Google trong Chrome (tiện ích) — không cần khóa</summary>
+          <ol>
+            <li>Tải <a href="ext/mua-hang-extension.zip" download>tiện ích (.zip)</a> và giải nén.</li>
+            <li>Mở <code>chrome://extensions</code>, bật <b>Chế độ nhà phát triển</b>, bấm <b>Tải tiện ích đã giải nén</b>, chọn thư mục vừa giải nén.</li>
+            <li>Mở trang này, bấm biểu tượng tiện ích → <b>Cho phép trang này</b>.</li>
+            <li>Chọn nguồn tìm <b>Tự chọn</b> hoặc <b>Chỉ Google trong Chrome</b>. Chỉ dùng được trên Chrome máy tính.</li>
+          </ol>
+        </details>
+        <details class="keyguide" data-guide="free">
+          <summary>Miễn phí (DuckDuckGo + Bing) — không cần khóa</summary>
+          <p style="margin:6px 0 0">Chọn nguồn tìm <b>Miễn phí</b>. Không cần làm gì thêm; đôi khi bị chặn tạm thời, khi đó hãy thử lại sau ít phút, dán link trang bán hàng, hoặc dùng khóa Gemini miễn phí.</p>
+        </details>
+      </div>
       <div id="healthOut" class="muted small" aria-live="polite"></div>
       <div class="muted small">Tiện ích Chrome: <a href="ext/mua-hang-extension.zip" download>tải bản mới nhất (.zip)</a> <span id="extVer"></span></div>
       <div class="row" style="margin-top:0">

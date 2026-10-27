@@ -6,7 +6,7 @@
 //   POST /api/ocr     {image:{mime,data}}                         -> đọc chữ/nhận diện sản phẩm từ ảnh
 import { AIError, pickProvider, callAI, extractJson, verifyClaims } from "./ai.js";
 import { SYSTEM, productPrompt, comparePrompt, ASK_SYSTEM, askPrompt, OCR_SYSTEM, OCR_PROMPT } from "./prompts.js";
-import { fetchHtml } from "./safe-url.js";
+import { fetchHtml, fetchImage } from "./safe-url.js";
 import { extractFacts, priceFromSnippet } from "../web/js/lib/extract.js";
 import { searchMany } from "./websearch.js";
 import { modelKey, norm, domainOf, normUrl } from "../web/js/lib/text.js";
@@ -112,6 +112,13 @@ async function handlePage(request, env) {
   return json({ ...facts, url: str(body.url, 1000), finalUrl: got.finalUrl, status: got.status, ms: got.ms });
 }
 
+async function handleImage(request, env) {
+  const body = await readBody(request, 3_000);
+  const got = await fetchImage(str(body.url, 1000), { allowLocal: env.ALLOW_LOCAL === "1" });
+  if (!got.ok) return fail(got.error, 502);
+  return new Response(got.bytes, { status: 200, headers: { ...CORS, "content-type": got.type, "cache-control": "private, max-age=86400" } });
+}
+
 async function handleAsk(request, env, origin) {
   const body = await readBody(request, 80_000);
   const question = str(body.question, 400).trim();
@@ -143,13 +150,14 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.12.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.13.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });
     switch (url.pathname) {
       case "/api/search": return await handleSearch(request, env, url.origin);
       case "/api/page": return await handlePage(request, env);
+      case "/api/image": return await handleImage(request, env);
       case "/api/ask": return await handleAsk(request, env, url.origin);
       case "/api/ocr": return await handleOcr(request, env, url.origin);
       default: return fail("Không có API này.", 404);

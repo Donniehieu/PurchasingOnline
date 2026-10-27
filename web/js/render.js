@@ -130,7 +130,7 @@ export function renderImages(entry) {
   if (main.length) groups.push({ title: entry.product.name || "Sản phẩm", list: main });
   for (const a of entry.alternatives) if (a.images.length) groups.push({ title: `${a.brand} ${a.model || a.name}`, list: a.images.slice(0, entry.imageLimitAlt ?? MAX_IMAGES) });
   if (!groups.length) return `<div class="card"><p class="muted" style="margin:0">${entry.status === "running" ? "Đang lấy ảnh từ các trang nguồn…" : "Chưa lấy được ảnh nào từ các trang đã mở."}</p></div>`;
-  return groups.map((g) => `<div class="card"><h2>${esc(g.title)} <span class="count">${g.list.length} ảnh</span></h2><div class="images-grid">${g.list.map((i) => `<figure><a href="${esc(httpUrl(i.url))}" target="_blank" rel="noopener noreferrer">${imgTag(i, false)}</a><figcaption>${chip(entry, i.srcId)}</figcaption></figure>`).join("")}</div></div>`).join("");
+  return groups.map((g) => `<div class="card"><h2>${esc(g.title)} <span class="count">${g.list.length} ảnh</span></h2><div class="images-grid">${g.list.map((i) => `<figure><a href="${esc(httpUrl(i.url))}" target="_blank" rel="noopener noreferrer">${imgTag(i, false)}</a><figcaption>${i.sim != null ? `<span class="badge good" title="Độ giống ảnh bạn cung cấp (gần đúng)">giống ${Math.round(i.sim * 100)}%</span> ` : ""}${chip(entry, i.srcId)}</figcaption></figure>`).join("")}</div></div>`).join("");
 }
 
 export function renderLog(entry) {
