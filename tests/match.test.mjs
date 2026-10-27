@@ -4,6 +4,7 @@ import { makePlan, extractModel } from "../web/js/lib/plan.js";
 import { extractFacts } from "../web/js/lib/extract.js";
 import { newEntry, ingestPage } from "../web/js/lib/entry.js";
 import { suppliersOf, tableRows } from "../web/js/lib/offers.js";
+import { normUrl } from "../web/js/lib/text.js";
 
 const TEXT = "Đồng Hồ Đo Áp LIGI Inox 316, Chân Sau Có Vành D63mm Ren 13mm";
 
@@ -49,4 +50,38 @@ test("có mã model: khớp mã HOẶC gần hết tên (nhà bán viết mã kh
   assert.equal(same.relevant, true);
   const diffCode = extractFacts(page("Máy lọc nước Kangaroo Hydrogen 10 lõi", 5000000), "https://s.vn/b", hint);
   assert.equal(diffCode.relevant, false, "khác mã, tên chỉ khớp một phần");
+});
+
+test("trang tự viết giá (Đơn giá: 388,000 đ trong span.price): đọc được giá, quy cách đóng gói, có dòng trong bảng NCC", async () => {
+  const { pickPages } = await import("../web/js/lib/pipeline.js");
+  const html = `<html><head><title>Sữa bột pha sẵn Dielac Grow Plus hộp 110ml - suachobeyeu.vn</title></head><body>
+<h1>Thùng sữa bột pha sẵn Dielac Grow Plus hộp 110ml</h1>
+<div class="t-price">Đơn giá:
+<span class="current prd-price text-danger">
+388,000 đ</span></div>
+<div><b>Thương hiệu: </b><span class="measure-item">Sữa bột Vinamilk</span></div>
+<div><b>Trọng lượng: </b><span>1 Thùng =  48 Hộp x 110ml</span></div>
+<div class="price_product"><span class="price-old">999,000 đ</span></div></body></html>`;
+  const plan = makePlan({ text: "sữa vinamilk growplus pha sẵn 110ml" });
+  assert.equal(plan.model, "", "110ml là dung tích, không phải model");
+  const url = "https://suachobeyeu.vn/san-pham/sua-bot-pha-san-dielac-grow-plus-hop-110ml.html";
+  const f = extractFacts(html, url, { model: plan.model, name: plan.name, brand: plan.brand });
+  assert.equal(f.relevant, true, "điểm tên " + f.matched.nameScore);
+  assert.deepEqual(f.product.price, { value: 388000, source: "markup" });
+  assert.deepEqual(f.pack, { outer: "thùng", count: 48, unit: "hộp" });
+  const e = newEntry(plan, "ks");
+  ingestPage(e, { ...f, ok: true, url, finalUrl: url });
+  const rows = tableRows(e);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].price, 388000);
+  assert.equal(rows[0].read, true);
+  assert.equal(rows[0].pack.count, 48);
+
+  // trang từng bị loại ở bản cũ (chưa có dấu phiên bản) thì được đọc lại; trang đã đánh giá bằng cách nhận mới thì không
+  const e2 = newEntry(plan, "ks2");
+  const src = (u) => ({ id: e2.sources.length + 1, key: normUrl(u), url: u, title: "t", domain: "x.vn", via: "page", verified: true, kind: "shop" });
+  e2.sources.push(src("https://old.vn/a"), src("https://new.vn/b"));
+  e2.pages.push({ url: "https://old.vn/a", ok: true, relevant: false }, { url: "https://new.vn/b", ok: true, relevant: false, v: 3 });
+  const urls = pickPages(e2, 10, 99).map((p) => p.url);
+  assert.deepEqual(urls, ["https://old.vn/a"]);
 });

@@ -50,14 +50,14 @@ function cleanPlan(p) {
 // Chế độ miễn phí: không có AI, chỉ tìm web rồi để client mở từng trang nguồn
 async function freeSearch(task, plan, env) {
   const t0 = Date.now();
-  const g = plan.generic || plan.name;
+  // Không cắt/đoán tên loại: dùng đúng chuỗi người dùng gõ
+  const g = exactQuery(plan.query) || plan.name;
   // Sản phẩm: [chuỗi người dùng gõ, giữ nguyên] + cụm hỏi (giá, ưu/nhược điểm...). Không cắt tên/mã.
   // Mỗi lần bổ sung đổi cụm hỏi để ra nguồn khác; 1–2 truy vấn thôi vì DuckDuckGo chặn khi gửi dồn.
-  // (So sánh hãng khác cần tìm theo loại sản phẩm nên dùng tên loại.)
   const v = (plan.variant ?? 0) % 3;
   const typed = exactQuery(plan.query) || plan.name;
   const qs = task === "compare"
-    ? [[`${g} giá`], [`${g} bán chạy nhất`], [`${g} nên mua hãng nào`]][v]
+    ? [[`${g} so sánh các hãng`], [`${g} bán chạy nhất`], [`${g} nên mua hãng nào`]][v]
     : [[`${typed} giá`, `${typed} đánh giá ưu nhược điểm`], [`${typed} review thực tế người dùng`, `${typed} mua ở đâu giá tốt`], [`${typed} so sánh`, `${typed} thông số kỹ thuật`]][v];
   const found = await searchMany(qs, { limit: task === "compare" ? 8 : 30, gapMs: Number(env.SEARCH_GAP_MS ?? 700) });
   const { queries, errors } = found;
@@ -143,7 +143,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.8.1", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.9.1", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });

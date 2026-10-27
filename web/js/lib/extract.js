@@ -185,19 +185,42 @@ export function techNames(text, max = 6) {
 
 export function priceSentences(lines, max = 3) {
   const out = [];
-  for (const l of lines) {
+  for (const [i, line] of lines.entries()) {
     if (out.length >= max) break;
+    // nhãn giá nằm riêng một dòng ("Đơn giá:") và số tiền ở dòng kế: ghép lại
+    const l = line.length < 40 && /(giá|price)\s*:?\s*$/i.test(line) ? line + " " + (lines[i + 1] ?? "") : line;
     const m = l.match(/giá[^\d\n]{0,25}(\d{1,3}(?:[.,]\d{3}){1,3})\s*(?:đ|₫|vnđ|vnd)/i);
     if (m) { const v = parseVnd(m[1]); if (v && v >= 1000) out.push({ value: v, text: clip(l, 140) }); }
   }
   return out;
 }
 
+// Quy cách đóng gói: "1 Thùng = 48 Hộp x 110ml" -> { outer: "thùng", count: 48, unit: "hộp" } để tính giá mỗi hộp
+export function packInfo(text) {
+  const m = String(text).slice(0, 30_000).match(/\b1\s*(thùng|lốc|kiện|vỉ|hộp|bộ|lố)\s*[=:]\s*(\d{1,3})\s*(hộp|chai|lon|gói|túi|lốc|viên|cái|lọ|vỉ|hũ|ống|lon)\b/i);
+  if (!m || Number(m[2]) < 2) return null;
+  return { outer: m[1].toLowerCase(), count: Number(m[2]), unit: m[3].toLowerCase() };
+}
+
+// Giá nằm trong phần tử có class/id chứa "price" hoặc "gia" (trang tự viết, không có dữ liệu cấu trúc): "388,000 đ"
+// Bỏ giá cũ/giá gạch. Chỉ nhận số có dấu phân cách nghìn (hoặc kèm đ/₫) để không nhầm "110ml" là giá.
+export function priceFromMarkup(html) {
+  const re = /<(?:span|div|p|b|strong|del|ins|em)\b[^>]*\b(?:class|id)\s*=\s*["']([^"']*)["'][^>]*>([^<]{0,80})(?=<)/gi;
+  let n = 0, m;
+  while ((m = re.exec(html)) && n++ < 400) {
+    if (!/(?:^|[\s_-])(?:price|gia|prd-price)(?:$|[\s_-])|price/i.test(m[1]) || /old|del|cu\b|market|compare|origin|regular|list-price|sale-off|discount/i.test(m[1])) continue;
+    const t = decodeEntities(m[2]).replace(/\s+/g, " ").trim();
+    const num = t.match(/(\d{1,3}(?:[.,]\d{3}){1,3})\s*(?:đ|₫|vnđ|vnd)?/i);
+    if (num) { const v = parseVnd(num[1]); if (v && v >= 1000 && v < 5e9) return v; }
+  }
+  return null;
+}
+
 // Giá trong tiêu đề/đoạn trích của kết quả tìm kiếm: chỉ nhận số đi kèm "đ/₫/VND" và gần chữ "giá"
 export function priceFromSnippet(text) {
   const m = String(text).match(/giá[^\d]{0,20}(\d{1,3}(?:[.,]\d{3}){1,2})\s*(?:đ|₫|vnđ|vnd)/i) || String(text).match(/(\d{1,3}(?:[.,]\d{3}){1,2})\s*(?:₫|vnđ|vnd)/i);
   const v = m ? parseVnd(m[1]) : null;
-  return v && v >= 10000 ? v : null;
+  return v && v >= 1000 ? v : null;
 }
 
 // Các từ của một chuỗi: không dấu, chữ thường, tách chữ với số ("d63mm" -> d, 63, mm)
@@ -238,6 +261,10 @@ export function extractFacts(htmlRaw, url, hint = {}) {
 
   const lines = htmlToText(html);
   const text = lines.join("\n");
+  if (!product.price) {
+    const mv = priceFromMarkup(html);
+    if (mv) product.price = { value: mv, source: "markup" };
+  }
   if (!product.price) {
     const ps = priceSentences(lines, 1)[0];
     if (ps) product.price = { value: ps.value, source: "text" };
@@ -318,6 +345,7 @@ export function extractFacts(htmlRaw, url, hint = {}) {
     cons: pc.cons.slice(0, 6),
     tech,
     priceSentences: priceSentences(lines),
+    pack: packInfo(text),
     listing: listing.slice(0, 20),
     // cho bảng so sánh NCC
     specs: relevant || prods.length ? extractSpecs(html, pick) : [],

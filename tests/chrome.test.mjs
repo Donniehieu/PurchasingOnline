@@ -80,7 +80,7 @@ function fakeExtension({ blockHosts = [], dead = [], aiMode = true } = {}) {
       if (type === "googleSearch") {
         log.search.push(p.q);
         const g = (code, title, site, snippet = "") => ({ url: "https://www.google.com/goto?url=" + code, goto: true, title, site, snippet });
-        const listing = /ZF-500|Zeta/i.test(p.q) ? null : [g("L0", "Nồi chiên không dầu", "https://shop.test"), g("DEAD", "chết", "https://dead.test")];
+        const listing = (/ZF-500|Zeta/i.test(p.q) && !/so sánh các hãng|bán chạy nhất|nên mua hãng nào/.test(p.q)) ? null : [g("L0", "Nồi chiên không dầu", "https://shop.test"), g("DEAD", "chết", "https://dead.test")];
         if (listing) return { ok: true, mode: "organic", lines: [], cites: [], results: listing };
         return { ok: true, mode: "organic", lines: [], cites: [], results: [g("S0", "Zeta ZF-500 chính hãng", "https://shop.test"), g("S1", "Đánh giá Zeta ZF-500", "https://review.test"), g("S2", "Zeta ZF-500 | Cửa hàng B", "https://shop-b.test"), g("FB", "Facebook post", "https://facebook.com", "Facebook · Điện máy XANH"), g("S0", "trùng", "https://shop.test")] };
       }
@@ -218,8 +218,8 @@ test("pipeline với Google Chrome: Chế độ AI -> trang nguồn -> hãng kh�
 });
 
 test("enough(): đủ dữ liệu thì dừng mở thêm trang sản phẩm chính", () => {
-  const offers = ["a", "b", "c", "d", "e"].map((s) => ({ kind: "same", seller: s, readFromPage: true }));
-  const e = { pages: [1, 2, 3, 4, 5].map(() => ({ ok: true })), prices: [1, 2, 3, 4], pros: [1, 2, 3, 4], cons: [1, 2, 3], images: [1, 2, 3], offers };
+  const offers = ["a", "b", "c", "d", "e", "f", "g", "h"].map((s) => ({ kind: "same", seller: s, readFromPage: true }));
+  const e = { pages: [1, 2, 3, 4, 5, 6, 7, 8].map(() => ({ ok: true })), prices: [1, 2, 3, 4], pros: [1, 2, 3, 4], cons: [1, 2, 3], images: [1, 2, 3], offers };
   assert.equal(enough(e), true);
   assert.equal(enough({ ...e, cons: [1] }), false);
   assert.equal(enough({ ...e, offers: offers.slice(0, 3) }), false, "chưa đủ NCC thì còn mở thêm trang cửa hàng");
@@ -335,4 +335,35 @@ test("extension: tối đa 8 lần mở Google / 10 phút", async () => {
   assert.equal(out.filter((r) => r.ok).length, 8);
   assert.equal(out.filter((r) => r.rate).length, 2);
   assert.equal(calls.tabsCreated.length, 8);
+});
+
+test("bổ sung: đọc thêm kết quả DuckDuckGo + Bing qua tiện ích (IP người dùng) để có thêm NCC; bị chặn thì bỏ qua", async () => {
+  const ext = fakeExtension();
+  const orig = ext.call;
+  const asked = [];
+  const ddg = `<a rel="nofollow" class="result__a" href="https://extra1.vn/zeta">Zeta ZF-500 giá tốt</a><a class="result__snippet" href="x">Zeta ZF-500</a><a rel="nofollow" class="result__a" href="https://facebook.com/x">fb</a><a rel="nofollow" class="result__a" href="https://extra2.vn/zeta">Zeta ZF-500 chính hãng</a>`;
+  const bing = `<li class="b_algo"><h2><a href="https://extra3.vn/zeta">Zeta ZF-500 nồi chiên</a></h2><p class="b_lineclamp2">Zeta ZF-500</p></li>`;
+  ext.call = async (type, p) => {
+    if (type === "fetchPage" && /duckduckgo|bing\.com/.test(p.url)) {
+      asked.push(p.url);
+      return { ok: true, status: 200, finalUrl: p.url, html: /duckduckgo/.test(p.url) ? ddg : bing, ms: 5 };
+    }
+    return orig(type, p);
+  };
+  const { api } = mkHybrid(ext);
+  const plan = { query: "Nồi chiên không dầu Zeta ZF-500", name: "Nồi chiên không dầu Zeta ZF-500", model: "ZF-500", brand: "Zeta", category: "tech", generic: "nồi chiên không dầu", queries: [] };
+  const r = await api.search("product", plan);
+  const urls = r.sources.map((s) => s.url);
+  for (const u of ["https://extra1.vn/zeta", "https://extra2.vn/zeta", "https://extra3.vn/zeta"]) assert.ok(urls.includes(u), u);
+  assert.ok(!urls.some((u) => /facebook/.test(u)));
+  assert.ok(asked.every((u) => decodeURIComponent(u).includes("Nồi chiên không dầu Zeta ZF-500 giá bán")), "từ khóa: chuỗi gõ nguyên vẹn + cụm hỏi");
+  assert.equal(asked.length, 2);
+
+  // bị chặn: bỏ qua, phần còn lại vẫn có kết quả
+  const ext2 = fakeExtension();
+  const o2 = ext2.call;
+  ext2.call = async (type, p) => (type === "fetchPage" && /duckduckgo|bing\.com/.test(p.url) ? { ok: false, blocked: true, error: "403" } : o2(type, p));
+  const r2 = await mkHybrid(ext2).api.search("product", plan);
+  assert.equal(r2.ok, true);
+  assert.ok(!r2.sources.some((s) => /extra\d\.vn/.test(s.url)));
 });

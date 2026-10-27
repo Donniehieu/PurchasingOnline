@@ -132,3 +132,35 @@ test("applyView lọc thông số dùng bộ lọc đúng", () => {
   const out = applyView(rows, { source: "all", filters: { specs: "công suất: 1500" }, sort: { col: "price", dir: "asc" } });
   assert.deepEqual(out.map((r) => r.seller), ["A.vn"]);
 });
+
+test("thẻ câu hỏi: 3–5 câu theo dữ liệu đã đọc; chọn thì lọc đúng, không dùng để tìm", async () => {
+  const { adviseCards } = await import("../web/js/lib/advisor.js");
+  const { rowPasses } = await import("../web/js/lib/cards.js");
+  const e = newEntry(makePlan({ text: "Đồng hồ đo áp LIGI" }), "kc");
+  const add = (name, price, seller) => upsertOffer(e, { kind: "same", name, model: "", brand: "LIGI", price, priceVia: "page", readFromPage: true, url: `https://${seller}/p`, seller });
+  add("Đồng hồ áp LIGI inox 316 D63mm ren 13mm 10 bar", 180000, "a.vn");
+  add("Đồng hồ áp LIGI inox 304 D100mm ren 13mm 16 bar", 260000, "b.vn");
+  add("Đồng hồ áp LIGI thép D63mm ren 1/4 10 bar", 150000, "c.vn");
+  add("Đồng hồ áp LIGI inox 316 D100mm ren 1/4 25 bar", 420000, "d.vn");
+  const cards = adviseCards(e, {}, {});
+  assert.ok(cards.length >= 3 && cards.length <= 5, "số thẻ: " + cards.length);
+  const ids = cards.map((c) => c.id);
+  assert.ok(ids.includes("audience") && ids.includes("priority") && ids.includes("budget"));
+  const size = cards.find((c) => c.id === "size");
+  assert.ok(size, "có câu hỏi về kích thước: " + ids);
+  assert.deepEqual(size.options.map((o) => o.value).sort(), ["100mm", "63mm"], "ren 13mm không bị tính là kích thước");
+  assert.ok(cards.some((c) => c.id === "pressure"));
+  const mat = adviseCards(e, { budgetMax: 500000 }, {}).find((c) => c.id === "material"); // đã có ngân sách thì còn chỗ cho thêm một câu về chất liệu
+  assert.ok(mat && mat.options.some((o) => o.label === "Inox 316"));
+  // chọn 63mm: chỉ còn NCC có D63mm
+  const adv = adviseProducts(e, {}, { size: "63mm" });
+  assert.equal(adv.candidates.length, 2, "chọn 63mm: chỉ còn 2 sản phẩm D63mm");
+  assert.ok(adv.candidates.every((c) => /63/.test(c.name)));
+  assert.equal(adviseProducts(e, {}, {}).candidates.length, 4);
+  const rows = tableRows(e);
+  assert.equal(rowPasses(rows[0], { size: "100mm" }).ok, false);
+  assert.equal(rowPasses({ nameText: "Đồng hồ áp", specText: "" }, { size: "100mm" }).ok, true, "không nói gì về kích thước thì giữ lại");
+  assert.deepEqual(rowPasses({ nameText: "Đồng hồ áp", specText: "" }, { size: "100mm" }).unknown, ["kích thước"]);
+  // đã nhập ngân sách thì không hỏi lại ngân sách
+  assert.ok(!adviseCards(e, { budgetMax: 300000 }, {}).some((c) => c.id === "budget"));
+});

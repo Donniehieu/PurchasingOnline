@@ -33,6 +33,8 @@ export function newEntry(plan, key) {
   };
 }
 
+// Đổi số này khi cách nhận trang "đúng sản phẩm" thay đổi: trang từng bị loại ở bản cũ sẽ được đọc lại
+export const PAGE_LOGIC_VERSION = 3;
 export const MAX_IMAGES = 5;
 /** Chỉ giữ MAX_IMAGES ảnh tốt nhất (điểm cao trước; bằng điểm thì giữ ảnh đến trước). */
 export function keepBestImages(list, max = MAX_IMAGES) {
@@ -170,7 +172,9 @@ export function ingestCompare(entry, ai) {
 
 // Kết quả đọc một trang (từ /api/page). Ghi log trang + gộp dữ liệu vào các mục.
 export function ingestPage(entry, page, ctx = {}) {
-  const rec = { url: page.url, finalUrl: page.finalUrl || page.url, ok: !!page.ok, status: page.status ?? 0, title: clip(page.title || "", 120), ts: Date.now(), ms: page.ms ?? 0, relevant: !!page.relevant, error: page.error || "", for: ctx.forLabel || "", found: { price: 0, pros: 0, cons: 0, tech: 0, images: 0 } };
+  const rec = { v: PAGE_LOGIC_VERSION, url: page.url, finalUrl: page.finalUrl || page.url, ok: !!page.ok, status: page.status ?? 0, title: clip(page.title || "", 120), ts: Date.now(), ms: page.ms ?? 0, relevant: !!page.relevant, error: page.error || "", for: ctx.forLabel || "", found: { price: 0, pros: 0, cons: 0, tech: 0, images: 0 } };
+  // đọc lại một trang cũ đã bị loại: bỏ bản ghi cũ của đúng trang đó
+  entry.pages = entry.pages.filter((p) => normUrl(p.url) !== normUrl(page.url) || p.relevant);
   if (!page.ok) {
     entry.pages.push(rec);
     logEvent(entry, "page", `Bỏ qua (${page.error || "không mở được"}): ${page.url}`, { url: page.url, ok: false });
@@ -226,7 +230,7 @@ export function ingestPage(entry, page, ctx = {}) {
       seller: page.seller || page.domain,
       price: pr?.value ?? (forAlt ? forAlt.price : null) ?? null,
       priceVia: pr?.source ?? (forAlt && forAlt.price ? "ai" : "page"),
-      vat: page.vat, specs: page.specs, url: page.finalUrl || page.url, srcId, readFromPage: true, weak,
+      vat: page.vat, specs: page.specs, pack: page.pack ?? null, url: page.finalUrl || page.url, srcId, readFromPage: true, weak,
     });
     if (weak) rec.weak = true;
   }

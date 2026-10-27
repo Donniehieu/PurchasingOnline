@@ -3,7 +3,7 @@ import { OFFER_COLUMNS, tableRows, applyView, DEFAULT_VIEW, PRICE_NOTE, VAT_LABE
 import { exportOffersXlsx } from "./lib/xlsx-export.js";
 import { esc, money, clip } from "./lib/text.js";
 
-const KEY = "po-table-view";
+const KEY = "po-table-view-v2"; // v2: mặc định hiện cả dòng chưa đọc từ trang (đánh dấu rõ), không ẩn như trước
 const FILTER_COLS = ["name", "price", "vat", "specs", "ncc", "contact", "link"];
 const PLACEHOLDER = { name: "lọc tên/model", price: "<3tr · 2tr-3tr", specs: "công suất>=1500; inverter", ncc: "lọc NCC/hãng", contact: "lọc SĐT/email", link: "lọc trang" };
 const GOOD = { included: "good", excluded: "warn", rate: "good", unknown: "" };
@@ -18,7 +18,7 @@ function save(state) {
 export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = {}) {
   const saved = loadSaved();
   const state = {
-    view: { ...DEFAULT_VIEW, filters: { ...DEFAULT_VIEW.filters }, source: saved.source || DEFAULT_VIEW.source, group: saved.group || DEFAULT_VIEW.group, sort: saved.sort && "col" in saved.sort ? saved.sort : { ...DEFAULT_VIEW.sort } },
+    view: { ...DEFAULT_VIEW, filters: { ...DEFAULT_VIEW.filters }, source: saved.source || "all", group: saved.group || DEFAULT_VIEW.group, sort: saved.sort && "col" in saved.sort ? saved.sort : { ...DEFAULT_VIEW.sort } },
     hidden: new Set(saved.hidden ?? []),
     entry: null,
     shown: [],
@@ -29,8 +29,8 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
       <div class="tbl-bar">
         <input type="search" class="tbl-q" placeholder="Lọc nhanh: tên, NCC, thông số…" aria-label="Lọc nhanh">
         <select class="tbl-src btn ghost sm" aria-label="Nguồn dữ liệu">
+          <option value="all">Tất cả NCC (dòng chưa đọc từ trang được đánh dấu)</option>
           <option value="page">Chỉ dữ liệu đã đọc từ đúng trang</option>
-          <option value="all">Gồm cả dữ liệu chưa xác nhận (Google/danh sách)</option>
         </select>
         <select class="tbl-grp btn ghost sm" aria-label="Nhóm theo">
           <option value="none">Không nhóm</option>
@@ -87,7 +87,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
   const vatCell = (r) => `<span class="badge ${GOOD[r.vat?.state ?? "unknown"]}" title="${esc(r.vat?.text || "")}">${esc(r.vatLabel)}</span>`;
   const priceCell = (r) => (r.price == null
     ? `<span class="muted">Liên hệ</span>`
-    : `<b>${money(r.price)}</b><div class="muted small">${esc(PRICE_NOTE[r.priceVia] || "")}</div>`);
+    : `<b>${money(r.price)}</b><div class="muted small">${esc(PRICE_NOTE[r.priceVia] || "")}</div>${r.pack ? `<div class="muted small" title="Giá trang là giá cả ${esc(r.pack.outer)}">≈ ${money(Math.round(r.price / r.pack.count))}/${esc(r.pack.unit)} (${r.pack.count} ${esc(r.pack.unit)}/${esc(r.pack.outer)})</div>` : ""}`);
   const specsCell = (r) => (r.specs?.length ? `<div class="specs" title="${esc(r.specText)}">${r.specs.slice(0, 12).map((s) => `<div><span class="muted">${esc(s.k)}:</span> ${esc(clip(s.v, 80))}</div>`).join("")}</div>` : `<span class="muted">—</span>`);
   const contactCell = (r) => {
     const c = r.contact;
@@ -112,7 +112,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
   function rowHtml(r) {
     return `<tr>
       <td data-col="stt" class="num">${r.stt}</td>
-      <td data-col="name"><a class="prodlink" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" title="Mở đúng trang sản phẩm đã lấy dữ liệu"><b>${esc(r.name || r.nameText)}</b></a>${r.model ? `<div class="muted small">Model: ${esc(r.model)}</div>` : ""}${r.kind === "other" ? ` <span class="badge">hãng khác</span>` : ""}${r.weak ? ` <span class="badge warn" title="Tên trang chỉ giống một phần tên bạn tìm (nhà bán có thể viết mã/quy cách khác). Hãy mở link kiểm tra.">tương tự</span>` : ""}</td>
+      <td data-col="name"><a class="prodlink" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" title="Mở đúng trang sản phẩm đã lấy dữ liệu"><b>${esc(r.name || r.nameText)}</b></a>${r.model ? `<div class="muted small">Model: ${esc(r.model)}</div>` : ""}${r.kind === "other" ? ` <span class="badge">hãng khác</span>` : ""}${!r.read ? ` <span class="badge warn" title="Giá/thông số lấy từ kết quả tìm kiếm hoặc Google, chưa đọc được từ trang này (trang chặn, chưa mở, hoặc không đúng sản phẩm). Hãy mở link kiểm tra.">chưa đọc từ trang</span>` : ""}${r.weak ? ` <span class="badge warn" title="Tên trang chỉ giống một phần tên bạn tìm (nhà bán có thể viết mã/quy cách khác). Hãy mở link kiểm tra.">tương tự</span>` : ""}</td>
       <td data-col="price" class="num">${priceCell(r)}</td>
       <td data-col="vat">${vatCell(r)}</td>
       <td data-col="specs">${specsCell(r)}</td>

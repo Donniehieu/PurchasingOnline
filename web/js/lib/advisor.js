@@ -2,6 +2,7 @@
 // Chỉ dùng dữ liệu đã đọc và lưu trong entry (bảng NCC), không tìm thêm. Điểm tính theo quy tắc cố định, giải thích từng lý do.
 import { norm, modelKey, money } from "./text.js";
 import { tableRows } from "./offers.js";
+import { buildCards, rowPasses } from "./cards.js";
 
 const PRIORITY = { balanced: "Cân bằng", cheap: "Giá rẻ nhất", quality: "Chất lượng, công nghệ", durable: "Bền, bảo hành tốt" };
 export const PRIORITY_OPTIONS = PRIORITY;
@@ -20,8 +21,13 @@ function budgetFit(price, need) {
 }
 
 /** Gom các dòng của bảng NCC thành từng sản phẩm (theo mã model, không có model thì theo tên). */
-export function productGroups(entry) {
-  const rows = tableRows(entry).filter((r) => r.read || r.price != null);
+export function productGroups(entry, answers = {}) {
+  const rows = [];
+  for (const r of tableRows(entry)) {
+    if (!(r.read || r.price != null)) continue;
+    const chk = rowPasses(r, answers); // thẻ câu hỏi đã chọn: bỏ dòng có thông tin khác hẳn
+    if (chk.ok) rows.push({ ...r, unknownFacets: chk.unknown });
+  }
   const groups = new Map();
   for (const r of rows) {
     const key = modelKey(r.model) || modelKey(`${r.brand} ${r.name || r.nameText}`).slice(0, 28);
@@ -52,8 +58,8 @@ function distinguishing(groups) {
 }
 
 /** Bước 1: chọn sản phẩm phù hợp. mode "supplier" khi đã rõ mã model (sang thẳng chọn NCC). */
-export function adviseProducts(entry, need = {}) {
-  const groups = productGroups(entry);
+export function adviseProducts(entry, need = {}, answers = {}) {
+  const groups = productGroups(entry, answers);
   const modelGiven = !!(entry.plan?.model || entry.product?.model);
   const purposeWords = words(need.purpose || "");
   const pri = need.priority || "balanced";
@@ -91,8 +97,8 @@ export function adviseProducts(entry, need = {}) {
 }
 
 /** Bước 2: xếp hạng NCC của một sản phẩm (đã chọn / đã rõ model). */
-export function adviseSuppliers(entry, need = {}, productKey = "") {
-  const groups = productGroups(entry);
+export function adviseSuppliers(entry, need = {}, productKey = "", answers = {}) {
+  const groups = productGroups(entry, answers);
   const key = productKey || groups.find((g) => g.isMain)?.key || groups.sort((a, b) => b.sellers - a.sellers)[0]?.key || "";
   const g = groups.find((x) => x.key === key);
   if (!g) return { product: null, list: [], best: null, cheapest: null, note: "Chưa có nhà cung cấp nào bán sản phẩm này trong dữ liệu đã đọc." };
@@ -114,6 +120,7 @@ export function adviseSuppliers(entry, need = {}, productKey = "") {
     const bf = budgetFit(r.price, need);
     if (bf != null) { score += bf * 20; if (bf === 1) reasons.push("trong ngân sách"); else warns.push("ngoài ngân sách"); }
     if (r.read) { score += 20; reasons.push("giá và thông số đọc từ đúng trang"); } else warns.push("chưa đọc từ trang bán");
+    if (r.unknownFacets?.length) warns.push(`chưa rõ ${r.unknownFacets.join(", ")}`);
     if (r.weak) { score -= 12; warns.push("tên trang chỉ giống một phần, kiểm tra đúng quy cách"); }
     if (r.vat?.state === "included" || r.vat?.state === "rate") { score += 6; reasons.push(r.vatLabel.toLowerCase()); } else if (r.vat?.state === "excluded") warns.push("giá chưa gồm VAT");
     const c = r.contact;
@@ -125,4 +132,10 @@ export function adviseSuppliers(entry, need = {}, productKey = "") {
   }).sort((a, b) => b.score - a.score || (a.price ?? Infinity) - (b.price ?? Infinity));
   const priced = list.filter((x) => x.price != null);
   return { product: { key: g.key, name: g.name, model: g.model, brand: g.brand, priceMin: lo, priceMax: hi }, list, best: list[0] ?? null, cheapest: priced.length ? priced.reduce((a, b) => (b.price < a.price ? b : a)) : null, note: "" };
+}
+
+/** 3–5 thẻ câu hỏi theo dữ liệu đã đọc của từ khóa này (xem cards.js). */
+export function adviseCards(entry, need = {}, answers = {}) {
+  const rows = tableRows(entry).filter((r) => r.read || r.price != null);
+  return buildCards(rows, need, answers);
 }

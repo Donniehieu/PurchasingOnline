@@ -136,9 +136,9 @@ test("pickPages: trang CỬA HÀNG trong kết quả Google được mở trư�
   assert.ok(picks.length <= 10);
 });
 
-test("enough(): cần đủ NCC (≥5) đã đọc từ đúng trang mới dừng mở thêm", () => {
+test("enough(): cần đủ NCC (≥8) đã đọc từ đúng trang mới dừng mở thêm", () => {
   const e = mk();
-  for (let i = 0; i < 5; i++) ingestPage(e, pg(`https://s${i}.vn/p`, { pros: ["Ưu điểm số " + i + " dài đủ"], cons: ["Nhược điểm số " + i + " dài đủ"], images: [{ url: `https://s${i}.vn/i.jpg`, alt: "", score: 3 }] }));
+  for (let i = 0; i < 8; i++) ingestPage(e, pg(`https://s${i}.vn/p`, { pros: ["Ưu điểm số " + i + " dài đủ"], cons: ["Nhược điểm số " + i + " dài đủ"], images: [{ url: `https://s${i}.vn/i.jpg`, alt: "", score: 3 }] }));
   e.prices.push(...[1, 2, 3, 4].map((v) => ({ value: v })));
   e.pros.push(...[1, 2, 3, 4].map((v) => ({ text: "p" + v })));
   e.cons.push(...[1, 2, 3].map((v) => ({ text: "c" + v })));

@@ -2,6 +2,7 @@
 // Mỗi bước phát sự kiện ngay (emit) để giao diện hiện kết quả đến đâu làm đến đó.
 import { makePlan, cacheKey } from "./plan.js";
 import { hasContact, mergeContact } from "./contact.js";
+import { PAGE_LOGIC_VERSION } from "./entry.js";
 import { newEntry, ingestProduct, ingestCompare, ingestPage, ingestListing, ingestAltInsight, dropStalePrices, sellersNeedingContact, ingestContactPage, logEvent } from "./entry.js";
 import { domainOf, normUrl, clip, modelKey } from "./text.js";
 import { summarize } from "./aggregate.js";
@@ -32,7 +33,8 @@ export function pickPages(entry, limit = 10, perHostCap = 2) {
   const mainCited = new Map(); // srcId -> số lần được trích
   for (const c of [...entry.prices, ...entry.pros, ...entry.cons, ...entry.tech]) if (c.srcId) mainCited.set(c.srcId, (mainCited.get(c.srcId) ?? 0) + 1);
   const out = [];
-  const seen = new Set(entry.pages.map((p) => normUrl(p.url))); // trang đã mở thì không mở lại
+  // trang đã mở thì không mở lại; riêng trang từng bị loại theo cách nhận cũ (chưa có dấu phiên bản) được đọc lại một lần
+  const seen = new Set(entry.pages.filter((p) => p.relevant || p.v === PAGE_LOGIC_VERSION || !p.ok).map((p) => normUrl(p.url)));
   const perHost = new Map(); // tối đa N trang mỗi tên miền để không dồn yêu cầu vào một nơi
   const push = (s, alt = null) => {
     if (!s || seen.has(s.key) || SKIP_HOSTS.test(domainOf(s.url)) || /\.(pdf|jpe?g|png|webp|mp4)(\?|$)/i.test(s.url)) return false;
@@ -70,7 +72,7 @@ export function pickPages(entry, limit = 10, perHostCap = 2) {
 export function enough(entry) {
   const readOk = entry.pages.filter((x) => x.ok).length;
   const sellers = new Set((entry.offers ?? []).filter((o) => o.readFromPage && o.kind === "same").map((o) => o.seller)).size;
-  return readOk >= 5 && sellers >= 5 && entry.prices.length >= 4 && entry.pros.length >= 4 && entry.cons.length >= 3 && entry.images.length >= 3;
+  return readOk >= 8 && sellers >= 8 && entry.prices.length >= 4 && entry.pros.length >= 4 && entry.cons.length >= 3 && entry.images.length >= 3;
 }
 
 async function pool(items, size, fn, signal) {
@@ -90,7 +92,7 @@ async function pool(items, size, fn, signal) {
  * opts: { api, store, emit, signal, force, pageLimit, concurrency }
  * Trả về entry (cũng đã lưu vào store).
  */
-export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 10, enrichPageLimit = 6, concurrency = 3, perHostCap = 2, freeGapMs = 4000 }) {
+export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 12, enrichPageLimit = 10, concurrency = 3, perHostCap = 2, freeGapMs = 4000 }) {
   const step = (id, status, text = "") => emit({ type: "step", id, status, text });
   const publish = (entry) => emit({ type: "entry", entry });
   if (force) mode = "fresh";
@@ -239,7 +241,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
         step("compare", "running", `mở trang bán hàng 0/${urls.length}`);
         await pool(urls, concurrency, async (s) => {
           let page;
-          try { page = await api.page(s.url, { model: "", name: planC.generic || planC.name, brand: "" }, signal); }
+          try { page = await api.page(s.url, { model: "", name: planC.name, brand: "" }, signal); }
           catch (e) { if (e.name === "AbortError" || e.status === 401) throw e; page = { ok: false, url: s.url, error: e.message }; }
           ingestListing(entry, page);
           step("compare", "running", `mở trang bán hàng ${++n}/${urls.length} · ${entry.alternatives.length} hãng`);

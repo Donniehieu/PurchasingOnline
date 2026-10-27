@@ -1,7 +1,7 @@
 // Tab "Tư vấn chọn": hướng dẫn chọn sản phẩm phù hợp (khi chưa rõ mã model / chỉ có khoảng giá),
 // rồi chọn nhà cung cấp phù hợp nhu cầu, mục đích, ngân sách. Chỉ dùng dữ liệu đã đọc và lưu.
 import { esc, money, clip } from "./lib/text.js";
-import { adviseProducts, adviseSuppliers, PRIORITY_OPTIONS } from "./lib/advisor.js";
+import { adviseProducts, adviseSuppliers, adviseCards, PRIORITY_OPTIONS } from "./lib/advisor.js";
 import { needSummary } from "./lib/need.js";
 import { contactHtml } from "./render.js";
 
@@ -32,9 +32,23 @@ function supplierCard(s, i) {
   </div>`;
 }
 
+// Thẻ câu hỏi: 3–5 câu theo dữ liệu đã đọc, chọn để lọc đúng loại/đối tượng
+function renderCards(entry, need, answers) {
+  const cards = adviseCards(entry, need, answers);
+  if (!cards.length) return "";
+  const chosen = Object.values(answers).filter(Boolean).length;
+  const body = cards.map((c, i) => `<div class="qcard">
+      <div class="q-title"><span class="q-num">${i + 1}</span>${esc(c.title)}</div>
+      <div class="chips">${c.options.map((o) => `<button type="button" class="chip${c.selected === o.value ? " on" : ""}" data-card="${esc(c.id)}" data-v="${esc(o.value)}" aria-pressed="${c.selected === o.value}">${esc(o.label)}${o.count ? ` <span class="muted">(${o.count})</span>` : ""}</button>`).join("")}</div>
+    </div>`).join("");
+  return `<div class="card"><h2>Trả lời vài câu để chọn đúng <span class="count">${cards.length} câu hỏi${chosen ? " · đã lọc " + chosen + " đặc điểm" : ""}</span></h2>
+    <div class="qcards">${body}</div>
+    <p class="muted small" style="margin:10px 0 0">Câu hỏi lấy từ chính các sản phẩm và NCC đã đọc cho từ khóa của bạn. Câu trả lời chỉ <b>lọc và xếp hạng</b> kết quả đã có (bấm lại để bỏ chọn), không dùng để tìm kiếm. ${chosen ? `<button type="button" class="chip" data-card-reset="1">Bỏ các lựa chọn đặc điểm</button>` : ""}</p></div>`;
+}
+
 /** need: { budgetMin, budgetMax, purpose, priority }; choice: khóa sản phẩm người dùng đã chọn ("" = chưa chọn). */
-export function renderAdvice(entry, need = {}, choice = "") {
-  const prod = adviseProducts(entry, need);
+export function renderAdvice(entry, need = {}, choice = "", answers = {}) {
+  const prod = adviseProducts(entry, need, answers);
   const picked = choice || (prod.mode === "supplier" ? prod.candidates.find((c) => c.isMain)?.key ?? "" : "");
   const summary = needSummary(need);
   const pri = need.priority && need.priority !== "balanced" ? ` · ưu tiên: ${PRIORITY_OPTIONS[need.priority].toLowerCase()}` : "";
@@ -56,7 +70,7 @@ export function renderAdvice(entry, need = {}, choice = "") {
 
   let step2 = "";
   if (picked) {
-    const adv = adviseSuppliers(entry, need, picked);
+    const adv = adviseSuppliers(entry, need, picked, answers);
     if (!adv.product) {
       step2 = `<div class="card"><h2>Bước 2: Chọn nhà cung cấp</h2><p class="muted">${esc(adv.note)}</p>${prod.mode === "product" ? `<button type="button" class="btn ghost sm" data-pick="">← Chọn sản phẩm khác</button>` : ""}</div>`;
     } else {
@@ -69,5 +83,5 @@ export function renderAdvice(entry, need = {}, choice = "") {
         <p class="muted small">Điểm NCC theo quy tắc: giá so với các NCC, trong ngân sách, giá/thông số đọc từ đúng trang, VAT rõ ràng, có SĐT/email. Luôn xác nhận lại giá, tồn kho, bảo hành trực tiếp với NCC trước khi mua.</p></div>`;
     }
   }
-  return head + step1 + step2;
+  return head + renderCards(entry, need, answers) + step1 + step2;
 }

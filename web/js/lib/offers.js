@@ -39,6 +39,7 @@ export function upsertOffer(entry, o) {
   if (now.vat?.state && now.vat.state !== "unknown") cur.vat = now.vat;
   for (const k of ["name", "brand", "seller", "model"]) if (now[k] && (!cur[k] || now.priceVia !== "ai")) cur[k] = now[k];
   cur.kind = now.kind;
+  if (now.pack) cur.pack = now.pack;
   cur.weak = !!(cur.weak && now.weak); // đã từng khớp đúng thì không còn là "tương tự"
   cur.readFromPage = !!(cur.readFromPage || now.readFromPage); // đã từng đọc đúng trang này
   cur.ts = now.ts;
@@ -168,7 +169,7 @@ export function specFilter(text) {
 }
 
 /** Dòng có dữ liệu được đọc từ ĐÚNG trang của dòng đó (giá/thông số/VAT lấy từ link). Dữ liệu cũ chưa có cờ: suy từ nguồn giá. */
-export const isRead = (o) => (o.readFromPage != null ? !!o.readFromPage : ["page", "jsonld", "meta", "text"].includes(o.priceVia));
+export const isRead = (o) => (o.readFromPage != null ? !!o.readFromPage : ["page", "jsonld", "meta", "markup", "text"].includes(o.priceVia));
 
 // ---------- lọc / sắp xếp ----------
 /** "<3tr", ">2000000", "2tr-3tr", "2.490.000": hàm kiểm tra giá. Chuỗi rỗng = không lọc. Không hiểu thì lọc theo chữ. */
@@ -284,4 +285,4 @@ export function cellValue(row, colId) {
   }
 }
 
-export const PRICE_NOTE = { page: "đọc từ trang", jsonld: "đọc từ trang", meta: "đọc từ trang", text: "ước lượng từ chữ trên trang", ai: "Google, chưa xác nhận", snippet: "trích từ kết quả tìm kiếm", listing: "từ trang danh sách, chưa mở trang sản phẩm" };
+export const PRICE_NOTE = { page: "đọc từ trang", jsonld: "đọc từ trang", meta: "đọc từ trang", markup: "đọc từ trang", text: "ước lượng từ chữ trên trang", ai: "Google, chưa xác nhận", snippet: "trích từ kết quả tìm kiếm", listing: "từ trang danh sách, chưa mở trang sản phẩm" };

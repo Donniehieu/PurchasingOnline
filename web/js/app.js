@@ -16,8 +16,8 @@ const $ = (id) => document.getElementById(id);
 const SETTINGS_KEY = "po-settings";
 
 function loadSettings() {
-  try { return { apiBase: "", provider: "auto", aiKey: "", appCode: "", pages: 8, keepDays: 30, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; }
-  catch { return { apiBase: "", provider: "auto", aiKey: "", appCode: "", pages: 8, keepDays: 30 }; }
+  try { return { apiBase: "", provider: "auto", aiKey: "", appCode: "", pages: 12, keepDays: 30, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; }
+  catch { return { apiBase: "", provider: "auto", aiKey: "", appCode: "", pages: 12, keepDays: 30 }; }
 }
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* chế độ riêng tư */ } }
 
@@ -33,6 +33,8 @@ let runCtl = null;           // AbortController của lần chạy
 let renderQueued = false;
 const chats = new Map();     // key -> [{q, a}]
 const choices = new Map();   // key -> khóa sản phẩm người dùng đã chọn ở tab Tư vấn chọn
+const answersByKey = new Map(); // key -> { đặc điểm: giá trị } đã chọn ở các thẻ câu hỏi
+const answersOf = (e) => answersByKey.get(e.key) ?? e.need?.answers ?? {};
 
 // ---------- tiện ích giao diện ----------
 let toastTimer;
@@ -86,7 +88,7 @@ function render(entry) {
   $("verdict").hidden = !v;
   $("verdict").innerHTML = v;
   $("tab-summary").innerHTML = renderSummary(entry);
-  $("tab-advice").innerHTML = renderAdvice(entry, readNeed(), choices.get(entry.key) ?? entry.need?.choice ?? "");
+  $("tab-advice").innerHTML = renderAdvice(entry, readNeed(), choices.get(entry.key) ?? entry.need?.choice ?? "", answersOf(entry));
   $("tab-suppliers").innerHTML = renderSuppliers(entry);
   offerTable.update(entry);
   $("tab-compare").innerHTML = renderCompare(entry);
@@ -154,7 +156,7 @@ async function run(text, { mode = "enrich", force = false, ocrText = "" } = {}) 
   setRunning(true);
   try {
     const entry = await research(input, { api, store, emit: onEvent, signal: runCtl.signal, mode: force ? "fresh" : mode, pageLimit: settings.pages });
-    entry.need = { ...readNeed(), choice: choices.get(entry.key) ?? entry.need?.choice ?? "" };
+    entry.need = { ...readNeed(), choice: choices.get(entry.key) ?? entry.need?.choice ?? "", answers: answersOf(entry) };
     store.save(entry).catch(() => {});
     showResult(entry);
     $("progress").hidden = true; // chi tiết từng bước đã nằm trong tab Nhật ký
@@ -217,15 +219,32 @@ for (const [key, id] of Object.entries(NEED_FIELDS)) {
 }
 function persistNeed() {
   if (!current) return;
-  current.need = { ...readNeed(), choice: choices.get(current.key) ?? "" };
+  current.need = { ...readNeed(), choice: choices.get(current.key) ?? "", answers: answersOf(current) };
   store.save(current).catch(() => {});
 }
 $("tab-advice").addEventListener("click", (e) => {
+  if (!current) return;
+  const card = e.target.closest("[data-card]");
+  if (card || e.target.closest("[data-card-reset]")) {
+    const ans = { ...answersOf(current) };
+    if (!card) { for (const k of Object.keys(ans)) delete ans[k]; }
+    else {
+      const id = card.dataset.card, v = card.dataset.v;
+      if (id === "audience") { $("nPurpose").value = $("nPurpose").value === v ? "" : v; needTouched.add("purpose"); }
+      else if (id === "budget") { const [lo, hi] = v.split(":").map(Number); $("nMin").value = lo ? moneyInput(lo) : ""; $("nMax").value = hi ? moneyInput(hi) : ""; needTouched.add("min"); needTouched.add("max"); }
+      else if (id === "priority") { $("nPriority").value = v; needTouched.add("priority"); }
+      else if (ans[id] === v) delete ans[id]; else ans[id] = v;
+    }
+    answersByKey.set(current.key, ans);
+    persistNeed();
+    $("tab-advice").innerHTML = renderAdvice(current, readNeed(), choices.get(current.key) ?? "", answersOf(current));
+    return;
+  }
   const b = e.target.closest("[data-pick]");
-  if (!b || !current) return;
+  if (!b) return;
   choices.set(current.key, b.dataset.pick);
   persistNeed();
-  $("tab-advice").innerHTML = renderAdvice(current, readNeed(), b.dataset.pick);
+  $("tab-advice").innerHTML = renderAdvice(current, readNeed(), b.dataset.pick, answersOf(current));
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
@@ -355,6 +374,7 @@ async function openKey(key) {
   needTouched.clear();
   fillNeed(e.need ?? parseNeed(e.plan.query), { force: true });
   if (e.need?.choice) choices.set(e.key, e.need.choice);
+  if (e.need?.answers) answersByKey.set(e.key, e.need.answers);
   showResult(e);
   selectTab("summary");
   $("drawer").hidden = true;

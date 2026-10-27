@@ -30,7 +30,7 @@ export function pricesIn(line) {
   const out = [];
   for (const m of line.matchAll(PRICE_TOKEN)) {
     const v = parseVnd(m[0]);
-    if (v && v >= 10000 && v < 5e9) out.push(v);
+    if (v && v >= 1000 && v < 5e9) out.push(v); // hàng tiêu dùng có thể dưới 10.000đ (1 hộp sữa, 1 gói mì)
   }
   return out;
 }

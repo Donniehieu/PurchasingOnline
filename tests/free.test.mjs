@@ -68,7 +68,7 @@ function fakeFetch(input, init = {}) {
   if (u.hostname === "html.duckduckgo.com") {
     const q = decodeURIComponent(String(init.body).split("&")[0].slice(2));
     searches.push(q);
-    const items = q.includes("ZF-500") || q.includes("zf-500")
+    const items = (q.includes("ZF-500") || q.includes("zf-500")) && !/so sánh các hãng|bán chạy nhất|nên mua hãng nào/.test(q)
       ? [[O + "/mock/zeta-zf500-shop-a.html", "Zeta ZF-500 chính hãng", "Nồi chiên Zeta ZF-500. Giá 2.490.000đ"], [O + "/mock/zeta-zf500-review.html", "Đánh giá Zeta ZF-500", "Có đáng mua không"], [O + "/mock/zeta-zf500-shop-b.html", "Zeta ZF-500 | Cửa hàng B", "Giá ưu đãi"], [O + "/mock/aurora-af300.html", "Aurora AF-300", "không liên quan"]]
       : [[O + "/mock/listing.html", "Nồi chiên không dầu", "Danh sách"], [O + "/mock/khong-ton-tai.html", "Trang chết", "x"]];
     return Promise.resolve(new Response(DDG(items), { headers: { "content-type": "text/html" } }));
@@ -89,7 +89,7 @@ test("không khóa AI: tìm miễn phí -> giá từ đoạn trích -> mở tran
   assert.equal(entry.status, "done");
   assert.equal(entry.ai.free, true);
   assert.ok(searches.some((q) => q.includes("ZF-500")), "tìm theo mã model");
-  assert.ok(searches.some((q) => q.includes("nồi chiên không dầu") && !q.includes("ZF-500")), "tìm hãng khác theo tên loại");
+  assert.ok(searches.some((q) => q.startsWith("Nồi chiên không dầu Zeta ZF-500 ") && q.includes("so sánh các hãng")), "tìm hãng khác: chuỗi người dùng gõ nguyên vẹn + cụm hỏi, không cắt tên loại");
 
   // giá: đoạn trích rồi được thay bằng giá đọc từ trang
   const s = summarize(entry);

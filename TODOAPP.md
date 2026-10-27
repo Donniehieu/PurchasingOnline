@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.8.1** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.9.1** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -172,6 +172,36 @@ Yêu cầu: scrawl Google → trang web thật + dùng cache → bảng so sánh
 - Có mã model: khớp mã **hoặc** gần hết tên (≥ 75%) kèm phần số của mã, vì nhà bán hay viết mã khác đi.
 - Trang có giá nhưng tên chỉ giống một phần (≥ 34%) **không còn bị bỏ**: vào Bảng NCC với dấu "tương tự" (không tính vào giá trung bình, bị trừ điểm khi tư vấn) để bạn tự mở link kiểm tra. Trang không liên quan vẫn không có dòng nhưng NCC vẫn được lưu ở tab Nhà cung cấp.
 - Cache trang cũ tự đọc lại (FACTS_VERSION 5).
+
+## 2k. Hết "giá đồng", thẻ câu hỏi, đọc thêm nguồn (bản 2.9.0)
+
+**Lỗi báo cáo:** tìm "đồng hồ đo dầu" nhưng danh sách nguồn có "Giá đồng thế giới, giá đồng tấm...".
+**Nguyên nhân:** bước "tìm hãng khác để so sánh" vẫn tự cắt một "tên loại" từ chuỗi gõ (`genericName`), và cắt sai thành "đồng" (từ đầu tiên), rồi tìm "đồng giá". Đây đúng là việc cắt chuỗi bạn đã yêu cầu không làm.
+**Đã sửa:** bước so sánh hãng cũng dùng **đúng chuỗi bạn gõ** + cụm hỏi (`<chuỗi gõ> so sánh các hãng`, `… bán chạy nhất`, `… nên mua hãng nào`), cả ở Google (Chrome) lẫn DuckDuckGo (máy chủ). Không còn đường nào tìm bằng chuỗi cắt/đoán. Tên loại cắt ra chỉ còn để hiển thị.
+
+**Thẻ câu hỏi (tab Tư vấn chọn):** 3–5 thẻ, tạo từ chính dữ liệu đã đọc của từ khóa đó: đối tượng (gia đình / cửa hàng / nhà xưởng / văn phòng), 2–3 đặc điểm đang khác nhau giữa các sản phẩm tìm được (kích thước mm, áp suất bar/psi, chất liệu, ren, công suất, dung tích), ngân sách (mốc chia theo giá thực tế đã đọc, chỉ hỏi khi bạn chưa nhập), ưu tiên. Chọn thẻ sẽ **lọc và xếp hạng** sản phẩm/NCC đã có (dòng không ghi đặc điểm đó vẫn giữ, ghi "chưa rõ"); không dùng để tìm. Bấm lại để bỏ chọn.
+
+**Đọc thêm nguồn (bù đắp), Cloudflare vẫn là đường chính:**
+- Khi dùng tiện ích Chrome: ngoài Google, tiện ích đọc thêm kết quả **DuckDuckGo + Bing** (bằng IP của bạn, không tốn hạn mức Google, không bị chặn như IP máy chủ), lấy tối đa 10 kết quả mỗi nơi làm nguồn cửa hàng. Bị chặn thì bỏ qua, phần còn lại vẫn chạy. Việc trích xuất trang diễn ra trong trình duyệt nên không tốn CPU Cloudflare.
+- Số trang mở mỗi lần mặc định 12 (thanh trượt Cài đặt tới 30), lần tìm bổ sung 10; chỉ dừng sớm khi đã đọc ≥ 8 trang và ≥ 8 NCC.
+- Không có tiện ích: vẫn chạy như cũ qua Cloudflare (DuckDuckGo/Bing, đọc trang từng cái).
+
+**Chưa kiểm chứng:** DuckDuckGo/Bing qua tiện ích trong Chrome thật (đã có test với tiện ích giả); nếu tiện ích bị DuckDuckGo hỏi xác minh thì bỏ qua nguồn đó.
+
+## 2l. Link tìm thấy nhưng không có trong Bảng NCC (bản 2.9.1)
+
+**Ví dụ:** từ khóa "sữa vinamilk growplus pha sẵn 110ml" tìm ra https://suachobeyeu.vn/san-pham/sua-bot-pha-san-dielac-grow-plus-hop-110ml.html (có giá) nhưng Bảng NCC không có dòng đó.
+
+**Đã kiểm tra trực tiếp trang đó:** máy chủ đọc được trang (HTTP 200, khớp tên 83%), nhưng **không lấy được giá**: trang tự viết "Đơn giá:" và "388,000 đ" ở hai dòng/thẻ rời, không có dữ liệu cấu trúc. Giá thật là **388.000 đ cho 1 thùng = 48 hộp x 110ml** (≈ 8.083 đ/hộp), không phải "110" (110 là dung tích 110ml).
+
+**Nguyên nhân gộp lại và cách sửa:**
+- Trích giá: đọc thêm giá trong phần tử có class/id "price/gia" (bỏ giá cũ/gạch), và ghép nhãn "Đơn giá:" với số ở dòng kế. Ngưỡng giá tối thiểu hạ từ 10.000đ xuống 1.000đ vì hàng tiêu dùng (1 hộp sữa, 1 gói mì) có thể dưới 10.000đ.
+- Quy cách đóng gói: nhận "1 Thùng = 48 Hộp x 110ml" và hiện **giá mỗi hộp** dưới giá trang (≈ 8.083 đ/hộp) để không nhầm giá thùng với giá hộp.
+- Bảng NCC: mặc định trước đây **ẩn** các dòng chưa đọc được từ đúng trang (giá lấy từ Google/kết quả tìm kiếm) nên link có giá vẫn "biến mất". Nay mặc định hiện **tất cả NCC**, dòng chưa đọc từ trang có nhãn "chưa đọc từ trang"; vẫn có lựa chọn "Chỉ dữ liệu đã đọc từ đúng trang" (đặt lại cho mọi người một lần).
+- Trang đã bị loại theo cách nhận cũ (cache các lần tìm trước) được **đọc lại một lần** ở lần tìm bổ sung kế tiếp, vì app không mở lại trang đã mở.
+- Cache trang cũ tự đọc lại (FACTS_VERSION 6).
+
+**Chưa kiểm chứng:** không biết chính xác "110" bạn thấy ở đâu trong tab Tổng hợp (không có dữ liệu lần tìm đó). Nếu còn thấy giá 110 sau khi tìm lại, gửi mình ảnh tab Tổng hợp và Nhật ký.
 
 ## 3. Tự xóa dữ liệu cũ
 

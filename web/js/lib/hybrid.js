@@ -4,11 +4,12 @@ import { ApiError } from "./api.js";
 import { extractFacts } from "./extract.js";
 import { parseAnswer, aiQuery } from "./aitext.js";
 import { exactQuery } from "./plan.js";
+import { parseDuckDuckGo, parseBing, relevantTo, isSkippedHost } from "./serp.js";
 import { normUrl, domainOf, modelKey, norm } from "./text.js";
 
 const hintKey = (h) => modelKey(h?.model) || norm(h?.name || "").slice(0, 24);
 // Đổi số này khi cấu trúc dữ liệu trang thay đổi: cache trang cũ (thiếu trường mới) tự bị bỏ qua
-export const FACTS_VERSION = 5; // v2: thông số, VAT, tên NCC; v3: liên hệ; v4: sửa nhận địa chỉ và Zalo; v5: so tên theo từ, trang gần đúng
+export const FACTS_VERSION = 6; // v2: thông số, VAT, tên NCC; v3: liên hệ; v4: sửa nhận địa chỉ và Zalo; v5: so tên theo từ, trang gần đúng; v6: giá từ phần tử price, quy cách đóng gói
 export const pageKey = (url, hint) => normUrl(url) + "|" + hintKey(hint) + "|v" + FACTS_VERSION;
 // Truy vấn Google thường để ra trang bán hàng/NCC; đổi theo lần tìm để ra nơi bán khác
 // Tìm cửa hàng: [chuỗi người dùng gõ, giữ nguyên] + cụm hỏi; lần bổ sung đổi cụm hỏi, không cắt tên/mã
@@ -162,14 +163,49 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
         }
       }
     } catch (e) { if (e.name === "AbortError") throw e; /* không có lượt tìm thêm vẫn dùng được kết quả AI */ }
+    // Bổ sung: DuckDuckGo + Bing đọc bằng tiện ích (IP của người dùng, không tốn hạn mức Google) để có thêm nhà cung cấp
+    try {
+      const extra = await webSupplement(plan, signal);
+      const seen2 = new Set(sources.map((x) => normUrl(x.url)));
+      for (const x of extra.results) { const k = normUrl(x.url); if (seen2.has(k)) continue; seen2.add(k); sources.push({ url: x.url, title: x.title, kind: "shop" }); shops++; }
+      for (const q of extra.queries) queries.push(q);
+    } catch (e) { if (e.name === "AbortError") throw e; /* thiếu nguồn bổ sung vẫn dùng được */ }
     return { ok: true, task: "product", data, sources, queries, provider: "chrome", model: "Google", ms: Date.now() - t0, chrome: true, resolved: resolved.size, shops, cached: !!r.cached };
+  }
+
+  // Tìm thêm bằng DuckDuckGo (bản HTML) và Bing, đọc qua tiện ích Chrome. Máy chủ Cloudflare vẫn là đường chính; đây chỉ để lấy thêm nguồn.
+  async function webSupplement(plan, signal, perEngine = 10) {
+    const q = shopQuery(plan, plan.variant ?? 0);
+    const out = [], queries = [], seen = new Set();
+    const engines = [
+      { host: "duckduckgo.com", url: "https://html.duckduckgo.com/html/?kl=vn-vi&q=" + encodeURIComponent(q), parse: parseDuckDuckGo },
+      { host: "bing.com", url: "https://www.bing.com/search?setlang=vi&cc=VN&q=" + encodeURIComponent(q), parse: (h) => parseBing(h).filter((x) => relevantTo(q, x)) },
+    ];
+    for (const e of engines) {
+      abortIf(signal);
+      const r = await limiter.run(e.host, async () => {
+        const x = await bridge.call("fetchPage", { url: e.url }, 45000);
+        return x.ok ? x : { ok: false, blocked: !!x.blocked, error: x.message || x.error, retryAfter: x.retryAfter };
+      });
+      if (!r.ok) continue; // bị chặn hoặc lỗi: bỏ qua nguồn này, không ảnh hưởng phần còn lại
+      const got = e.parse(r.html).filter((x) => !isSkippedHost(x.url));
+      let n = 0;
+      for (const x of got) {
+        const k = normUrl(x.url);
+        if (seen.has(k)) continue;
+        seen.add(k); out.push({ url: x.url, title: x.title }); if (++n >= perEngine) break;
+      }
+      if (n) queries.push(q);
+    }
+    return { results: out, queries: [...new Set(queries)] };
   }
 
   async function chromeCompare(plan, signal) {
     const t0 = Date.now();
-    const g = plan.generic || plan.name;
+    // Không cắt/đoán tên loại: dùng đúng chuỗi người dùng gõ + cụm hỏi để tìm các hãng khác
+    const g = exactQuery(plan.query) || plan.name;
     // một truy vấn thôi (hạn mức Google); mở các trang cửa hàng trong kết quả để lấy các hãng khác từ danh sách sản phẩm
-    const QS = [`${g} giá`, `${g} bán chạy nhất`, `${g} nên mua hãng nào`];
+    const QS = [`${g} so sánh các hãng`, `${g} bán chạy nhất`, `${g} nên mua hãng nào`];
     const q = QS[(plan.variant ?? 0) % QS.length];
     const r = await bridge.call("googleSearch", { q }, 90000);
     abortIf(signal);
