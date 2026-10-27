@@ -61,3 +61,12 @@ export function savedFor(baseKey, storage = globalThis.localStorage) {
   const s = read(storage).byKey[baseKey];
   return s && s.adds?.length ? s : null;
 }
+
+/** Xóa câu trả lời đã lưu: theo danh sách khóa, hoặc toàn bộ (keys = null). */
+export function forgetWizard(keys = null, storage = globalThis.localStorage) {
+  if (!storage) return;
+  if (!keys) { try { storage.removeItem(KEY); } catch { /* bỏ qua */ } return; }
+  const data = read(storage);
+  for (const k of keys) delete data.byKey[k];
+  write(storage, data);
+}

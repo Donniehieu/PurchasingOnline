@@ -28,7 +28,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {}, onA
 
   host.innerHTML = `
     <div class="card tbl-card">
-      <details class="tbl-add">
+      <details class="tbl-add" open>
         <summary><b>Thêm link NCC có sẵn</b></summary>
         <div class="tbl-add-host"></div>
       </details>

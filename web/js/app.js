@@ -11,13 +11,13 @@ import { newQuoteEntry, importLinks } from "./lib/quote.js";
 import { genKeys, competitorBrands, withInfo } from "./lib/keygen.js";
 import { expandResearch } from "./lib/expand.js";
 import { catalogNames } from "./lib/techkb.js";
-import { saveWizard, recallWizard, savedFor } from "./lib/wizcache.js";
+import { saveWizard, recallWizard, savedFor, forgetWizard } from "./lib/wizcache.js";
 import { TYPES } from "./lib/kb.js";
 import { research, ask, STEPS } from "./lib/pipeline.js";
 import { INTENTS } from "./lib/answer.js";
 import { esc, clip, parseVnd } from "./lib/text.js";
 import { parseNeed } from "./lib/need.js";
-import { renderAdvice } from "./advice-ui.js";
+import { renderAdvice, supplierStep } from "./advice-ui.js";
 import { analyzeInput, preCards, composeQuery, learnFromCache, detectType } from "./lib/intent.js";
 import { makePlan, cacheKey } from "./lib/plan.js";
 import { adviseProducts } from "./lib/advisor.js";
@@ -128,12 +128,14 @@ function render(entry) {
   if (entry.category !== "tech" && !$("tab-tech").hidden) selectTab("summary", { scroll: false });
   $("tabTechBtn").textContent = entry.category === "tech" ? "Công nghệ" : "";
   $("tab-images").innerHTML = renderImages(entry);
+  renderAskProduct();
   $("tab-log").innerHTML = renderLog(entry);
   $("sources").innerHTML = renderSources(entry);
   $("sources").hidden = !entry.sources.length;
 }
 
 function selectTab(name, { scroll = true } = {}) {
+  document.body.dataset.tab = name; // CSS: ô nhập, tiêu đề sản phẩm và nguồn chỉ hiện ở tab Tổng hợp
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
   for (const p of document.querySelectorAll(".panel")) p.hidden = p.id !== "tab-" + name;
   const panel = $("tab-" + name);
@@ -145,7 +147,7 @@ document.addEventListener("click", (e) => {
   $("q").value = current.plan.query;
   run(current.plan.query, { mode: "enrich" });
 });
-$("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) selectTab(b.dataset.tab); });
+$("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) { selectTab(b.dataset.tab); window.scrollTo(0, 0); } });
 
 // ảnh lỗi (chặn hotlink, hết hạn) thì bỏ khỏi lưới thay vì hiện khung vỡ
 document.addEventListener("error", (e) => {
@@ -173,7 +175,10 @@ function onEvent(ev) {
 // Đang chạy: làm mờ dữ liệu phía sau, hiện vòng quay "Đang tìm kiếm, vui lòng chờ…" (có nút Dừng)
 function syncBusy() {
   $("busy").hidden = !(runCtl && !pre);
+  $("busyTitle").textContent = busyTitle || "Đang tìm kiếm, vui lòng chờ…";
 }
+let busyTitle = "";
+let afterRun = null; // việc làm tiếp khi lần chạy này xong (ví dụ mở bước chọn nhà cung cấp)
 function setBusyText(t) { $("busyText").textContent = t || ""; }
 $("busyStop").addEventListener("click", () => { pending = null; runCtl?.abort(); });
 
@@ -212,6 +217,7 @@ async function run(text, { mode = "enrich", force = false, ocrText = "", scenari
     showResult(entry);
     $("progress").hidden = true; // chi tiết từng bước đã nằm trong tab Nhật ký
     toast(entry.fromCache ? "Lấy từ cache — không tốn lượt tìm mới" : "Hoàn tất — đã lưu vào cache");
+    if (afterRun) { const cb = afterRun; afterRun = null; setTimeout(cb, 250); }
     await refreshRecent();
   } catch (e) {
     if (e.name === "AbortError") toast("Đã dừng");
@@ -223,6 +229,8 @@ async function run(text, { mode = "enrich", force = false, ocrText = "", scenari
     }
   } finally {
     runCtl = null;
+    busyTitle = "";
+    afterRun = null;
     setRunning(false);
     scheduleRender();
     maybeExpand(); // người dùng đã trả lời xong trong lúc tìm: chạy tiếp các từ khóa bổ sung
@@ -294,22 +302,33 @@ $("tab-advice").addEventListener("click", (e) => {
   }
   const b = e.target.closest("[data-pick]");
   if (!b) return;
-  if (current.scenario === "explore" && b.dataset.pick && !runCtl) {
-    // đang ở kịch bản "khám phá": chọn một sản phẩm cụ thể thì tìm đầy đủ (bảng NCC) cho đúng sản phẩm đó
-    const c = adviseProducts(current, readNeed(), answersOf(current)).candidates.find((x) => x.key === b.dataset.pick);
-    if (c) {
-      const text = [c.brand, c.model && !String(c.name).includes(c.model) ? c.model : "", c.name].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-      $("q").value = text;
-      intentHint();
-      run(text, { mode: "enrich", scenario: "full" });
-      return;
-    }
-  }
-  choices.set(current.key, b.dataset.pick);
+  const pick = b.dataset.pick;
+  if (!pick) { choices.set(current.key, ""); persistNeed(); scheduleRender(); return; } // chọn sản phẩm khác
+  if (runCtl) { toast("Đang chạy, hãy chờ xong"); return; }
+  const c = adviseProducts(current, readNeed(), answersOf(current)).candidates.find((x) => x.key === pick);
+  choices.set(current.key, pick);
   persistNeed();
-  $("tab-advice").innerHTML = renderAdvice(current, readNeed(), b.dataset.pick, answersOf(current));
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  const text = c && !c.isMain ? [c.brand, c.model && !String(c.name).includes(c.model) ? c.model : "", c.name].filter(Boolean).join(" ").replace(/\s+/g, " ").trim() : current.plan.query;
+  $("q").value = text;
+  intentHint();
+  busyTitle = "Chờ chút, mời bạn chọn nhà cung cấp…";
+  afterRun = () => openSupplierDialog();
+  run(text, { mode: "enrich", scenario: "full" }); // dữ liệu mọi tab chạy lại theo sản phẩm đã chọn
 });
+
+// Bước 2 hiện giữa màn hình: chọn nhà cung cấp cho sản phẩm vừa chọn
+function openSupplierDialog() {
+  if (!current) return;
+  const need = readNeed();
+  const prod = adviseProducts(current, need, answersOf(current));
+  const picked = choices.get(current.key) || prod.candidates.find((x) => x.isMain)?.key || "";
+  if (!picked) return;
+  $("supBody").innerHTML = supplierStep(current, need, picked, answersOf(current), prod);
+  selectTab("advice", { scroll: false });
+  if (!$("supDlg").open) $("supDlg").showModal();
+}
+$("supClose").addEventListener("click", () => $("supDlg").close());
+$("supDlg").addEventListener("click", (e) => { if (e.target === $("supDlg")) $("supDlg").close(); });
 
 // ---------- kịch bản theo kiểu dữ liệu nhập + thẻ câu hỏi TRƯỚC khi tìm ----------
 // Nhận diện chạy ngay trên máy (không gọi mạng). Đủ thông tin: tìm thẳng. Thiếu: hiện thẻ câu hỏi (trả lời hoặc bỏ qua).
@@ -568,6 +587,20 @@ const quoteInput = mountLinkInput($("quoteHost"), {
 });
 
 // ---------- hỏi đáp ----------
+function chosenProduct() {
+  if (!current) return null;
+  try {
+    const prod = adviseProducts(current, readNeed(), answersOf(current));
+    const key = choices.get(current.key);
+    return prod.candidates.find((c) => c.key === key) ?? prod.candidates.find((c) => c.isMain) ?? null;
+  } catch { return null; }
+}
+function renderAskProduct() {
+  if (!current) return;
+  const c = chosenProduct();
+  const label = c ? [c.brand, c.model || c.name].filter(Boolean).join(" ") : [current.product.brand, current.product.model || current.product.name].filter(Boolean).join(" ");
+  $("askProduct").innerHTML = `<span class="muted small">Sản phẩm đang hỏi</span><h3>${esc(label || current.plan.query)}</h3>`;
+}
 function renderAskChips() {
   if (!current) return;
   const explore = current.scenario === "explore"; // thiếu thông tin: không gợi ý "nên chọn", không so sánh
@@ -577,6 +610,7 @@ function renderAskChips() {
   $("chat").innerHTML = hist.map(msgHtml).join("");
 }
 function msgHtml(m) {
+  if (m.web) return `<div class="msg a"><b>Kết quả tìm thêm</b>${m.results.length ? `<ul class="web-results">${m.results.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(clip(r.title || r.url, 90))}</a>${r.snippet ? `<div class="muted small">${esc(clip(r.snippet, 160))}</div>` : ""}</li>`).join("")}</ul>` : `<p class="muted">Không có kết quả.</p>`}<span class="via">${m.via === "google" ? "Google" : "Tìm web (DuckDuckGo/Bing)"}</span></div>`;
   if (m.q) return `<div class="msg q">${esc(m.q)}</div>`;
   // [n] trong câu trả lời thành liên kết nguồn ngay bên cạnh ý đó
   const body = esc(m.text).replace(/\[(\d+)\]/g, (all, n) => chip(current, Number(n)) || all);
@@ -598,6 +632,27 @@ async function doAsk(question) {
   }
   if (current?.key === key) renderAskChips();
 }
+$("askMore").addEventListener("click", async () => {
+  if (!current) return;
+  const hist = chats.get(current.key) ?? [];
+  chats.set(current.key, hist);
+  const lastQ = [...hist].reverse().find((m) => m.q)?.q ?? "";
+  const q = $("askInput").value.trim() || lastQ;
+  if (!q) { toast("Nhập câu hỏi cần tìm thêm"); $("askInput").focus(); return; }
+  const c = chosenProduct();
+  const name = c ? [c.brand, c.model || c.name].filter(Boolean).join(" ") : current.product.name;
+  const key = current.key;
+  if ($("askInput").value.trim()) hist.push({ q });
+  $("chat").insertAdjacentHTML("beforeend", `<div class="msg a" id="pending">Đang tìm thêm…</div>`);
+  $("askInput").value = "";
+  $("askMore").disabled = true;
+  try {
+    const r = await api.webSearch(`${name} ${q}`.trim());
+    hist.push({ web: true, results: r.results, via: r.via });
+  } catch (e) { hist.push({ text: "Không tìm thêm được: " + friendly(e), srcIds: [], via: "cache" }); }
+  finally { $("askMore").disabled = false; }
+  if (current?.key === key) renderAskChips();
+});
 $("askForm").addEventListener("submit", (e) => { e.preventDefault(); doAsk($("askInput").value); });
 $("askChips").addEventListener("click", (e) => { const b = e.target.closest("[data-q]"); if (b) doAsk(b.dataset.q); });
 
@@ -779,12 +834,43 @@ $("importFile").addEventListener("change", async () => {
   try { const n = await store.importAll(JSON.parse(await f.text())); toast(`Đã nạp ${n} mục từ file cache`); await refreshRecent(); $("btnHistory").click(); }
   catch (e) { toast(e.message || "File không hợp lệ"); }
 });
+// Xóa cache: 3 cách (toàn bộ / chọn bộ cache / theo thời gian)
+let clearList = [];
+const clearMode = () => document.querySelector('#clearForm input[name=cm]:checked').value;
+function clearTargets() {
+  const mode = clearMode();
+  if (mode === "all") return clearList;
+  if (mode === "keys") { const ks = new Set([...document.querySelectorAll("#clearPick input:checked")].map((x) => x.value)); return clearList.filter((e) => ks.has(e.key)); }
+  const cutoff = Date.now() - Number($("clearDays").value) * 864e5;
+  return clearList.filter((e) => (e.updatedAt ?? 0) < cutoff);
+}
+function syncClear() {
+  const mode = clearMode();
+  $("clearPick").hidden = mode !== "keys";
+  $("clearTime").hidden = mode !== "time";
+  const n = clearTargets().length;
+  $("clearInfo").textContent = mode === "all" ? `Sẽ xóa toàn bộ dữ liệu đã lưu trên thiết bị này (${clearList.length} kết quả).` : `Sẽ xóa ${n} mục.`;
+  $("clearGo").disabled = mode !== "all" && !n;
+}
 $("btnClear").addEventListener("click", async () => {
-  if (!confirm("Xóa toàn bộ dữ liệu đã lưu trên thiết bị này?")) return;
-  await store.clear();
-  chats.clear();
+  clearList = await store.list();
+  $("clearPick").innerHTML = clearList.length ? clearList.map((e) => `<label class="opt"><input type="checkbox" value="${esc(e.key)}"> <span>${esc(clip(e.product.name || e.plan.query, 54))} <span class="muted small">${esc(new Date(e.updatedAt).toLocaleDateString("vi-VN"))}</span></span></label>`).join("") : `<p class="muted">Chưa lưu gì.</p>`;
+  document.querySelector('#clearForm input[value=all]').checked = true;
+  syncClear();
+  $("clearDlg").showModal();
+});
+$("clearForm").addEventListener("change", syncClear);
+$("clearCancel").addEventListener("click", () => $("clearDlg").close());
+$("clearForm").addEventListener("submit", async () => {
+  const mode = clearMode();
+  const keys = clearTargets().map((e) => e.key);
+  const r = await store.purge({ mode, keys, days: Number($("clearDays").value) });
+  forgetWizard(mode === "all" ? null : r.keys);
+  for (const k of r.keys) chats.delete(k);
+  if (current && r.keys.includes(current.key)) { current = null; $("result").hidden = true; $("tabs").hidden = true; $("empty").hidden = false; selectTab("summary", { scroll: false }); }
   await refreshRecent();
-  $("histList").innerHTML = `<p class="muted">Đã xóa.</p>`;
+  $("histList").innerHTML = (await store.list()).map(renderHistoryItem).join("") || `<p class="muted">Đã xóa.</p>`;
+  toast(`Đã xóa ${r.n} mục`);
 });
 
 // ---------- cài đặt ----------

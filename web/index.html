@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="table.css">
 </head>
-<body>
+<body data-tab="summary">
 <header class="top" id="top">
   <div class="top-bar">
     <div class="brand">
@@ -143,11 +143,13 @@
     <div id="tab-log" class="panel" role="tabpanel" hidden></div>
     <div id="tab-ask" class="panel" role="tabpanel" hidden>
       <div class="card">
+        <div id="askProduct" class="ask-product"></div>
         <div id="askChips" class="chips"></div>
         <div id="chat" class="chat"></div>
         <form id="askForm" class="ask-form" autocomplete="off">
           <input id="askInput" type="text" maxlength="300" placeholder="Hỏi tiếp, ví dụ: bảo hành mấy năm?" enterkeyhint="send">
           <button class="btn primary" type="submit">Hỏi</button>
+          <button class="btn ghost" type="button" id="askMore" title="Tìm thêm trên Google (hoặc web) và hiện kết quả ngay tại đây">Tìm thêm trên Google</button>
         </form>
       </div>
     </div>
@@ -162,7 +164,7 @@
     <div class="drawer-foot">
       <button id="btnExport" class="btn ghost sm">Xuất file cache</button>
       <button id="btnImport" class="btn ghost sm">Nạp file cache</button>
-      <button id="btnClear" class="btn ghost sm danger">Xóa tất cả</button>
+      <button id="btnClear" class="btn ghost sm danger">Xóa cache…</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
   </div>
@@ -316,11 +318,31 @@
   <div id="busy" class="busy" hidden role="status" aria-live="polite">
     <div class="busy-box">
       <div class="spin" aria-hidden="true"></div>
-      <b>Đang tìm kiếm, vui lòng chờ…</b>
+      <b id="busyTitle">Đang tìm kiếm, vui lòng chờ…</b>
       <span id="busyText" class="muted small"></span>
       <button type="button" id="busyStop" class="btn ghost sm">Dừng</button>
     </div>
   </div>
+<dialog id="clearDlg" class="mdlg">
+  <form method="dialog" id="clearForm" class="mdlg-box">
+    <div class="mdlg-head"><h2>Xóa cache</h2></div>
+    <label class="opt"><input type="radio" name="cm" value="all" checked> <span><b>Xóa toàn bộ</b> <span class="muted small">kết quả, cache trang, danh bạ NCC, câu trả lời đã lưu</span></span></label>
+    <label class="opt"><input type="radio" name="cm" value="keys"> <span><b>Chọn bộ cache để xóa</b></span></label>
+    <div id="clearPick" class="clear-list" hidden></div>
+    <label class="opt"><input type="radio" name="cm" value="time"> <span><b>Xóa theo thời gian</b></span></label>
+    <div id="clearTime" hidden><select id="clearDays" aria-label="Xóa cache cũ hơn">
+      <option value="1">Cũ hơn 1 ngày</option><option value="3">Cũ hơn 3 ngày</option><option value="7" selected>Cũ hơn 7 ngày</option><option value="14">Cũ hơn 14 ngày</option><option value="30">Cũ hơn 30 ngày</option><option value="90">Cũ hơn 90 ngày</option>
+    </select></div>
+    <p id="clearInfo" class="clear-info"></p>
+    <div class="row end"><button type="button" id="clearCancel" class="btn ghost">Hủy</button><button type="submit" value="ok" id="clearGo" class="btn primary danger-fill">Xóa</button></div>
+  </form>
+</dialog>
+<dialog id="supDlg" class="mdlg wide">
+  <div class="mdlg-box">
+    <div class="mdlg-head"><button type="button" id="supClose" class="btn ghost sm" style="margin-left:auto">Đóng ✕</button></div>
+    <div id="supBody"></div>
+  </div>
+</dialog>
 <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Xem ảnh lớn">
   <div class="lb-bar">
     <span id="lbCap" class="lb-cap"></span>

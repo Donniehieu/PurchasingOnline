@@ -177,7 +177,7 @@ test("ngân hàng công nghệ: mỗi mục đủ trường, điểm 0–10", as
 import { saveWizard, recallWizard, savedFor } from "../web/js/lib/wizcache.js";
 import { preCards, analyzeInput } from "../web/js/lib/intent.js";
 
-function memStorage() { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }; }
+function memStorage() { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) }; }
 
 test("wizcache: nhớ câu trả lời theo từ khóa và theo loại hàng, điền lại đúng thẻ", () => {
   const st = memStorage();
@@ -248,4 +248,65 @@ test("trang khác hãng (tên giống) không phải sản phẩm mục tiêu; g
   assert.equal(entry.prices.length, 1);
   ingestPage(entry, { ...extractFacts(html("Karofi"), "https://shop.vn/a", hint), url: "https://shop.vn/a", ok: true, domain: "shop.vn" });
   assert.equal(summarize(entry).price.count, 0);
+});
+
+import { forgetWizard } from "../web/js/lib/wizcache.js";
+import { renderSummary, renderHeadline } from "../web/js/render.js";
+
+test("store.purge: xóa toàn bộ / theo mục chọn / theo thời gian; forgetWizard xóa câu trả lời tương ứng", async () => {
+  const mk = async () => {
+    const st = createMemoryStore();
+    const day = 864e5;
+    for (const [k, age] of [["a|tech", 0], ["b|tech", 10 * day], ["c|tech", 40 * day]]) {
+      const e = newEntry(makePlan({ text: "SP " + k }), k);
+      e.updatedAt = Date.now() - age;
+      await st.put?.(e);
+    }
+    return st;
+  };
+  // memory store bọc: dùng save() sẽ cập nhật updatedAt? kiểm tra qua list()
+  const st = createMemoryStore();
+  const day = 864e5;
+  for (const [k, age] of [["a|tech", 0], ["b|tech", 10 * day], ["c|tech", 40 * day]]) {
+    const e = newEntry(makePlan({ text: "SP " + k }), k);
+    await st.save(e);
+    const cur = await st.get(k); cur.updatedAt = Date.now() - age; await st.save(Object.assign(cur, { updatedAt: Date.now() - age }));
+  }
+  assert.equal((await st.list()).length, 3);
+  const keys = await st.purge({ mode: "keys", keys: ["b|tech"] });
+  assert.deepEqual(keys.keys, ["b|tech"]);
+  assert.equal((await st.list()).length, 2);
+  await assert.rejects(() => st.purge({ mode: "xyz" }));
+  const old = await st.purge({ mode: "time", days: 30 });
+  assert.equal(old.n >= 0, true);
+  const all = await st.purge({ mode: "all" });
+  assert.ok(all.n >= 0);
+  assert.equal((await st.list()).length, 0);
+
+  const ws = memStorage();
+  saveWizard({ baseKey: "k1", typeId: "t", answers: { x: { value: "v", add: "v" } }, adds: ["v"] }, ws);
+  saveWizard({ baseKey: "k2", typeId: "t", answers: { x: { value: "v", add: "v" } }, adds: ["v"] }, ws);
+  forgetWizard(["k1"], ws);
+  assert.equal(savedFor("k1", ws), null);
+  assert.ok(savedFor("k2", ws));
+  forgetWizard(null, ws);
+  assert.equal(savedFor("k2", ws), null);
+});
+
+test("Tổng hợp: giá chỉ có giá + link; ưu/nhược có link đứng trước; tiêu đề công nghệ theo nhóm; dữ kiện nhập không có chữ giải thích", () => {
+  const e = newEntry(makePlan({ text: "Máy lọc nước Kangaroo KG100", category: "tech" }), "k|tech");
+  e.product = { name: "Máy lọc nước Kangaroo KG100", brand: "Kangaroo", model: "KG100", summary: "" };
+  e.sources.push({ id: 1, key: "https://a.vn/p", url: "https://a.vn/p", title: "A", domain: "a.vn", via: "page", verified: true });
+  e.prices.push({ value: 4990000, label: "Giá trên a.vn", srcId: 1, via: "page", verified: true, ts: Date.now() });
+  e.pros.push({ text: "Lọc 7 cấp", srcId: 1, verified: true });
+  e.tech.push({ name: "Công nghệ RO", benefit: "", drawback: "", srcId: 1 });
+  e.asked = { adds: ["RO", "7 lõi"], ts: Date.now() };
+  const html = renderSummary(e);
+  assert.ok(!/Giá trên|đọc từ trang/.test(html));
+  assert.match(html, /<b>4\.990\.000[^<]*<\/b> <a class="src"/);
+  assert.match(html, /<li><a class="src"[^>]*>\[1\] a\.vn<\/a> <span class="t">Lọc 7 cấp/);
+  assert.match(html, /Công nghệ &amp; tính năng chung nhóm sản phẩm này/);
+  const head = renderHeadline(e);
+  assert.ok(!/Thông tin bạn đã cung cấp|đã lưu/.test(head));
+  assert.match(head, /Kangaroo · KG100 · RO · 7 lõi/);
 });

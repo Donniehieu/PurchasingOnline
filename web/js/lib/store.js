@@ -99,6 +99,25 @@ function wrap(b) {
       return n;
     },
 
+    /**
+     * Xóa cache theo 3 cách: mode "all" (toàn bộ), "keys" (các mục đã chọn), "time" (cũ hơn `days` ngày).
+     * Trả về { n, keys }: số mục kết quả đã xóa và khóa của chúng. Xóa theo thời gian cũng dọn cache trang cũ.
+     */
+    async purge({ mode, keys = [], days = 0 } = {}) {
+      const all = await b.all();
+      let del;
+      if (mode === "all") del = all;
+      else if (mode === "keys") { const want = new Set(keys); del = all.filter((e) => want.has(e.key)); }
+      else if (mode === "time") { const cutoff = Date.now() - days * 864e5; del = all.filter((e) => (e.updatedAt ?? 0) < cutoff); }
+      else throw new Error("Cách xóa không hợp lệ");
+      if (mode === "all") await b.clear();
+      else {
+        for (const e of del) await b.del(e.key);
+        if (mode === "time") await this.prunePages({ days, max: MAX_PAGES });
+      }
+      return { n: del.length, keys: del.map((e) => e.key) };
+    },
+
     // ----- cache trang đã đọc -----
     async getPage(key, maxAgeDays = PAGE_DAYS) {
       const r = await b.pget(key);

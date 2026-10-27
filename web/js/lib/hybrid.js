@@ -249,6 +249,20 @@ export function createHybridApi({ server, bridge, store, limiter, getSettings, e
     },
 
     discover: (...a) => server.discover(...a),
+
+    /** Tìm thêm cho tab Hỏi đáp: Google trong Chrome của bạn nếu có tiện ích, không thì tìm web (DuckDuckGo/Bing) qua máy chủ. */
+    async webSearch(q, signal) {
+      const { use } = await chromeState().catch(() => ({ use: false }));
+      if (use) {
+        try {
+          const r = await bridge.call("googleSearch", { q }, 90000);
+          abortIf(signal);
+          if (r.ok && r.results?.length) return { via: "google", results: r.results.slice(0, 8).map((x) => ({ url: x.url, title: x.title || x.site || x.url, snippet: x.snippet || "" })) };
+        } catch (e) { if (e.name === "AbortError") throw e; }
+      }
+      const d = await server.discover([q], signal);
+      return { via: "web", results: (d.results ?? []).slice(0, 8) };
+    },
     ask: (...a) => server.ask(...a),
     ocr: (...a) => server.ocr(...a),
     health: (...a) => server.health(...a),

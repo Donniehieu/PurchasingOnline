@@ -349,3 +349,21 @@ main { gap: var(--gap); }
 #result { display: grid; gap: var(--gap); }
 .top-line { margin-bottom: 8px; }
 @media (max-width: 600px) { .card { padding: 16px; } }
+
+/* Mỗi tab chỉ hiện đúng phần của nó: ô nhập, tiêu đề sản phẩm, nguồn chỉ ở tab Tổng hợp */
+body:not([data-tab="summary"]) :is(#dropZone, #banner, #headline, #sources, #extBanner, #recent) { display: none; }
+.ask-product h3 { margin: 2px 0 10px; font-size: var(--fs-h2); }
+.web-results { margin: 8px 0; padding-left: 18px; display: grid; gap: 8px; }
+.ask-form { flex-wrap: wrap; }
+.mdlg { border: 1px solid var(--line); border-radius: 18px; padding: 0; background: var(--surface); color: var(--text); box-shadow: var(--shadow); width: min(94vw, 460px); max-height: 86vh; }
+.mdlg.wide { width: min(94vw, 940px); }
+.mdlg::backdrop { background: color-mix(in srgb, #000 45%, transparent); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
+.mdlg-box { padding: 18px; display: grid; gap: 10px; overflow: auto; max-height: 86vh; }
+.mdlg-head { display: flex; align-items: center; }
+.mdlg-head h2 { margin: 0; }
+.opt { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.opt input { margin-top: 4px; }
+.clear-list { max-height: 34vh; overflow: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 8px; background: var(--surface-2); }
+#clearTime select { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); }
+.clear-info { margin: 0; font-weight: 600; }
+.btn.danger-fill { background: var(--bad); color: #fff; box-shadow: none; }

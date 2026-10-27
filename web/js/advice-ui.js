@@ -60,29 +60,8 @@ function renderCards(entry, need, answers) {
     </div>`;
 }
 
-/** need: { budgetMin, budgetMax, purpose, priority }; choice: khóa sản phẩm người dùng đã chọn ("" = chưa chọn). */
-export function renderAdvice(entry, need = {}, choice = "", answers = {}) {
-  if (entry.scenario === "explore") return renderNeedMore(entry);
-  const prod = adviseProducts(entry, need, answers);
-  const picked = choice || (prod.mode === "supplier" ? prod.candidates.find((c) => c.isMain)?.key ?? "" : "");
-  const summary = needSummary(need);
-  const pri = need.priority && need.priority !== "balanced" ? ` · ưu tiên: ${PRIORITY_OPTIONS[need.priority].toLowerCase()}` : "";
-  const waiting = entry.status === "running" ? `<p class="muted small" style="margin:0">Đang thu thập thêm dữ liệu, gợi ý sẽ cập nhật.</p>` : "";
-
-  const head = `<div class="card adv-head">
-    <ol class="adv-steps"><li class="${picked ? "" : "on"}">1. Chọn sản phẩm</li><li class="${picked ? "on" : ""}">2. Chọn nhà cung cấp</li></ol>
-    <p style="margin:0">${summary ? `Nhu cầu của bạn: <b>${esc(summary)}</b>${esc(pri)}.` : "Bạn chưa nhập nhu cầu. Mở mục <b>Nhu cầu của bạn</b> ở ô tìm kiếm để ghi ngân sách, mục đích, ưu tiên."}</p>
-    ${waiting}</div>`;
-
-  let step1 = "";
-  if (!picked) {
-    const intro = prod.questions.length ? `<ul class="ask-list">${prod.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : "";
-    step1 = `<div class="card"><h2>Bước 1: Chọn sản phẩm phù hợp <span class="count">${prod.candidates.length} sản phẩm</span></h2>
-      ${intro}
-      ${prod.candidates.length ? `<div class="pick-grid" style="margin-top:12px">${prod.candidates.slice(0, 9).map((c, i) => productCard(c, i, picked, entry.scenario === "explore")).join("")}</div>` : `<p class="muted">Chưa có đủ sản phẩm từ các trang đã đọc. Bấm “Tìm thêm dữ liệu mới” hoặc gõ rõ hơn mã model.</p>`}
-      </div>`;
-  }
-
+/** Bước 2: chọn nhà cung cấp cho sản phẩm đã chọn (dùng ở tab Tư vấn và trong cửa sổ giữa màn hình). */
+export function supplierStep(entry, need, picked, answers, prod) {
   let step2 = "";
   if (picked) {
     const adv = adviseSuppliers(entry, need, picked, answers);
@@ -98,5 +77,32 @@ export function renderAdvice(entry, need = {}, choice = "", answers = {}) {
         </div>`;
     }
   }
+  return step2;
+}
+
+/** need: { budgetMin, budgetMax, purpose, priority }; choice: khóa sản phẩm người dùng đã chọn ("" = chưa chọn). */
+export function renderAdvice(entry, need = {}, choice = "", answers = {}) {
+  if (entry.scenario === "explore") return renderNeedMore(entry);
+  const prod = adviseProducts(entry, need, answers);
+  const picked = choice || (prod.mode === "supplier" ? prod.candidates.find((c) => c.isMain)?.key ?? "" : "");
+  const summary = needSummary(need);
+  const pri = need.priority && need.priority !== "balanced" ? ` · ưu tiên: ${PRIORITY_OPTIONS[need.priority].toLowerCase()}` : "";
+  const waiting = entry.status === "running" ? `<p class="muted small" style="margin:0">Đang thu thập thêm dữ liệu, gợi ý sẽ cập nhật.</p>` : "";
+
+  const head = `<div class="card adv-head">
+    <ol class="adv-steps"><li class="${picked ? "" : "on"}">1. Chọn sản phẩm</li><li class="${picked ? "on" : ""}">2. Chọn nhà cung cấp</li></ol>
+    <p style="margin:0">${summary ? `Nhu cầu của bạn: <b>${esc(summary)}</b>${esc(pri)}.` : "Chưa có thông tin về ngân sách và mục đích."}</p>
+    ${waiting}</div>`;
+
+  let step1 = "";
+  if (!picked) {
+    const intro = prod.questions.length ? `<ul class="ask-list">${prod.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : "";
+    step1 = `<div class="card"><h2>Bước 1: Chọn sản phẩm phù hợp <span class="count">${prod.candidates.length} sản phẩm</span></h2>
+      ${intro}
+      ${prod.candidates.length ? `<div class="pick-grid" style="margin-top:12px">${prod.candidates.slice(0, 9).map((c, i) => productCard(c, i, picked, entry.scenario === "explore")).join("")}</div>` : `<p class="muted">Chưa có đủ sản phẩm từ các trang đã đọc. Bấm “Tìm thêm dữ liệu mới” hoặc gõ rõ hơn mã model.</p>`}
+      </div>`;
+  }
+
+  const step2 = picked ? supplierStep(entry, need, picked, answers, prod) : "";
   return head + renderCards(entry, need, answers) + step1 + step2;
 }

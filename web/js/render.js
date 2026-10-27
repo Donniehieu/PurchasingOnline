@@ -35,7 +35,7 @@ export function renderBanner(entry) {
 export function renderHeadline(entry) {
   const s = summarize(entry);
   const p = entry.product;
-  const sub = [p.brand, p.model].filter(Boolean).join(" · ");
+  const sub = [p.brand, p.model, ...(entry.asked?.adds ?? [])].filter(Boolean).join(" · ");
   const range = s.price.count > 1 && s.price.min !== s.price.max ? `khoảng ${money(s.price.min)} – ${money(s.price.max)} · ` : "";
   const imgs = s.images.filter((i) => i.for === "main").slice(0, entry.imageLimit ?? MAX_IMAGES);
   return `
@@ -45,13 +45,13 @@ export function renderHeadline(entry) {
       ${entry.runs?.length > 1 ? `<span class="badge">${entry.runs.length} lần tìm</span>` : ""}
       ${entry.ai ? `<span class="badge">${entry.ai.mock ? "Dữ liệu mẫu" : entry.ai.chrome ? "Google (Chrome)" : entry.ai.free ? "Tìm miễn phí" : esc(entry.ai.provider)}</span>` : ""}
     </div>
-    <div><h1>${esc(p.name || entry.plan.query)}</h1>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}${entry.asked?.adds?.length ? `<div class="muted small">Thông tin bạn đã cung cấp: <b>${esc(entry.asked.adds.join(" · "))}</b> (đã lưu, dùng để tìm tiếp)</div>` : ""}</div>
+    <div><h1>${esc(p.name || entry.plan.query)}</h1>${sub ? `<div class="muted">${esc(sub)}</div>` : ""}</div>
     <div>
       ${entry.scenario === "explore" ? (s.price.count ? `<div class="price-big">${s.price.min !== s.price.max ? `${money(s.price.min)} – ${money(s.price.max)}` : money(s.price.median)}</div><div class="price-sub">Khoảng giá tham khảo của nhiều loại khác nhau. Bổ sung thông tin để có giá cụ thể.</div>` : `<div class="price-big muted">Chưa có giá cụ thể</div><div class="price-sub">Bổ sung hãng, mã hoặc thông số để tìm giá.</div>`) : s.price.count ? `<div class="price-big">${money(s.price.median)}</div><div class="price-sub">Giá trung bình · ${range}${s.price.count} nguồn ${chips(entry, s.price.items.map((i) => i.srcId), 3)}</div>` : `<div class="price-big muted">Chưa có giá xác thực</div><div class="price-sub">Nên hỏi báo giá nhà cung cấp.</div>`}
     </div>
     ${imgs.length ? `<div class="gallery">${imgs.map((i) => imgTag(i)).join("")}</div>` : ""}
     ${p.summary ? `<p style="margin:0">${esc(p.summary)}</p>` : ""}
-    <div><button type="button" class="btn ghost sm" data-act="more" ${entry.status === "running" ? "disabled" : ""}>Tìm thêm dữ liệu mới</button> <span class="muted small">mở các trang mới, gộp vào dữ liệu đã lưu</span></div>`;
+    <div><button type="button" class="btn ghost sm" data-act="more" ${entry.status === "running" ? "disabled" : ""}>Tìm thêm dữ liệu mới</button></div>`;
 }
 
 function imgTag(i, link = true) {
@@ -74,14 +74,14 @@ export function renderVerdict(entry) {
 
 function itemList(entry, list, cls, empty) {
   if (!list.length) return `<p class="muted">${esc(empty)}</p>`;
-  return `<ul class="items ${cls}">${list.map((x) => `<li><span class="t">${esc(x.text)}${x.srcIds.length > 1 ? ` <span class="muted small">(${x.srcIds.length} nguồn)</span>` : ""}</span> ${chips(entry, x.srcIds)}</li>`).join("")}</ul>`;
+  return `<ul class="items ${cls}">${list.map((x) => `<li>${chips(entry, x.srcIds)} <span class="t">${esc(x.text)}</span></li>`).join("")}</ul>`;
 }
 
 export function renderSummary(entry) {
   const s = summarize(entry);
   const running = entry.status === "running";
   const wait = running ? "Đang thu thập…" : "Chưa có dữ liệu.";
-  const priceRows = s.price.items.map((i) => `<li><span class="t"><b>${money(i.value)}</b> <span class="muted">${esc(i.label || "")}</span>${i.via === "page" ? ` <span class="badge good">đọc từ trang</span>` : ""}${i.verified === false ? ` <span class="badge warn">chưa kiểm chứng</span>` : ""}</span> ${chip(entry, i.srcId)}</li>`).join("");
+  const priceRows = s.price.items.map((i) => `<li><span class="t"><b>${money(i.value)}</b> ${chip(entry, i.srcId)}</span></li>`).join("");
   return `
     ${entry.scenario === "explore" ? `<div class="card"><h2>Khoảng giá tham khảo</h2><p style="margin:0">${s.price.count ? (s.price.min !== s.price.max ? `${money(s.price.min)} – ${money(s.price.max)}` : money(s.price.median)) : "Chưa có"}</p><p class="muted small" style="margin:6px 0 0">Các giá thu được thuộc nhiều loại sản phẩm khác nhau nên không dùng để so sánh báo giá. Bổ sung thông tin để có giá và nhà cung cấp cụ thể. <button type="button" class="chip" data-need-more="1">Bổ sung thông tin</button></p></div>` : `<div class="card"><h2>Giá <span class="count">${s.price.count ? `trung bình ${money(s.price.median)}` : ""}</span></h2>
       ${priceRows ? `<ul class="items">${priceRows}</ul>` : `<p class="muted">${wait}</p>`}
@@ -90,7 +90,7 @@ export function renderSummary(entry) {
     <div class="card"><h2>Nhược điểm <span class="count">${s.cons.length}</span></h2>${itemList(entry, s.cons, "cons", wait)}</div>
     ${s.usage.length ? `<div class="card"><h2>Cách dùng <span class="count">${s.usage.length}</span></h2><ol class="items">${s.usage.map((x) => `<li><span class="t">${esc(x.text)}</span> ${chips(entry, x.srcIds)}</li>`).join("")}</ol></div>` : ""}
     ${entry.category === "tech"
-      ? `<div class="card"><h2>Công nghệ &amp; tính năng <span class="count">${s.tech.length}</span></h2>${s.tech.length ? `<ul class="items">${s.tech.map((t) => `<li><span class="t"><span class="tech-name">${esc(t.name)}</span>${t.benefit ? `<br><span style="color:var(--good)">Ưu:</span> ${esc(t.benefit)}` : ""}${t.drawback ? `<br><span style="color:var(--bad)">Nhược:</span> ${esc(t.drawback)}` : ""}</span> ${chips(entry, t.srcIds)}</li>`).join("")}</ul>` : `<p class="muted">${wait}</p>`}</div>
+      ? `<div class="card"><h2>Công nghệ &amp; tính năng chung nhóm sản phẩm này <span class="count">${s.tech.length}</span></h2>${s.tech.length ? `<ul class="items">${s.tech.map((t) => `<li>${chips(entry, t.srcIds)} <span class="t"><span class="tech-name">${esc(t.name)}</span>${t.benefit ? `<br><span style="color:var(--good)">Ưu:</span> ${esc(t.benefit)}` : ""}${t.drawback ? `<br><span style="color:var(--bad)">Nhược:</span> ${esc(t.drawback)}` : ""}</span></li>`).join("")}</ul>` : `<p class="muted">${wait}</p>`}</div>
          ${entry.specs.length ? `<div class="card"><h2>Thông số</h2><dl class="kv">${entry.specs.map((x) => `<dt>${esc(x.name)}</dt><dd>${esc(x.value)}</dd>`).join("")}</dl></div>` : ""}`
       : `<div class="card"><p class="muted" style="margin:0">Hàng tiêu dùng: chỉ so sánh giá, ưu điểm, nhược điểm với sản phẩm tương tự — không phân tích công nghệ.</p></div>`}`;
 }
