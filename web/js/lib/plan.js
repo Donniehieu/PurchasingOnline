@@ -36,7 +36,7 @@ export function detectCategory(text) {
 }
 
 // Thông số linh kiện (CPU, GPU, bộ nhớ, chuẩn kết nối...) trông giống mã model nhưng không phải tên sản phẩm
-const SPEC_LIKE = /^(i[3579]-?\d{3,5}[a-z]{0,2}|r[3579]-?\d{4}[a-z]{0,2}|ryzen\d*|rtx-?\d{3,4}\w*|gtx-?\d{3,4}\w*|rx-?\d{3,4}\w*|mx\d{3}|ddr\d|lpddr\d\w*|usb\d?(?:\.\d)?|wifi\d\w*|wi-fi\d\w*|bluetooth\d(?:\.\d)?|bt\d(?:\.\d)?|h\.?26[45]|ip\d{2}|ipx\d|ssd\d*|nvme\d*|pcie\d*|hdmi\d(?:\.\d)?|dp\d(?:\.\d)?|co2|r32|r410a?|r600a|\d+nm|\d+w[hp]?|\d+v\d*a?)$/i;
+const SPEC_LIKE = /^(i[3579]-?\d{3,5}[a-z]{0,2}|r[3579]-?\d{4}[a-z]{0,2}|ryzen\d*|rtx-?\d{3,4}\w*|gtx-?\d{3,4}\w*|rx-?\d{3,4}\w*|mx\d{3}|ddr\d|lpddr\d\w*|usb\d?(?:\.\d)?|wifi\d\w*|wi-fi\d\w*|bluetooth\d(?:\.\d)?|bt\d(?:\.\d)?|h\.?26[45]|ip\d{2}|ipx\d|ssd\d*|nvme\d*|pcie\d*|hdmi\d(?:\.\d)?|dp\d(?:\.\d)?|co2|r32|r410a?|r600a|\d+nm|\d+w[hp]?|\d+v\d*a?|[dø]\d+(?:[.,]\d+)?(?:mm|cm)|ø\d+(?:[.,]\d+)?|phi\d+|dn\d{1,4}|pn\d{1,3}|sch\d+|g\d\/\d+|\d+\/\d+)$/i;
 
 const UNIT_LIKE =/^\d+(?:[.,]\d+)?(gb|tb|mb|mah|w|kw|v|hz|khz|l|lit|kg|g|inch|in|mm|cm|m|ml|btu|hp|k|mp|fps|db|pa|bar|rpm|ah)$/i;
 
@@ -81,7 +81,7 @@ const FILLER =/\b(giá|giá bán|mua|tư vấn|so sánh|review|đánh giá|ưu n
 export function makePlan(input) {
   const raw = [input.text, input.ocrText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   const model = (input.model || extractModel(raw)).trim();
-  const brand = (input.brand || detectBrand(raw) || brandBeforeModel(raw, model)).trim();
+  const brand = (input.brand || detectBrand(raw) || brandBeforeModel(raw, model) || brandInCaps(raw, model)).trim();
   let name = raw.replace(FILLER, " ").replace(/\s+/g, " ").trim() || raw;
   const auto = !input.category || input.category === "auto";
   const guessed = detectCategory(raw);
@@ -107,6 +107,15 @@ export function makePlan(input) {
   };
 }
 
+// Hãng lạ viết HOA giữa câu thường: "Đồng hồ đo áp LIGI Inox 316" -> "LIGI" (bỏ các từ viết tắt thông dụng)
+const ACRONYMS = new Set(["LED", "LCD", "USB", "PVC", "PPR", "HDPE", "HDMI", "WIFI", "RAM", "SSD", "HDD", "CPU", "GPU", "UPS", "LPG", "RO", "UV", "DC", "AC", "IP", "PLC", "NAS", "TV", "UHD", "OLED", "QLED", "DIY", "ABS", "INOX", "NEW", "PRO", "MAX", "MINI", "PLUS", "SET", "VAT"]);
+function brandInCaps(text, model) {
+  const words = String(text).split(/[\s,;:()/]+/).filter(Boolean);
+  if (!words.some((w) => /[a-zà-ỹ]/.test(w))) return ""; // cả câu viết hoa: không suy ra hãng
+  const w = words.find((x) => /^[A-Z]{3,10}$/.test(x) && !ACRONYMS.has(x) && x !== model);
+  return w ?? "";
+}
+
 // Hãng lạ (không có trong danh sách): từ viết hoa đứng ngay trước mã model, ví dụ "Zeta ZF-500" -> "Zeta"
 function brandBeforeModel(text, model) {
   if (!model) return "";
@@ -121,10 +130,13 @@ function brandBeforeModel(text, model) {
 export function genericName(name, model = "", brand = "") {
   const stop = new Set([norm(brand), ...norm(model).split(/[\s-]+/)].filter(Boolean));
   const out = [];
-  for (const [i, w] of String(name).split(/\s+/).filter(Boolean).entries()) {
+  const all = String(name).split(/\s+/).filter(Boolean);
+  // Viết Hoa Mỗi Chữ (Title Case): chữ hoa đầu từ không báo hiệu tên hãng, chỉ dựa vào hãng/model/số
+  const titleCase = all.filter((w) => /^[A-ZÀ-Ỹ]/.test(w)).length / (all.length || 1) > 0.5;
+  for (const [i, w] of all.entries()) {
     const n = norm(w).replace(/[^a-z0-9]/g, "");
     if (!n) continue;
-    const capitalized = i > 0 && /^[A-ZÀ-Ỹ]/.test(w) && w !== w.toLowerCase();
+    const capitalized = !titleCase && i > 0 && /^[A-ZÀ-Ỹ]/.test(w) && w !== w.toLowerCase();
     if (stop.has(n) || /\d/.test(n) || capitalized) break;
     out.push(w);
   }

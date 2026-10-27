@@ -200,6 +200,11 @@ export function priceFromSnippet(text) {
   return v && v >= 10000 ? v : null;
 }
 
+// Các từ của một chuỗi: không dấu, chữ thường, tách chữ với số ("d63mm" -> d, 63, mm)
+const wordsOf = (s) => norm(s).replace(/(\d)([a-z])/g, "$1 $2").replace(/([a-z])(\d)/g, "$1 $2").split(/[^a-z0-9]+/).filter(Boolean);
+// Từ đặc trưng của tên sản phẩm: từ có ≥3 chữ hoặc số ≥2 chữ số; không trùng; tối đa 10
+const nameWords = (name) => [...new Set(wordsOf(name || "").filter((t) => t.length >= 3 || /^\d{2,}$/.test(t)))].slice(0, 10);
+
 /**
  * hint: { model, name, brand }
  */
@@ -243,10 +248,14 @@ export function extractFacts(htmlRaw, url, hint = {}) {
   const bodyKey = modelKey(text.slice(0, 40_000));
   let modelMatch = null;
   if (key) modelMatch = headKey.includes(key) ? "title" : bodyKey.includes(key) ? "body" : null;
-  const nameTokens = norm(hint.name || "").split(" ").filter((t) => t.length >= 3).slice(0, 6);
-  const head = norm(title + " " + h1 + " " + text.slice(0, 3000));
-  const nameScore = nameTokens.length ? nameTokens.filter((t) => head.includes(t)).length / nameTokens.length : 0;
-  const relevant = key ? !!modelMatch : nameScore >= 0.6;
+  // So tên: tách chữ/số ("D63mm" -> d, 63, mm; "Ø63" -> 63) để các cách viết khác nhau của cùng quy cách vẫn khớp
+  const nameTokens = nameWords(hint.name);
+  const headSet = new Set(wordsOf(title + " " + h1 + " " + text.slice(0, 3000)));
+  const nameScore = nameTokens.length ? nameTokens.filter((t) => headSet.has(t)).length / nameTokens.length : 0;
+  // Có mã model: khớp mã HOẶC khớp gần hết tên (nhà bán hay viết mã model khác đi). Không có model: khớp phần lớn tên.
+  // (khi nhận theo tên, phần số của mã model vẫn phải có trên trang để không lẫn sang mã khác cùng hãng)
+  const modelNums = wordsOf(hint.model).filter((t) => /^\d+$/.test(t));
+  const relevant = key ? (!!modelMatch || (nameScore >= 0.75 && modelNums.every((n) => headSet.has(n)))) : nameScore >= 0.6;
 
   // Ảnh
   const cands = new Map();

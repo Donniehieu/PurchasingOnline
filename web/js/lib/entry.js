@@ -214,7 +214,9 @@ export function ingestPage(entry, page, ctx = {}) {
   // liên hệ của NCC (theo tên miền): lấy từ mọi trang đã đọc, kể cả trang không khớp model
   if (page.contact) mergeSellerContact(entry, page.finalUrl || page.url, page.contact);
   noteSupplier(entry, page, forAlt ? false : !!page.relevant);
-  if (page.relevant || forAlt) {
+  // Trang có giá nhưng tên chỉ giống một phần (nhà bán viết mã/quy cách khác): vẫn đưa vào bảng NCC, đánh dấu "tương tự", không tính vào giá trung bình
+  const weak = !page.relevant && !forAlt && !!page.product?.price && (page.matched?.nameScore ?? 0) >= 0.34;
+  if (page.relevant || forAlt || weak) {
     const pr = page.product?.price;
     upsertOffer(entry, {
       kind: forAlt ? "other" : "same",
@@ -224,12 +226,13 @@ export function ingestPage(entry, page, ctx = {}) {
       seller: page.seller || page.domain,
       price: pr?.value ?? (forAlt ? forAlt.price : null) ?? null,
       priceVia: pr?.source ?? (forAlt && forAlt.price ? "ai" : "page"),
-      vat: page.vat, specs: page.specs, url: page.finalUrl || page.url, srcId, readFromPage: true,
+      vat: page.vat, specs: page.specs, url: page.finalUrl || page.url, srcId, readFromPage: true, weak,
     });
+    if (weak) rec.weak = true;
   }
   entry.pages.push(rec);
   const parts = Object.entries(rec.found).filter(([, n]) => n).map(([k, n]) => `${LABEL[k]} ${n}`);
-  logEvent(entry, "page", `Đã mở ${page.domain}${page.relevant ? "" : " (không khớp model)"}: ${parts.join(", ") || "không có dữ liệu mới"}`, { url: page.url, ok: true, srcId });
+  logEvent(entry, "page", `Đã mở ${page.domain}${page.relevant ? "" : weak ? " (giống một phần tên: đưa vào bảng NCC, đánh dấu tương tự)" : " (không khớp sản phẩm)"}: ${parts.join(", ") || "không có dữ liệu mới"}`, { url: page.url, ok: true, srcId });
   return rec;
 }
 

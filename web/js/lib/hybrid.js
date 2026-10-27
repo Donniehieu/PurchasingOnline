@@ -8,7 +8,7 @@ import { normUrl, domainOf, modelKey, norm } from "./text.js";
 
 const hintKey = (h) => modelKey(h?.model) || norm(h?.name || "").slice(0, 24);
 // Đổi số này khi cấu trúc dữ liệu trang thay đổi: cache trang cũ (thiếu trường mới) tự bị bỏ qua
-export const FACTS_VERSION = 4; // v2: thông số, VAT, tên NCC; v3: liên hệ; v4: sửa nhận địa chỉ và Zalo
+export const FACTS_VERSION = 5; // v2: thông số, VAT, tên NCC; v3: liên hệ; v4: sửa nhận địa chỉ và Zalo; v5: so tên theo từ, trang gần đúng
 export const pageKey = (url, hint) => normUrl(url) + "|" + hintKey(hint) + "|v" + FACTS_VERSION;
 // Truy vấn Google thường để ra trang bán hàng/NCC; đổi theo lần tìm để ra nơi bán khác
 // Tìm cửa hàng: [chuỗi người dùng gõ, giữ nguyên] + cụm hỏi; lần bổ sung đổi cụm hỏi, không cắt tên/mã

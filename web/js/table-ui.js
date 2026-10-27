@@ -112,7 +112,7 @@ export function mountOfferTable(host, { onMore = () => {}, toast = () => {} } = 
   function rowHtml(r) {
     return `<tr>
       <td data-col="stt" class="num">${r.stt}</td>
-      <td data-col="name"><a class="prodlink" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" title="Mở đúng trang sản phẩm đã lấy dữ liệu"><b>${esc(r.name || r.nameText)}</b></a>${r.model ? `<div class="muted small">Model: ${esc(r.model)}</div>` : ""}${r.kind === "other" ? ` <span class="badge">hãng khác</span>` : ""}</td>
+      <td data-col="name"><a class="prodlink" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" title="Mở đúng trang sản phẩm đã lấy dữ liệu"><b>${esc(r.name || r.nameText)}</b></a>${r.model ? `<div class="muted small">Model: ${esc(r.model)}</div>` : ""}${r.kind === "other" ? ` <span class="badge">hãng khác</span>` : ""}${r.weak ? ` <span class="badge warn" title="Tên trang chỉ giống một phần tên bạn tìm (nhà bán có thể viết mã/quy cách khác). Hãy mở link kiểm tra.">tương tự</span>` : ""}</td>
       <td data-col="price" class="num">${priceCell(r)}</td>
       <td data-col="vat">${vatCell(r)}</td>
       <td data-col="specs">${specsCell(r)}</td>

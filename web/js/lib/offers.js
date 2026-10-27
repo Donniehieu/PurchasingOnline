@@ -39,6 +39,7 @@ export function upsertOffer(entry, o) {
   if (now.vat?.state && now.vat.state !== "unknown") cur.vat = now.vat;
   for (const k of ["name", "brand", "seller", "model"]) if (now[k] && (!cur[k] || now.priceVia !== "ai")) cur[k] = now[k];
   cur.kind = now.kind;
+  cur.weak = !!(cur.weak && now.weak); // đã từng khớp đúng thì không còn là "tương tự"
   cur.readFromPage = !!(cur.readFromPage || now.readFromPage); // đã từng đọc đúng trang này
   cur.ts = now.ts;
   if (now.srcId) cur.srcId = now.srcId;

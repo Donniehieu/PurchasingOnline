@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.8.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.8.1** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -159,6 +159,19 @@ Yêu cầu: scrawl Google → trang web thật + dùng cache → bảng so sánh
 - **Link ngắn**: Worker đổi tên thành `muahangthongminh` → **https://muahangthongminh.purchasing-online.workers.dev**. Dữ liệu cache lưu theo từng địa chỉ, nên địa chỉ mới bắt đầu trống: ở địa chỉ cũ bấm “Xuất file cache”, ở địa chỉ mới bấm “Nạp file cache”. Worker cũ (`mua-hang-thong-minh`) vẫn chạy, xóa trong Cloudflare dashboard khi không cần nữa. (Link ngắn hơn nữa cần tên miền riêng.)
 
 **Chưa kiểm chứng**: đọc chữ trên ảnh dán với khóa thật; nút “Dán ảnh” trên iPhone/Safari (trình duyệt có thể chặn đọc clipboard: dùng giữ ô nhập → Dán); tiện ích Chrome với địa chỉ mới (`*.workers.dev` đã nằm trong danh sách cho phép, cần bấm “Cho phép trang này” lần đầu).
+
+## 2j. NCC bị loại oan do nhận sai "mã model" (bản 2.8.1)
+
+**Triệu chứng:** tìm "Đồng Hồ Đo Áp LIGI Inox 316, Chân Sau Có Vành D63mm Ren 13mm" ra nhiều NCC trong kết quả nhưng nhiều trang bị loại.
+
+**Nguyên nhân (không liên quan hình ảnh):** ứng dụng KHÔNG so ảnh. Ảnh chỉ được lấy từ trang đã được coi là đúng sản phẩm. Lý do loại là nhận sai: `D63mm` (đường kính) bị coi là mã model, nên chỉ trang nào viết đúng "D63mm" mới được nhận; trang viết "D63", "Ø63", "phi 63" bị loại. Hãng cũng bị nhận sai thành "Vành", tên loại thành "đồng".
+
+**Đã sửa:**
+- Quy cách kích thước/ren/áp suất (`D63mm`, `Ø63`, `phi63`, `DN15`, `PN16`, `G1/4`...) không còn bị coi là mã model. Hãng viết HOA giữa câu ("LIGI") được nhận là hãng. Tên loại không bị cắt thành "đồng" khi gõ Viết Hoa Mỗi Chữ.
+- So khớp trang theo **từ** (tách chữ và số): "D63mm" khớp "D63", "Ø63"; cần khớp phần lớn các từ đặc trưng của tên (≥ 60% khi không có model).
+- Có mã model: khớp mã **hoặc** gần hết tên (≥ 75%) kèm phần số của mã, vì nhà bán hay viết mã khác đi.
+- Trang có giá nhưng tên chỉ giống một phần (≥ 34%) **không còn bị bỏ**: vào Bảng NCC với dấu "tương tự" (không tính vào giá trung bình, bị trừ điểm khi tư vấn) để bạn tự mở link kiểm tra. Trang không liên quan vẫn không có dòng nhưng NCC vẫn được lưu ở tab Nhà cung cấp.
+- Cache trang cũ tự đọc lại (FACTS_VERSION 5).
 
 ## 3. Tự xóa dữ liệu cũ
 

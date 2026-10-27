@@ -114,6 +114,7 @@ export function adviseSuppliers(entry, need = {}, productKey = "") {
     const bf = budgetFit(r.price, need);
     if (bf != null) { score += bf * 20; if (bf === 1) reasons.push("trong ngân sách"); else warns.push("ngoài ngân sách"); }
     if (r.read) { score += 20; reasons.push("giá và thông số đọc từ đúng trang"); } else warns.push("chưa đọc từ trang bán");
+    if (r.weak) { score -= 12; warns.push("tên trang chỉ giống một phần, kiểm tra đúng quy cách"); }
     if (r.vat?.state === "included" || r.vat?.state === "rate") { score += 6; reasons.push(r.vatLabel.toLowerCase()); } else if (r.vat?.state === "excluded") warns.push("giá chưa gồm VAT");
     const c = r.contact;
     if (c?.phones?.length) { score += 12; reasons.push("có SĐT"); } else if (c?.emails?.length || c?.zalo?.length) { score += 7; reasons.push("có email/Zalo"); } else warns.push("chưa có thông tin liên hệ");
