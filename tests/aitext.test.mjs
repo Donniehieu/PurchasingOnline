@@ -71,3 +71,9 @@ test("aiQuery: giữ nguyên chuỗi người dùng gõ + cụm hỏi; hàng ti�
   const c = aiQuery(makePlan({ text: "Dầu gội Clear 650g" }));
   assert.ok(c.startsWith("Dầu gội Clear 650g ") && !c.includes("công nghệ"));
 });
+
+test("nhãn đậm đứng riêng và dòng có dấu • không làm lệch mục ưu/nhược điểm; câu kết của AI bị bỏ", () => {
+  const r = parseAnswer({ lines: [L("Ưu điểm"), L("Ngàm mỏng tiện lợi: Thiết kế đầu ngàm siêu mỏng giúp dễ lách vào khe hẹp."), L("Nhược điểm"), L("Giá thành cao:"), L("Mức giá thuộc phân khúc cao cấp, cao hơn đáng kể so với dòng phổ thông."), L("• Lưu ý khi mua"), L("• Không phù hợp cho việc đập phá: Do thiết kế mỏng nhẹ nên không dùng làm búa."), L("Nếu bạn đang cân nhắc mua thiết bị này, hãy cho tôi biết:"), L("Bạn định dùng nó cho công việc cụ thể nào?")], cites: [] }, { category: "tech" });
+  assert.equal(r.pros.length, 1);
+  assert.deepEqual(r.cons.map((x) => x.text.split(":")[0]), ["Giá thành cao", "Không phù hợp cho việc đập phá"]);
+});

@@ -4,4 +4,4 @@ ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
 # APP_CODE=mat-khau-truy-cap
 # CLAUDE_MODEL=claude-opus-5-5
-# GEMINI_MODEL=gemini-2.5-flash
+# GEMINI_MODEL=gemini-3-flash-preview

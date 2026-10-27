@@ -193,9 +193,19 @@
       <label>Địa chỉ máy chủ <small>(để trống = cùng địa chỉ trang này)</small>
         <input id="sApi" type="url" placeholder="https://muahangthongminh.workers.dev" inputmode="url"></label>
       <label>Nguồn tìm kiếm
-        <select id="sProvider"><option value="auto">Tự chọn: Google Chrome → dịch vụ có khóa → miễn phí</option><option value="chrome">Chỉ Google trong Chrome (cần tiện ích)</option><option value="free">Miễn phí, không cần khóa</option><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select></label>
+        <select id="sProvider"><option value="auto">Tự chọn: Google Chrome → dịch vụ có khóa → miễn phí</option><option value="chrome">Chỉ Google trong Chrome (cần tiện ích)</option><option value="free">Miễn phí, không cần khóa</option><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option><option value="openai">ChatGPT (OpenAI)</option><option value="custom">AI tùy chọn (chuẩn OpenAI)</option></select></label>
       <label>Khóa dịch vụ của bạn <small>(không bắt buộc nếu máy chủ đã có khóa; lưu trên thiết bị này)</small>
         <input id="sKey" type="password" placeholder="sk-ant-… hoặc AIza…" autocomplete="off"></label>
+      <details class="keyguide" id="extraKeys">
+        <summary>Khóa dự phòng — tự chuyển AI khi hết hạn mức hoặc lỗi</summary>
+        <p class="small muted">Khi AI đang dùng báo lỗi hoặc hết hạn mức, app thử lần lượt AI kế tiếp (Gemini → Claude → ChatGPT → AI tùy chọn). Trang dài được chia phần và các AI đọc song song. Chỉ nhập loại bạn có; lưu trên thiết bị này.</p>
+        <label>Khóa Gemini <input id="sKeyGemini" type="password" placeholder="AIza…" autocomplete="off"></label>
+        <label>Khóa Claude <input id="sKeyClaude" type="password" placeholder="sk-ant-…" autocomplete="off"></label>
+        <label>Khóa ChatGPT (OpenAI) <input id="sKeyOpenai" type="password" placeholder="sk-…" autocomplete="off"></label>
+        <label>AI tùy chọn: địa chỉ API <small>(chuẩn OpenAI, ví dụ https://api.example.com/v1)</small> <input id="sCustomUrl" type="url" placeholder="https://…/v1" autocomplete="off"></label>
+        <label>AI tùy chọn: tên model <input id="sCustomModel" type="text" autocomplete="off"></label>
+        <label>AI tùy chọn: khóa <input id="sCustomKey" type="password" autocomplete="off"></label>
+      </details>
       <label>Mã truy cập <small>(nếu chủ ứng dụng đặt)</small>
         <input id="sCode" type="password" autocomplete="off"></label>
       <div id="keyHint" class="small" aria-live="polite"></div>

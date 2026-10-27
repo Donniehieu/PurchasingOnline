@@ -9,9 +9,9 @@ binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
 [vars]
-# Đổi model nếu muốn (mặc định claude-opus-5-5 / gemini-2.5-flash):
+# Đổi model nếu muốn (mặc định claude-opus-5-5 / gemini-3-flash-preview):
 # CLAUDE_MODEL = "claude-sonnet-5-5"
-# GEMINI_MODEL = "gemini-2.5-flash"
+# GEMINI_MODEL = "gemini-3-flash-preview"
 
 # Khóa và mã truy cập KHÔNG ghi ở đây. Đặt bằng lệnh:
 #   npx wrangler secret put ANTHROPIC_API_KEY

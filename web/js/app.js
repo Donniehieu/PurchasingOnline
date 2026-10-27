@@ -646,10 +646,18 @@ function updateKeyGuide() {
 $("sProvider").addEventListener("change", updateKeyGuide);
 $("sKey").addEventListener("input", updateKeyGuide);
 
+function readKeys() {
+  const v = (id) => $(id).value.trim();
+  return { gemini: v("sKeyGemini"), claude: v("sKeyClaude"), openai: v("sKeyOpenai"), customUrl: v("sCustomUrl"), customModel: v("sCustomModel"), customKey: v("sCustomKey") };
+}
+
 function openSettings() {
   $("sApi").value = settings.apiBase;
   $("sProvider").value = settings.provider;
   $("sKey").value = settings.aiKey;
+  const ek = settings.keys ?? {};
+  $("sKeyGemini").value = ek.gemini ?? ""; $("sKeyClaude").value = ek.claude ?? ""; $("sKeyOpenai").value = ek.openai ?? "";
+  $("sCustomUrl").value = ek.customUrl ?? ""; $("sCustomModel").value = ek.customModel ?? ""; $("sCustomKey").value = ek.customKey ?? "";
   $("sKeep").value = String(settings.keepDays);
   $("sCode").value = settings.appCode;
   fillCfg(cfgFromSettings(settings));
@@ -660,7 +668,7 @@ function openSettings() {
 }
 $("btnSettings").addEventListener("click", openSettings);
 $("settingsForm").addEventListener("submit", () => {
-  settings = { apiBase: $("sApi").value.trim(), provider: $("sProvider").value, aiKey: $("sKey").value.trim(), appCode: $("sCode").value.trim(), cfg: readCfg(), keepDays: Number($("sKeep").value) };
+  settings = { apiBase: $("sApi").value.trim(), provider: $("sProvider").value, aiKey: $("sKey").value.trim(), keys: readKeys(), appCode: $("sCode").value.trim(), cfg: readCfg(), keepDays: Number($("sKeep").value) };
   saveSettings();
   store.prune({ days: settings.keepDays }).catch(() => {});
   toast("Đã lưu cài đặt");
@@ -669,14 +677,15 @@ $("settingsForm").addEventListener("submit", () => {
 $("btnUnblock").addEventListener("click", () => { limiter.clear(); toast("Đã xóa trạng thái tạm ngừng tên miền"); $("healthOut").textContent = ""; });
 $("btnHealth").addEventListener("click", async () => {
   const keep = settings;
-  settings = { ...settings, apiBase: $("sApi").value.trim(), appCode: $("sCode").value.trim(), aiKey: $("sKey").value.trim() };
+  settings = { ...settings, apiBase: $("sApi").value.trim(), appCode: $("sCode").value.trim(), aiKey: $("sKey").value.trim(), keys: readKeys() };
   $("healthOut").textContent = "Đang kiểm tra…";
   try {
     const h = await api.health();
     const ext = await bridge.status(true);
     const extTxt = ext.installed ? (ext.allowed ? "tiện ích Chrome: đã kết nối" : "tiện ích Chrome: CHƯA được phép (bấm biểu tượng tiện ích → Cho phép trang này)") : "tiện ích Chrome: chưa cài";
     const blockedHosts = Object.keys(limiter.blocked());
-    const ai = settings.provider === "free" ? "chế độ MIỄN PHÍ" : settings.aiKey ? "dùng khóa bạn nhập" : h.mock ? "chế độ MẪU (chưa có khóa dịch vụ)" : h.serverKey.claude ? "máy chủ có khóa Claude" : h.serverKey.gemini ? "máy chủ có khóa Gemini" : "chế độ MIỄN PHÍ (không cần khóa)";
+    const nExtra = ["gemini", "claude", "openai"].filter((p) => settings.keys?.[p]).length + (settings.keys?.customKey && settings.keys?.customUrl ? 1 : 0);
+    const ai = settings.provider === "free" ? "chế độ MIỄN PHÍ" : (settings.aiKey || nExtra) ? `dùng khóa bạn nhập${settings.aiKey && nExtra ? ` + ${nExtra} khóa dự phòng` : nExtra > 1 ? ` (${nExtra} khóa, tự chuyển khi hết hạn mức)` : ""}` : settings.aiKey ? "dùng khóa bạn nhập" : h.mock ? "chế độ MẪU (chưa có khóa dịch vụ)" : h.serverKey.claude ? "máy chủ có khóa Claude" : h.serverKey.gemini ? "máy chủ có khóa Gemini" : "chế độ MIỄN PHÍ (không cần khóa)";
     $("healthOut").textContent = `Máy chủ: kết nối được · ${ai}${h.needsCode ? " · cần mã truy cập" : ""} · ${extTxt}${blockedHosts.length ? " · đang tạm ngừng: " + blockedHosts.join(", ") : ""}`;
   } catch { $("healthOut").textContent = "Không kết nối được máy chủ. Kiểm tra địa chỉ."; }
   settings = keep;
@@ -688,7 +697,7 @@ async function checkHealth() {
     const ext = await bridge.status();
     if (ext.installed && ext.allowed && ["auto", "chrome"].includes(settings.provider)) { $("modeTag").textContent = "Google Chrome"; return; }
     if (ext.installed && !ext.allowed && ["auto", "chrome"].includes(settings.provider)) { $("modeTag").textContent = "Tiện ích Chrome: bấm biểu tượng → Cho phép trang này"; return; }
-    const free = settings.provider === "free" || (!settings.aiKey && !h.serverKey.claude && !h.serverKey.gemini && !h.mock);
+    const free = settings.provider === "free" || (!settings.aiKey && !Object.values(settings.keys ?? {}).some(Boolean) && !h.serverKey.claude && !h.serverKey.gemini && !h.serverKey.openai && !h.serverKey.custom && !h.mock);
     $("modeTag").textContent = settings.provider !== "free" && h.mock && !settings.aiKey ? "Chế độ mẫu · dữ liệu hư cấu" : free ? "Tìm miễn phí · không cần khóa" : "Tìm · lưu · so sánh";
   } catch { $("modeTag").textContent = "Không kết nối được máy chủ"; }
 }

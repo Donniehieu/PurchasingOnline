@@ -52,11 +52,12 @@ export function cfgFromSettings(settings = {}) {
 export function keyHint(provider, key) {
   const k = String(key ?? "").trim();
   if (!k) return { level: "", text: "" };
-  const kind = /^sk-ant-/.test(k) ? "claude" : /^AIza/.test(k) ? "gemini" : "";
+  const kind = /^sk-ant-/.test(k) ? "claude" : /^AIza/.test(k) ? "gemini" : /^sk-/.test(k) ? "openai" : "";
+  if (provider === "custom") return { level: "", text: "" };
   if (/\s/.test(k)) return { level: "warn", text: "Khóa có khoảng trắng: hãy dán lại, không kèm chữ thừa." };
   if (k.length < 20) return { level: "warn", text: "Khóa quá ngắn, có thể chưa dán đủ." };
   if (provider === "claude" && kind === "gemini") return { level: "warn", text: "Đây có vẻ là khóa Gemini (AIza…) nhưng bạn đang chọn Claude." };
   if (provider === "gemini" && kind === "claude") return { level: "warn", text: "Đây có vẻ là khóa Claude (sk-ant-…) nhưng bạn đang chọn Gemini." };
   if (!kind) return { level: "warn", text: "Không nhận ra dạng khóa (Gemini bắt đầu bằng AIza, Claude bằng sk-ant-). Kiểm tra lại nếu không chạy." };
-  return { level: "ok", text: kind === "gemini" ? "Khóa Gemini: đúng dạng. Chọn nguồn tìm Gemini (hoặc Tự chọn) rồi Lưu." : "Khóa Claude: đúng dạng. Chọn nguồn tìm Claude (hoặc Tự chọn) rồi Lưu." };
+  return { level: "ok", text: kind === "gemini" ? "Khóa Gemini: đúng dạng. Chọn nguồn tìm Gemini (hoặc Tự chọn) rồi Lưu." : kind === "openai" ? "Khóa ChatGPT: đúng dạng. Chọn nguồn tìm ChatGPT (hoặc Tự chọn) rồi Lưu." : "Khóa Claude: đúng dạng. Chọn nguồn tìm Claude (hoặc Tự chọn) rồi Lưu." };
 }

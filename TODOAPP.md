@@ -315,7 +315,7 @@ Giới hạn gói Free (xác nhận lại trên trang giá của Cloudflare vì 
 
 ## 6. Việc còn lại / chưa kiểm chứng
 
-- [ ] **Chưa chạy thử khóa Gemini/Claude thật** (không có khóa trong môi trường dựng app). Phần Gemini đã test bằng giả lập (gửi `google_search`, đọc nguồn, giải link chuyển hướng). Phần Claude (`web_search_20260209`, `output_config.effort`) chưa chạy thật. Gemini mặc định `gemini-2.5-flash`: nếu Google đã đổi tên model, đặt `GEMINI_MODEL` trong `wrangler.toml`.
+- [ ] **Chưa chạy thử khóa Gemini/Claude thật** (không có khóa trong môi trường dựng app). Phần Gemini đã test bằng giả lập (gửi `google_search`, đọc nguồn, giải link chuyển hướng). Phần Claude (`web_search_20260209`, `output_config.effort`) chưa chạy thật. Gemini mặc định `gemini-3-flash-preview`: nếu Google đã đổi tên model, đặt `GEMINI_MODEL` trong `wrangler.toml`.
 - [x] Tìm miễn phí từ máy chủ Cloudflare đã hoạt động (xem mục 4), nhưng DuckDuckGo vẫn có thể chặn khi gửi dồn nhiều lượt: đã giãn cách; nếu bị chặn hãy dán link sản phẩm hoặc dùng Chrome/Gemini.
 - [x] Service worker đăng ký được trên bản online (https). Chưa thử cài lên điện thoại thật (Android: Cài đặt ứng dụng; iPhone: Thêm vào MH chính).
 - [ ] Đọc chữ từ ảnh (OCR) cần khóa AI. Chưa có OCR chạy ngay trên máy (Tesseract.js) cho chế độ miễn phí.

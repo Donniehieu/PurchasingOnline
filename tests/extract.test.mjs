@@ -73,3 +73,18 @@ test("checkUrl chặn địa chỉ nội bộ", () => {
   assert.equal(checkUrl("https://www.thegioididong.com/may-chien").ok, true);
   assert.equal(checkUrl("http://localhost:8787/x", { allowLocal: true }).ok, true);
 });
+
+test("menu 'Con đội', 'Pro Max' không bị nhận là đề mục ưu/nhược điểm", async () => {
+  const { proConSections } = await import("../web/js/lib/extract.js");
+  const r = proConSections(["Con Đội - Kích Thủy Lực", "Kích Căng Cáp", "Xe Đẩy Đi Chợ", "Pro Max", "Bánh Xe Đẩy Hàng"]);
+  assert.deepEqual(r, { pros: [], cons: [] });
+});
+
+test("trang rất dài: bảng thông số và công nghệ nằm sau 240KB vẫn đọc được", async () => {
+  const { extractFacts } = await import("../web/js/lib/extract.js");
+  const pad = "<script>" + "x".repeat(300_000) + "</script>" + "<nav>" + "<a>Menu</a>".repeat(20_000) + "</nav>";
+  const html = `<html><head><title>Mỏ lết UM30XG</title></head><body>${pad}<h1>Mỏ lết UM30XG</h1><table><tr><td><strong>Chiều dài</strong></td><td>200mm</td></tr><tr><td><strong>Trọng lượng</strong></td><td>170g</td></tr></table><p>Công nghệ X-DRIVE giúp ôm chắc bu lông.</p></body></html>`;
+  const f = extractFacts(html, "https://shop.example/mo-let", { name: "Mỏ lết UM30XG", model: "UM30XG" });
+  assert.ok(f.specs.some((s) => s.k === "Chiều dài" && s.v === "200mm"));
+  assert.ok(f.tech.includes("Công nghệ X-DRIVE"));
+});

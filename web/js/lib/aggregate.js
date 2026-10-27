@@ -47,6 +47,7 @@ export function summarize(entry) {
     pros: rank(pros, 8),
     cons: rank(cons, 8),
     tech: rank(tech, 8),
+    usage: (entry.usage ?? []).slice(0, 10).map((c) => ({ ...c, srcIds: c.srcId ? [c.srcId] : [] })),
     images: [...entry.images].sort((a, b) => (b.sim ?? -1) - (a.sim ?? -1) || b.score - a.score), // có ảnh tham chiếu: giống nhất trước
     sourcesOpened: entry.pages.filter((p) => p.ok).length,
     sourcesFailed: entry.pages.filter((p) => !p.ok).length,

@@ -21,6 +21,7 @@ export function newEntry(plan, key) {
     prices: [],
     pros: [],
     cons: [],
+    usage: [],
     tech: [],
     specs: [],
     images: [],
@@ -34,7 +35,7 @@ export function newEntry(plan, key) {
 }
 
 // Đổi số này khi cách nhận trang "đúng sản phẩm" thay đổi: trang từng bị loại ở bản cũ sẽ được đọc lại
-export const PAGE_LOGIC_VERSION = 3;
+export const PAGE_LOGIC_VERSION = 4;
 export const MAX_IMAGES = 5;
 /** Chỉ giữ MAX_IMAGES ảnh tốt nhất (điểm cao trước; bằng điểm thì giữ ảnh đến trước). */
 export function keepBestImages(list, max = MAX_IMAGES) {
@@ -199,9 +200,17 @@ export function ingestPage(entry, page, ctx = {}) {
       for (const t of page.pros ?? []) { const k = sentenceKey(t); if (known.has(k)) continue; known.add(k); entry.pros.push({ text: t, srcId, verified: true, via: "page" }); rec.found.pros++; }
       for (const t of page.cons ?? []) { const k = sentenceKey(t); if (known.has(k)) continue; known.add(k); entry.cons.push({ text: t, srcId, verified: true, via: "page" }); rec.found.cons++; }
       if (entry.category === "tech") for (const t of page.tech ?? []) {
-        if (entry.tech.some((x) => sentenceKey(x.name) === sentenceKey(t))) continue;
-        entry.tech.push({ name: clip(t, 80), benefit: "", drawback: "", srcId, via: "page" }); rec.found.tech++;
+        const benefit = page.techDetail?.find((d) => sentenceKey(d.name) === sentenceKey(t))?.benefit ?? "";
+        const have = entry.tech.find((x) => sentenceKey(x.name) === sentenceKey(t));
+        if (have) { if (benefit && !have.benefit) have.benefit = benefit; continue; }
+        entry.tech.push({ name: clip(t, 80), benefit, drawback: "", srcId, via: "page" }); rec.found.tech++;
       }
+      // Đọc sâu bằng AI: cách dùng và thông số đầy đủ của trang
+      entry.usage ??= [];
+      const haveUse = new Set(entry.usage.map((c) => sentenceKey(c.text)));
+      for (const t of page.usage ?? []) { const k = sentenceKey(t); if (haveUse.has(k)) continue; haveUse.add(k); entry.usage.push({ text: t, srcId, verified: true, via: "page" }); rec.found.usage = (rec.found.usage ?? 0) + 1; }
+      const haveSpec = new Set(entry.specs.map((x) => sentenceKey(x.name)));
+      for (const sp of page.deep?.ok ? page.specs ?? [] : []) { const k = sentenceKey(sp.k); if (haveSpec.has(k)) continue; haveSpec.add(k); entry.specs.push({ name: sp.k, value: sp.v, srcId }); rec.found.specs = (rec.found.specs ?? 0) + 1; }
     }
     const imgs = page.images ?? [];
     const target = forAlt ? forAlt.images : entry.images;
@@ -235,6 +244,7 @@ export function ingestPage(entry, page, ctx = {}) {
     if (weak) rec.weak = true;
   }
   entry.pages.push(rec);
+  if (page.deep) logEvent(entry, "page", page.deep.ok ? `Đọc sâu ${page.domain} bằng AI (${page.deep.model}): ${page.deep.chars} ký tự${page.deep.images ? `, ${page.deep.images} ảnh` : ""}${page.deep.parts > 1 ? `, chia ${page.deep.parts} phần đọc song song` : ""}${page.deep.fellBack?.length ? `; đã chuyển AI: ${page.deep.fellBack.join(" · ")}` : ""}` : `Đọc sâu ${page.domain} không được (${page.deep.error}), dùng cách đọc thường`, { url: page.url, ok: !!page.deep.ok });
   const parts = Object.entries(rec.found).filter(([, n]) => n).map(([k, n]) => `${LABEL[k]} ${n}`);
   logEvent(entry, "page", `Đã mở ${page.domain}${page.relevant ? "" : weak ? " (giống một phần tên: đưa vào bảng NCC, đánh dấu tương tự)" : " (không khớp sản phẩm)"}: ${parts.join(", ") || "không có dữ liệu mới"}`, { url: page.url, ok: true, srcId });
   return rec;
@@ -353,5 +363,5 @@ export function ingestAltInsight(entry, alt, ins) {
   logEvent(entry, "ai", `Google về ${alt.brand}: ${d.pros.length} ưu điểm, ${d.cons.length} nhược điểm`, { srcId });
 }
 
-const LABEL = { price: "giá", pros: "ưu điểm", cons: "nhược điểm", tech: "công nghệ", images: "ảnh" };
+const LABEL = { price: "giá", pros: "ưu điểm", cons: "nhược điểm", tech: "công nghệ", images: "ảnh", usage: "cách dùng", specs: "thông số" };
 export const FOUND_LABEL = LABEL;

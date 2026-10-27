@@ -143,6 +143,13 @@ function bestFromSrcset(set) {
   return best;
 }
 
+function stripHeavy(html) {
+  const clean = html.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|template|iframe)\b[\s\S]*?<\/\1>/gi, " ");
+  // menu và đầu trang nằm trước tiêu đề sản phẩm: bắt đầu từ <h1> để dành chỗ cho phần mô tả và bảng thông số
+  const h = clean.search(/<h1\b/i);
+  return h > 0 ? clean.slice(h) : clean;
+}
+
 function htmlToText(html) {
   return decodeEntities(
     html
@@ -158,9 +165,17 @@ function htmlToText(html) {
     .filter(Boolean);
 }
 
+/** Toàn bộ chữ của phần nội dung chính (từ tiêu đề sản phẩm), dùng cho đọc sâu bằng AI. */
+export function pageMainText(htmlRaw, max = 45_000) {
+  const lines = htmlToText(stripHeavy(htmlRaw));
+  let out = "", n = 0;
+  for (const l of lines) { if (n + l.length + 1 > max) break; out += l + "\n"; n += l.length + 1; }
+  return out.trim();
+}
+
 const SECTION = {
-  pros: /^(?:[-•*\d.)\s]*)(ưu điểm|điểm mạnh|điểm cộng|ưu thế|lợi thế|pros?|advantages?|the good)\b/i,
-  cons: /^(?:[-•*\d.)\s]*)(nhược điểm|điểm yếu|điểm trừ|hạn chế|điểm hạn chế|cons?|disadvantages?|the bad)\b/i,
+  pros: /^(?:[-•*\d.)\s]*)(ưu điểm|điểm mạnh|điểm cộng|ưu thế|lợi thế|advantages?|the good|pros(?=\s*(?::|$)))/i,
+  cons: /^(?:[-•*\d.)\s]*)(nhược điểm|điểm yếu|điểm trừ|hạn chế|điểm hạn chế|disadvantages?|the bad|cons(?=\s*(?::|$)))/i,
 };
 
 function stripBullet(l) { return l.replace(/^[-•*\d.)\s]+/, "").trim(); }
@@ -348,7 +363,9 @@ export function extractFacts(htmlRaw, url, hint = {}) {
     if (p?.value) product.price = { value: p.value, source: "meta" };
   }
 
-  const lines = htmlToText(html);
+  // Trang dài: bỏ script/style/svg rồi mới cắt, để mô tả và bảng thông số nằm sâu trong trang vẫn đọc được
+  const body = htmlRaw.length > MAX_HTML ? stripHeavy(htmlRaw).slice(0, MAX_HTML) : html;
+  const lines = htmlToText(body);
   const text = lines.join("\n");
   // Các cách đọc giá khi trang không có dữ liệu cấu trúc (thứ tự: chắc chắn nhất trước)
   if (!product.price) { const v = priceFromAttrs(html); if (v) product.price = { value: v, source: "markup" }; }
@@ -440,7 +457,7 @@ export function extractFacts(htmlRaw, url, hint = {}) {
     priceHint,
     listing: listing.slice(0, 20),
     // cho bảng so sánh NCC
-    specs: relevant || prods.length ? extractSpecs(html, pick) : [],
+    specs: relevant || prods.length ? extractSpecs(body, pick) : [],
     vat: detectVat(text, pick),
     seller: sellerOf(pick, metas, domain),
     contact: extractContacts(htmlRaw.length > 600_000 ? htmlRaw.slice(0, 600_000) : htmlRaw, url),

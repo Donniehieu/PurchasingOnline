@@ -9,13 +9,13 @@ const SECTIONS = [
   ["cons", /^(các |những )?(nhược điểm|điểm yếu|điểm trừ|hạn chế|điểm hạn chế|mặt hạn chế|lưu ý|điểm cần lưu ý)/i],
   ["specs", /^(thông số|bảng thông số|cấu hình|thông tin cơ bản)/i],
   ["tech", /^(các |những )?(công nghệ|tính năng|công nghệ nổi bật|tính năng nổi bật)/i],
-  ["price", /^(giá|mức giá|giá bán|bảng giá)/i],
+  ["price", /^(giá|mức giá|giá bán|bảng giá)\s*(?:tham khảo|hiện tại|tại việt nam)?\s*:?\s*$/i],
   ["verdict", /^(đánh giá chung|kết luận|tổng kết|có nên mua|nên mua)/i],
-  ["end", /^(để giúp bạn|bạn (có|dự kiến|đang|muốn)|nếu bạn muốn|bạn có thể chia sẻ)/i],
+  ["end", /^(để giúp bạn|bạn (có|dự kiến|đang|muốn|định|cần)|nếu bạn (muốn|đang|cần|có|định)|bạn có thể chia sẻ|hãy cho (tôi|mình) biết|tôi có thể (giúp|hỗ trợ))/i],
 ];
 
 function sectionOf(line) {
-  const t = line.replace(/^[#*\d.)\s]+/, "").trim();
+  const t = line.replace(/^[#*•\-–\d.)\s]+/, "").trim();
   if (t.length > 90 || t.includes(" | ")) return null; // dòng bảng không phải đề mục
   if (t.includes(",") && !/:s*$/.test(t)) return null;  // đề mục không có dấu phẩy: "Giá rẻ hơn X, phù hợp Y" là một ý
   // "Tiêu đề: mô tả dài" là một ý, không phải đề mục
@@ -45,11 +45,12 @@ export function parseAnswer({ lines, cites }, plan = {}) {
   const seenText = new Set();
   const techCategory = plan.category !== "consumer";
   let introTaken = false;
+  let label = "";
 
   for (const ln of lines ?? []) {
     const t = ln.t;
     const s = sectionOf(t);
-    if (s) { sec = s; continue; }
+    if (s) { sec = s; label = ""; continue; }
     const c = ln.c ?? [];
 
     // giá: câu nào có tiền VND và nhắc "giá" (hoặc đang ở mục giá)
@@ -66,9 +67,13 @@ export function parseAnswer({ lines, cites }, plan = {}) {
     if (sec === "intro" && !introTaken && t.length > 40 && !/^dưới đây/i.test(t)) { out.product.summary = clip(t, 300); introTaken = true; continue; }
 
     if (sec === "pros" || sec === "cons") {
-      if (t.length < 15 || seenText.has(norm(t))) continue;
-      seenText.add(norm(t));
-      out[sec].push({ text: t, cites: c });
+      // nhãn đậm đứng riêng một dòng ("Giá thành cao:") thuộc về dòng mô tả ngay sau nó
+      if (/:\s*$/.test(t) && t.length < 70) { label = t.replace(/^[•\-–*\s]+/, ""); continue; }
+      const full = label ? `${label} ${t}` : t;
+      label = "";
+      if (full.length < 15 || seenText.has(norm(full))) continue;
+      seenText.add(norm(full));
+      out[sec].push({ text: full.replace(/^[•\-–*\s]+/, ""), cites: c });
     } else if (sec === "specs") {
       const [k, ...rest] = t.split(" | ");
       const v = rest.join(" | ").trim();

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makePlan, extractModel } from "../web/js/lib/plan.js";
 import { extractFacts } from "../web/js/lib/extract.js";
-import { newEntry, ingestPage } from "../web/js/lib/entry.js";
+import { newEntry, ingestPage, PAGE_LOGIC_VERSION } from "../web/js/lib/entry.js";
 import { suppliersOf, tableRows } from "../web/js/lib/offers.js";
 import { normUrl } from "../web/js/lib/text.js";
 
@@ -81,7 +81,7 @@ test("trang tự viết giá (Đơn giá: 388,000 đ trong span.price): đọc �
   const e2 = newEntry(plan, "ks2");
   const src = (u) => ({ id: e2.sources.length + 1, key: normUrl(u), url: u, title: "t", domain: "x.vn", via: "page", verified: true, kind: "shop" });
   e2.sources.push(src("https://old.vn/a"), src("https://new.vn/b"));
-  e2.pages.push({ url: "https://old.vn/a", ok: true, relevant: false }, { url: "https://new.vn/b", ok: true, relevant: false, v: 3 });
+  e2.pages.push({ url: "https://old.vn/a", ok: true, relevant: false }, { url: "https://new.vn/b", ok: true, relevant: false, v: PAGE_LOGIC_VERSION });
   const urls = pickPages(e2, 10, 99).map((p) => p.url);
   assert.deepEqual(urls, ["https://old.vn/a"]);
 });

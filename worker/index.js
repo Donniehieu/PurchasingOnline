@@ -7,7 +7,8 @@
 import { AIError, pickProvider, callAI, extractJson, verifyClaims } from "./ai.js";
 import { SYSTEM, productPrompt, comparePrompt, ASK_SYSTEM, askPrompt, OCR_SYSTEM, OCR_PROMPT } from "./prompts.js";
 import { fetchHtml, fetchImage } from "./safe-url.js";
-import { extractFacts, priceFromSnippet } from "../web/js/lib/extract.js";
+import { extractFacts, priceFromSnippet, pageMainText } from "../web/js/lib/extract.js";
+import { deepRead } from "./page-ai.js";
 import { searchMany } from "./websearch.js";
 import { modelKey, norm, domainOf, normUrl } from "../web/js/lib/text.js";
 import { exactQuery } from "../web/js/lib/plan.js";
@@ -15,7 +16,7 @@ import { exactQuery } from "../web/js/lib/plan.js";
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,OPTIONS",
-  "access-control-allow-headers": "content-type,x-app-code,x-ai-key,x-ai-provider",
+  "access-control-allow-headers": "content-type,x-app-code,x-ai-key,x-ai-provider,x-ai-keys",
   "access-control-max-age": "86400",
 };
 
@@ -100,7 +101,17 @@ async function handleSearch(request, env, origin) {
   if (!data) throw new AIError("Dịch vụ tìm trả về dữ liệu không đọc được. Hãy thử lại.", 502);
   if (task === "compare" && !Array.isArray(data.alternatives)) throw new AIError("Dịch vụ tìm không trả về danh sách sản phẩm so sánh.", 502);
   verifyClaims(data, r.sources);
-  return json({ ok: true, task, data, sources: r.sources, queries: r.queries, provider: r.provider, model: r.model, ms: r.ms, mock: r.provider === "mock" });
+  return json({ ok: true, task, data, sources: r.sources, queries: r.queries, provider: r.provider, model: r.model, fellBack: r.fellBack, ms: r.ms, mock: r.provider === "mock" });
+}
+
+function mergeDeep(facts, d) {
+  const dedupe = (list, key) => { const seen = new Set(); return list.filter((x) => { const k = norm(key(x)); if (!k || seen.has(k)) return false; seen.add(k); return true; }); };
+  facts.specs = dedupe([...facts.specs, ...d.specs.map(({ k, v }) => ({ k, v }))], (s) => s.k).slice(0, 24);
+  facts.pros = dedupe([...facts.pros, ...d.features], (s) => s).slice(0, 8);
+  facts.cons = dedupe([...facts.cons, ...d.limits], (s) => s).slice(0, 6);
+  facts.usage = dedupe(d.usage, (s) => s);
+  facts.techDetail = d.tech;
+  facts.tech = dedupe([...facts.tech, ...d.tech.map((t) => t.name)], (s) => s).slice(0, 8);
 }
 
 async function handlePage(request, env) {
@@ -109,6 +120,16 @@ async function handlePage(request, env) {
   const got = await fetchHtml(str(body.url, 1000), { allowLocal: env.ALLOW_LOCAL === "1" });
   if (!got.ok) return json({ ok: false, url: str(body.url, 1000), error: got.error, status: got.status, blocked: !!got.blocked, retryAfter: got.retryAfter, ms: got.ms });
   const facts = extractFacts(got.html, got.finalUrl, hint);
+  // Đọc sâu bằng AI (chữ dài + chữ trong ảnh): chỉ khi người dùng có khóa, trang đúng sản phẩm và máy khách xin (để tiết kiệm hạn mức)
+  const sel = pickProvider(env, request.headers);
+  if (body.deep && facts.relevant && !["free", "mock"].includes(sel.provider)) {
+    const text = pageMainText(got.html, 120_000);
+    const deep = text.length >= 200
+      ? await deepRead({ sel, text, hint: { name: hint.name || facts.h1, model: hint.model }, images: facts.images.map((i) => i.url), allowLocal: env.ALLOW_LOCAL === "1" })
+      : { ok: false, error: "trang quá ít chữ" };
+    if (deep.ok) mergeDeep(facts, deep.data);
+    facts.deep = deep.ok ? { ok: true, model: deep.model, images: deep.images, parts: deep.parts, chars: text.length, fellBack: deep.fellBack } : { ok: false, error: deep.error };
+  }
   return json({ ...facts, url: str(body.url, 1000), finalUrl: got.finalUrl, status: got.status, ms: got.ms });
 }
 
@@ -150,7 +171,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.13.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.13.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY, openai: !!env.OPENAI_API_KEY, custom: !!(env.CUSTOM_AI_KEY && env.CUSTOM_AI_URL) }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });

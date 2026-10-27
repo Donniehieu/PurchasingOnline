@@ -3,6 +3,16 @@ export class ApiError extends Error {
   constructor(message, status = 0, extra = {}) { super(message); this.status = status; this.extra = extra; }
 }
 
+/** Khóa dự phòng (Gemini/Claude/ChatGPT/AI tùy chọn) gói thành một header; trống thì không gửi. */
+export function extraKeysOf(s) {
+  const k = s.keys ?? {};
+  const o = {};
+  for (const p of ["gemini", "claude", "openai"]) if (String(k[p] ?? "").trim()) o[p] = String(k[p]).trim();
+  if (String(k.customKey ?? "").trim() && String(k.customUrl ?? "").trim()) o.custom = { key: String(k.customKey).trim(), url: String(k.customUrl).trim(), model: String(k.customModel ?? "").trim() };
+  if (!Object.keys(o).length) return "";
+  try { return btoa(JSON.stringify(o)); } catch { return ""; }
+}
+
 export function createApi(getSettings, fetchImpl = (...a) => fetch(...a)) {
   async function call(path, body, signal) {
     const s = getSettings();
@@ -10,6 +20,8 @@ export function createApi(getSettings, fetchImpl = (...a) => fetch(...a)) {
     const headers = { "content-type": "application/json" };
     if (s.appCode) headers["x-app-code"] = s.appCode;
     if (s.provider && s.provider !== "auto") headers["x-ai-provider"] = s.provider;
+    const extra = extraKeysOf(s);
+    if (extra) headers["x-ai-keys"] = extra;
     if (s.aiKey) { headers["x-ai-key"] = s.aiKey; if (!headers["x-ai-provider"]) headers["x-ai-provider"] = "auto"; }
     let res;
     try {
@@ -25,7 +37,7 @@ export function createApi(getSettings, fetchImpl = (...a) => fetch(...a)) {
   }
   return {
     search: (task, plan, product, signal) => call("/api/search", { task, plan, product }, signal),
-    page: (url, hint, signal) => call("/api/page", { url, hint }, signal),
+    page: (url, hint, signal, opts = {}) => call("/api/page", { url, hint, ...(opts.deep ? { deep: true } : {}) }, signal),
     ask: (question, context, signal) => call("/api/ask", { question, context }, signal),
     ocr: (image, signal) => call("/api/ocr", { image }, signal),
     /** Tải ảnh web qua máy chủ (để đọc điểm ảnh, tính độ giống). Trả về Blob hoặc null. */

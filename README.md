@@ -119,7 +119,9 @@ Lệnh in địa chỉ dạng `https://muahangthongminh.<tên-bạn>.workers.dev
 
 Vào ⚙ **Cài đặt** nhập mã truy cập (nếu đã đặt) hoặc khóa của bạn. Cập nhật sau này: chạy lại `npm run deploy`.
 
-Dùng Claude thay Gemini: `npx wrangler secret put ANTHROPIC_API_KEY`. Đổi model bằng `CLAUDE_MODEL` / `GEMINI_MODEL` trong `wrangler.toml` (mặc định `claude-opus-5-5` / `gemini-2.5-flash`).
+Nhiều AI dự phòng: có thể đặt thêm `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (ChatGPT), hoặc `CUSTOM_AI_URL` + `CUSTOM_AI_KEY` + `CUSTOM_AI_MODEL` (dịch vụ theo chuẩn OpenAI chat/completions) bằng `npx wrangler secret put <TÊN>`. Người dùng cũng nhập khóa dự phòng ở Cài đặt → Kết nối. Khi AI đang dùng lỗi hoặc hết hạn mức, app tự chuyển sang AI kế tiếp (Gemini → Claude → ChatGPT → AI tùy chọn); trang dài được chia phần cho nhiều AI đọc song song. Việc cần tìm web chỉ giao cho Gemini, Claude, ChatGPT.
+
+Dùng Claude thay Gemini: `npx wrangler secret put ANTHROPIC_API_KEY`. Đổi model bằng `CLAUDE_MODEL` / `GEMINI_MODEL` trong `wrangler.toml` (mặc định `claude-opus-5-5` / `gemini-3-flash-preview`).
 
 **Gói Free**: giới hạn ~10 ms CPU mỗi lần gọi và hạn mức số lần gọi mỗi ngày (xem trang giá Cloudflare, có thể đổi). App giữ trang đọc ≤ 320 KB và mở từng trang một lần gọi để nằm trong giới hạn.
 

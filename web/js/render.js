@@ -89,6 +89,7 @@ export function renderSummary(entry) {
       ${s.price.dropped.length ? `<p class="muted small">Đã loại ${s.price.dropped.length} giá lệch hẳn mặt bằng (nghi phụ kiện hoặc nhầm).</p>` : ""}</div>`}
     <div class="card"><h2>Ưu điểm <span class="count">${s.pros.length}</span></h2>${itemList(entry, s.pros, "pros", wait)}</div>
     <div class="card"><h2>Nhược điểm <span class="count">${s.cons.length}</span></h2>${itemList(entry, s.cons, "cons", wait)}</div>
+    ${s.usage.length ? `<div class="card"><h2>Cách dùng <span class="count">${s.usage.length}</span></h2><ol class="items">${s.usage.map((x) => `<li><span class="t">${esc(x.text)}</span> ${chips(entry, x.srcIds)}</li>`).join("")}</ol></div>` : ""}
     ${entry.category === "tech"
       ? `<div class="card"><h2>Công nghệ &amp; tính năng <span class="count">${s.tech.length}</span></h2>${s.tech.length ? `<ul class="items">${s.tech.map((t) => `<li><span class="t"><span class="tech-name">${esc(t.name)}</span>${t.benefit ? `<br><span style="color:var(--good)">Ưu:</span> ${esc(t.benefit)}` : ""}${t.drawback ? `<br><span style="color:var(--bad)">Nhược:</span> ${esc(t.drawback)}` : ""}</span> ${chips(entry, t.srcIds)}</li>`).join("")}</ul>` : `<p class="muted">${wait}</p>`}</div>
          ${entry.specs.length ? `<div class="card"><h2>Thông số</h2><dl class="kv">${entry.specs.map((x) => `<dt>${esc(x.name)}</dt><dd>${esc(x.value)}</dd>`).join("")}</dl></div>` : ""}`

@@ -188,6 +188,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
       if (res.errors?.length) logEvent(entry, "error", "Một số công cụ tìm lỗi: " + res.errors.join("; "));
       if (res.queries?.length) logEvent(entry, "ai", `Từ khóa đã tìm: ${res.queries.join(" | ")}`);
     } else {
+      if (res.fellBack?.length) logEvent(entry, "ai", `Đã tự chuyển sang ${res.provider} vì: ${res.fellBack.join(" · ")}`);
       logEvent(entry, "ai", `Dịch vụ tìm (${res.provider}) trả về ${entry.prices.length} giá, ${entry.pros.length} ưu điểm, ${entry.cons.length} nhược điểm trong ${(res.ms / 1000).toFixed(1)}s`);
       if (res.queries?.length) logEvent(entry, "ai", `Từ khóa đã tìm: ${res.queries.join(" | ")}`);
     }
@@ -273,7 +274,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
     const picks = pickPages(entry, enriching ? enrichPageLimit : pageLimit, perHostCap);
     if (!picks.length) step("pages", "skip", "không có trang để mở");
     else {
-      let done = 0, skippedEnough = 0;
+      let done = 0, skippedEnough = 0, deepLeft = 3; // đọc sâu bằng AI tối đa vài trang đầu (tiết kiệm hạn mức khóa)
       step("pages", "running", `0/${picks.length}`);
       await pool(picks, concurrency, async (p) => {
         const hint = p.alt
@@ -285,7 +286,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
           return;
         }
         let page;
-        try { page = await api.page(p.url, hint, signal); }
+        try { page = await api.page(p.url, hint, signal, { deep: !p.alt && deepLeft-- > 0 }); }
         catch (e) { if (e.name === "AbortError" || e.status === 401) throw e; page = { ok: false, url: p.url, error: e.message }; }
         ingestPage(entry, page, { alt: p.alt, forLabel: p.alt ? p.alt.brand : "", imageLimit, imageLimitAlt, imageKeep: refImage && imageFeatures ? { main: imageLimit * 4, alt: imageLimitAlt * 3 } : null });
         step("pages", "running", `${++done}/${picks.length} · ${domainOf(p.url)}`);
