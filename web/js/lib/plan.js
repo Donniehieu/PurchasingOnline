@@ -35,12 +35,15 @@ export function detectCategory(text) {
   return tech >= consumer ? "tech" : "consumer";
 }
 
-const UNIT_LIKE = /^\d+(?:[.,]\d+)?(gb|tb|mb|mah|w|kw|v|hz|khz|l|lit|kg|g|inch|in|mm|cm|m|ml|btu|hp|k|mp|fps|db|pa|bar|rpm|ah)$/i;
+// Thông số linh kiện (CPU, GPU, bộ nhớ, chuẩn kết nối...) trông giống mã model nhưng không phải tên sản phẩm
+const SPEC_LIKE = /^(i[3579]-?\d{3,5}[a-z]{0,2}|r[3579]-?\d{4}[a-z]{0,2}|ryzen\d*|rtx-?\d{3,4}\w*|gtx-?\d{3,4}\w*|rx-?\d{3,4}\w*|mx\d{3}|ddr\d|lpddr\d\w*|usb\d?(?:\.\d)?|wifi\d\w*|wi-fi\d\w*|bluetooth\d(?:\.\d)?|bt\d(?:\.\d)?|h\.?26[45]|ip\d{2}|ipx\d|ssd\d*|nvme\d*|pcie\d*|hdmi\d(?:\.\d)?|dp\d(?:\.\d)?|co2|r32|r410a?|r600a|\d+nm|\d+w[hp]?|\d+v\d*a?)$/i;
+
+const UNIT_LIKE =/^\d+(?:[.,]\d+)?(gb|tb|mb|mah|w|kw|v|hz|khz|l|lit|kg|g|inch|in|mm|cm|m|ml|btu|hp|k|mp|fps|db|pa|bar|rpm|ah)$/i;
 
 // Model = token vừa có chữ vừa có số, ví dụ SHD4080, WH-1000XM5, KX-TG3611
 export function extractModel(text) {
   const tokens = String(text ?? "").match(/[A-Za-z0-9][A-Za-z0-9\-_/.]{1,24}[A-Za-z0-9]/g) ?? [];
-  const cands = tokens.filter((t) => /[A-Za-z]/.test(t) && /\d/.test(t) && !UNIT_LIKE.test(t) && !/^\d{1,2}[a-z]$/i.test(t) && !/^(4k|8k|5g|4g|3g|2in1|3in1|2d|3d|1080p|720p)$/i.test(t));
+  const cands = tokens.filter((t) => /[A-Za-z]/.test(t) && /\d/.test(t) && !UNIT_LIKE.test(t) && !SPEC_LIKE.test(t) && !/^\d{1,2}[a-z]$/i.test(t) && !/^(4k|8k|5g|4g|3g|2in1|3in1|2d|3d|1080p|720p)$/i.test(t));
   if (!cands.length) return "";
   cands.sort((a, b) => scoreModel(b) - scoreModel(a));
   return cands[0].replace(/[.,]+$/, "");
@@ -64,7 +67,15 @@ export function detectBrand(text) {
   return best ? best.replace(/\b\w/g, (c) => c.toUpperCase()) : "";
 }
 
-const FILLER = /\b(giá|giá bán|mua|tư vấn|so sánh|review|đánh giá|ưu nhược điểm|thông số|cho tôi|tìm|hãy|có tốt không|nên mua)\b/gi;
+/** Chuỗi người dùng gõ, giữ nguyên chữ; chỉ gom khoảng trắng và giới hạn độ dài (cắt ở ranh giới từ). */
+export function exactQuery(text, max = 160) {
+  const t = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), 40)).trim();
+}
+
+const FILLER =/\b(giá|giá bán|mua|tư vấn|so sánh|review|đánh giá|ưu nhược điểm|thông số|cho tôi|tìm|hãy|có tốt không|nên mua)\b/gi;
 
 /**
  * input: { text, model?, brand?, category? ("tech"|"consumer"|"auto"), ocrText? }
@@ -85,6 +96,8 @@ export function makePlan(input) {
   const queries = [];
   const add = (q) => { q = q.replace(/\s+/g, " ").trim(); if (q && !queries.includes(q)) queries.push(q); };
 
+  // Từ khóa đầu tiên luôn là chuỗi người dùng gõ nguyên văn; các biến thể cắt gọn (model, tên) đến sau
+  add(`${exactQuery(raw)} giá bán`);
   add(`${exact} ${model ? name.replace(model, "").trim() : ""} giá bán`);
   add(`${exact} đánh giá ưu điểm nhược điểm`);
   if (category === "tech") {

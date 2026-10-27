@@ -139,3 +139,23 @@ test("store: xuất/nạp một file cache", async () => {
   assert.equal((await st2.get(e.key)).product.brand, "Bosch");
   await assert.rejects(() => st2.importAll({ foo: 1 }));
 });
+
+test("từ khóa tìm lấy đúng chuỗi người dùng gõ trước, cắt gọn sau", async () => {
+  const { makePlan, extractModel, exactQuery } = await import("../web/js/lib/plan.js");
+  const { aiQuery } = await import("../web/js/lib/aitext.js");
+  const { shopQuery } = await import("../web/js/lib/hybrid.js");
+  const typed = "Laptop Dell Inspiron 15 3520 i5-1235U 16GB giá rẻ";
+  const plan = makePlan({ text: typed });
+  assert.equal(plan.query, typed);
+  assert.equal(plan.queries[0], typed + " giá bán", "từ khóa đầu tiên là chuỗi gốc");
+  assert.ok(aiQuery(plan, 0).startsWith(typed), "Google Chế độ AI hỏi đúng chữ đã gõ");
+  assert.ok(aiQuery(plan, 1).startsWith(typed));
+  assert.ok(shopQuery(plan, 0).startsWith(typed), "lần đầu tìm cửa hàng bằng chuỗi gốc");
+  const p2 = makePlan({ text: "Nồi chiên không dầu Sunhouse SHD4030 giá rẻ nhất" });
+  assert.ok(shopQuery(p2, 0).startsWith("Nồi chiên không dầu Sunhouse SHD4030 giá rẻ nhất"));
+  assert.ok(shopQuery(p2, 1).startsWith("Sunhouse SHD4030 "), "lần bổ sung mới dùng bản cắt gọn: " + shopQuery(p2, 1));
+  assert.notEqual(extractModel(typed), "i5-1235U", "thông số CPU không phải mã model");
+  assert.equal(extractModel("Máy lạnh Daikin FTKF25XVMV R32 2.5HP"), "FTKF25XVMV");
+  assert.equal(exactQuery("  a   b \n c "), "a b c");
+  assert.ok(exactQuery("từ ".repeat(200)).length <= 160);
+});

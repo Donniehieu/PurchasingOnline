@@ -1,6 +1,6 @@
 // Service worker: lưu "vỏ" ứng dụng để mở nhanh và dùng được khi mất mạng (xem lại dữ liệu đã lưu).
 // API (/api/*) luôn đi qua mạng, không bao giờ cache.
-const VERSION = "po-v2.7.0";
+const VERSION = "po-v2.7.1";
 const SHELL = [
   "./", "index.html", "style.css", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png",
   "js/app.js", "js/render.js",

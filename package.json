@@ -1,6 +1,6 @@
 {
   "name": "purchasing-online",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "private": true,
   "type": "module",
   "description": "Ứng dụng web/mobile (PWA) tìm kiếm, tư vấn và so sánh sản phẩm bằng AI",

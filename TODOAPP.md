@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.7.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.7.1** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -133,6 +133,16 @@ Yêu cầu: scrawl Google → trang web thật + dùng cache → bảng so sánh
 - [ ] Shopee/TikTok vẽ giá bằng JavaScript: dòng có link và liên hệ nhưng "Liên hệ" báo giá.
 - [ ] CPU Cloudflare Free: trích xuất mỗi trang ~8–12 ms trên máy dựng app, sát giới hạn ~10 ms; đã giảm cửa sổ đọc HTML còn 240 KB. Trang nặng có thể bị bỏ qua (có log).
 - [ ] Số điện thoại/địa chỉ đọc bằng quy tắc: có thể lấy nhầm hoặc thiếu; luôn kiểm tra ở trang gốc.
+
+## 2h. Từ khóa tìm: lấy ĐÚNG chuỗi người dùng gõ trước, cắt gọn sau (bản 2.7.1)
+
+**Lỗi:** app lọc chữ thừa, cắt tên, tự đoán "mã model" rồi tìm theo đó nên có lúc tìm sai sản phẩm (ví dụ lấy `i5-1235U` hoặc `R32` làm model).
+
+**Đã sửa:**
+- Google Chế độ AI, Google thường (tìm cửa hàng) và DuckDuckGo (chế độ miễn phí) đều dùng **đúng chuỗi bạn gõ** (chỉ gom khoảng trắng, giới hạn ~160 ký tự) cho lượt tìm đầu tiên. Các lượt tìm bổ sung sau đó mới dùng bản cắt gọn (hãng + model, tên sản phẩm, loại sản phẩm).
+- Hãng khác khi hỏi riêng từng hãng dùng tên của chính hãng đó, không dùng chuỗi gốc.
+- Nhận diện mã model không còn lấy thông số linh kiện (CPU `i5-1235U`, GPU `RTX4060`, `DDR5`, `USB3`, `R32`, `H.265`...) làm tên model.
+- Lọc kết quả DuckDuckGo: trang đúng nếu khớp mã model **hoặc** phần lớn các từ trong chuỗi bạn gõ.
 
 ## 3. Tự xóa dữ liệu cũ
 

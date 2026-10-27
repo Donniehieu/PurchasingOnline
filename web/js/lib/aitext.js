@@ -2,6 +2,7 @@
 // Mỗi ý giữ lại chỉ số nguồn trích dẫn (cites) để sau này gắn URL thật.
 import { norm, parseVnd, clip } from "./text.js";
 import { techNames } from "./extract.js";
+import { exactQuery } from "./plan.js";
 
 const SECTIONS = [
   ["pros", /^(các |những )?(ưu điểm|điểm mạnh|điểm cộng|ưu thế|lợi thế|mặt tốt)/i],
@@ -110,8 +111,10 @@ const CONSUMER_VARIANTS = [
   (n) => `${n} mua ở đâu giá tốt nhất`,
 ];
 export function aiQuery(plan, variant = plan.variant ?? 0) {
+  // Hỏi Google bằng đúng chữ người dùng gõ; chỉ khi không có chuỗi gốc mới dùng tên đã cắt gọn
+  const typed = exactQuery(plan.query);
   const subject = [plan.brand, plan.model || plan.name].filter(Boolean).join(" ") || plan.name;
-  const name = plan.name && plan.model && !plan.name.includes(plan.model) ? `${plan.name} ${plan.model}` : plan.name || subject;
+  const name = typed || (plan.name && plan.model && !plan.name.includes(plan.model) ? `${plan.name} ${plan.model}` : plan.name || subject);
   const list = plan.category === "consumer" ? CONSUMER_VARIANTS : TECH_VARIANTS;
   return list[Math.abs(variant) % list.length](name);
 }
