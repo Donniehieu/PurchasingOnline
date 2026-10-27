@@ -1,135 +1,149 @@
-# Mua hàng tự động
+# Mua hàng thông minh (PWA: web + điện thoại)
 
-Hỗ trợ quy trình mua hàng: nhập tên, model hoặc ảnh sản phẩm, app tự tìm hiểu trên **Google**, hỏi lại bạn các câu hỏi dựng từ dữ liệu vừa đọc, so sánh giá nhà cung cấp (NCC), đề xuất NCC, tìm hiểu giá, ưu nhược điểm, công nghệ, phân loại, lưu ý khi mua, tóm tắt bài viết bạn đưa vào, rồi xuất Excel.
+Nhập **tên / mã model / ảnh** sản phẩm → AI tìm trên web → lưu **cache** → mở các trang nguồn để lấy giá, ảnh, ưu/nhược điểm → **so sánh 4–5 hãng** và chọn phương án tối ưu. Mọi kết luận ngắn gọn, **gắn nguồn bên cạnh**.
 
-## Cài đặt (tiện ích Chrome / Cốc Cốc / Brave / Edge)
+Không cần Python, không cần cài tiện ích trình duyệt. Chạy online, mở bằng link trên điện thoại hoặc máy tính, cài được như một app (PWA).
 
-App chạy trong trình duyệt của bạn dưới dạng tiện ích, vì cần mở google.com và đọc các website khác mà trang web thường không được phép (CORS). Cài bằng cùng một cách trên mọi trình duyệt Chromium:
+## Cách hoạt động
 
-1. Mở trang tiện ích: `chrome://extensions` (Chrome), `coccoc://extensions` (Cốc Cốc), `brave://extensions` (Brave), `edge://extensions` (Edge).
-2. Bật **Chế độ nhà phát triển** (Developer mode).
-3. Bấm **Tải tiện ích đã giải nén** (Load unpacked), chọn thư mục `docs` của dự án.
-4. Bấm biểu tượng **Mua hàng tự động** để mở app. Sau khi sửa mã hoặc cập nhật, **bấm nút tải lại** ở tiện ích (nếu không, tiện ích chạy bản cũ và app báo banner đỏ).
-5. Vào **Cài đặt**, bấm **Thử Google** để kiểm tra.
+1. **Chọn từ khóa thông minh** (`web/js/lib/plan.js`): tách mã model, hãng, tự nhận loại hàng, sinh bộ từ khóa (mã model trong ngoặc kép, giá, ưu nhược điểm, thông số, so sánh, tiếng Anh).
+2. **AI tìm trước** (Claude có `web_search` hoặc Gemini có Google Search): trả JSON gồm tên, hãng, model, giá, ưu/nhược điểm, công nghệ, kèm URL nguồn cho từng ý. Bước 2 hỏi AI chọn **4–5 hãng khác** cùng phân khúc để so sánh.
+3. **Kiểm chứng nguồn**: mỗi URL AI nêu phải nằm trong kết quả tìm kiếm thật; không thì bị đánh dấu **“?” chưa kiểm chứng**.
+4. **Mở từng trang nguồn** (`worker/extract.js`): đọc giá có cấu trúc (JSON-LD, meta), ảnh sản phẩm (bỏ logo/biểu tượng), mục “Ưu điểm/Nhược điểm”, tên công nghệ. **Mỗi trang mở đều ghi log**, tab *Nhật ký* tổng hợp theo mục: giá, ưu điểm, nhược điểm, công nghệ, ảnh. Trang lỗi bị bỏ qua ngay, không thử lại.
+5. **Cache**: toàn bộ kết quả lưu trên thiết bị (IndexedDB). Tìm lại cùng sản phẩm: app **hiện dữ liệu cũ ngay**, rồi **tìm thêm trang mới và gộp vào cache cũ** (không mở lại trang đã đọc, không xóa dữ liệu cũ). Muốn chỉ xem lại không tìm, chọn “chỉ xem cache”. Xuất/nạp thành **một file `.json`** ở ngăn *Lịch sử*.
+6. **Hỏi đáp**: các nút Giá / Ưu điểm / Nhược điểm / Công nghệ / Nên chọn trả lời **tức thì từ cache**. Câu hỏi tự do gửi AI nhưng **chỉ kèm dữ liệu đã cache** (không tìm web mới).
+7. **So sánh công nghệ** (tab **Công nghệ**, chỉ máy móc / thiết bị / gia dụng / điện tử): gom công nghệ của các hãng theo từng loại (ví dụ Rapid Air, Inverter), cho biết **hãng nào dùng chung / riêng**, **ưu điểm và nhược điểm của từng công nghệ** kèm nguồn, và có đoạn **tóm tắt** ở đầu. Hỏi nhanh bằng nút “So sánh công nghệ”.
+8. **So sánh & chọn tối ưu**: chỉ dùng dữ liệu đã thu thập. Điểm = giá + tỉ lệ ưu/nhược (làm mịn để sản phẩm nhiều dữ liệu không tự thắng) + số nguồn xác nhận (+ công nghệ với hàng kỹ thuật).
 
-Yêu cầu Chrome từ bản 110. Safari không cài thẳng được (cần macOS và Xcode: `xcrun safari-web-extension-converter docs/`), chưa thử.
+**Phân loại hàng**: máy móc / thiết bị / gia dụng / điện tử → so sánh cả **tính năng, công nghệ và ưu nhược điểm của công nghệ**. Hàng tiêu dùng → chỉ **giá, ưu điểm, nhược điểm** so với sản phẩm tương tự, không nói công nghệ.
 
-**Điện thoại:** giao diện co giãn theo màn hình (bảng NCC và lịch sử thành thẻ xếp dọc). Nhưng Chrome trên điện thoại không cài được tiện ích nên không mở được Google và đọc trang NCC; trên điện thoại chỉ xem lại lịch sử và kết quả đã có, sửa bảng, xuất file. Muốn tìm kiếm trên điện thoại thì cần trình duyệt điện thoại hỗ trợ tiện ích (như Kiwi Browser hoặc Firefox cho Android, tôi chưa thử).
+**Ảnh (OCR)**: bấm *Ảnh*, chụp hoặc chọn ảnh sản phẩm/nhãn; AI đọc chữ và tự điền tên, hãng, model. (Thay bộ đọc chữ trong trình duyệt trước đây hay lỗi.)
 
-## Luồng dùng
+## Chạy thử trên máy (cần Node.js 20+)
 
-**Tab Yêu cầu mới**
-1. **Dữ liệu đầu vào:** nhập tên, model, số lượng, mục đích, hoặc chỉ cung cấp ảnh. Nếu chỉ có ảnh, app đọc chữ trong ảnh rồi tự điền tên, model và từ khóa tìm kiếm (cần khóa Anthropic ở Cài đặt, hoặc trình duyệt có bộ đọc chữ sẵn).
-2. **Cấu hình:** số trang Google cần research (1-5, mỗi trang mở hết các link), số ảnh vào album (1-20), thời gian chờ giữa hai lần mở trang (mặc định 3 giây; gửi lệnh xong có phản hồi mới chờ rồi gửi lệnh kế, không dồn dập).
-3. **Tìm hiểu:** tick hoặc bỏ 5 chủ đề (giá trung bình, ưu nhược điểm, công nghệ sử dụng, phân loại, lưu ý khi mua); gõ thêm từ khóa/câu hỏi (app đọc bài ở trang 1-2 của Google để trả lời); nhập link hoặc nhập từ Excel/CSV các bài viết tham khảo (app đọc và tóm tắt).
-4. **Tiến trình:** hiện từng bước và chi tiết "trang Google 2/3, đọc link 4/10". Có nút Dừng; dừng sớm thì tổng hợp phần đã có.
-5. **10 câu hỏi, trong một khối, trả lời xong tự sang câu kế:** 5 câu cố định (tên sản phẩm, model, số lượng, mục đích sử dụng, hãng sản xuất = tên hãng trên sản phẩm, không phải tên website/NCC) và 5 câu dựng từ dữ liệu crawl (thông số, ngân sách, bảo hành, chất liệu, VAT, ưu tiên...). Mỗi lựa chọn kèm "thấy ở n/N trang"; chọn sẵn giá trị khi có từ 2 trang trở lên đồng ý; không có dữ liệu web thì dùng gợi ý chung và ghi rõ.
-6. **Kết quả:**
-   - **Bảng so sánh giá và đề xuất:** Tên NCC, Tên sản phẩm / model, Số lượng, Đơn giá, VAT, Thông tin sản phẩm (thông số kỹ thuật), Liên hệ. Bấm tên sản phẩm mở đúng trang bán sản phẩm đó (không phải trang chủ NCC). Chỉ trang bán một sản phẩm, đúng model, mới vào bảng; giá phải đọc chắc chắn từ dữ liệu của trang (JSON-LD, thẻ giá, hoặc số sau chữ "giá"), nếu không thì để trống và báo "Chưa có giá chính xác". Liên hệ lấy từ trang sản phẩm và trang Liên hệ của NCC. Xuất Excel .xlsx.
-   - Tìm hiểu theo chủ đề đã chọn, trả lời cho câu hỏi bạn gõ thêm, tóm tắt từng bài tham khảo (đề mục, ý chính, số liệu, câu hỏi liên quan theo ngành hàng), đều có link nguồn; album ảnh Google Hình ảnh đặt theo tên + model để so khớp.
+```bash
+npm install
+```
 
-**Tab Lịch sử tìm kiếm:** bảng STT, Tiêu đề, Số lượng, Từ khóa đã tìm, Các trang đã tìm; bấm một dòng để xem chỉ tiêu chi tiết và mở lại từng lần tìm; xuất Excel.
+```bash
+npm run dev
+```
 
-**Tab Cài đặt:** thử Google, giá trị mặc định (số trang, số ảnh, thời gian chờ), khóa Anthropic, sao lưu và khôi phục.
+Mở http://localhost:8787. Chưa có khóa AI thì app chạy **chế độ mẫu** (sản phẩm và hãng hư cấu, có nhãn “Dữ liệu mẫu”) để bạn thấy toàn bộ luồng. Có khóa: sao `.dev.vars.example` thành `.dev.vars`, điền khóa, chạy lại. Trên Windows có thể bấm đúp `run.bat`.
 
-## Cách app đọc và trả lời
+Kiểm thử: `npm test` (77 test: từ khóa, trích xuất trang, tổng hợp, chọn tối ưu, cache, luồng đầy đủ, bảo mật).
 
-1. **Lấy ảnh trước:** có đủ tên + model (hoặc chỉ có ảnh) thì lấy ảnh Google Hình ảnh vào album ngay đầu, trước khi tìm bài và trả lời câu hỏi.
-2. **Trả lời lần lượt từng câu hỏi** (5 chủ đề đã chọn rồi các câu hỏi gõ thêm). Với mỗi câu: nếu các bài đã mở trước đó đã cho đủ đáp án (từ 3 câu của 2 bài, hoặc 5 câu) thì **không tìm thêm**; nếu chưa đủ, app tìm Google bằng **"từ khóa câu hỏi + tên sản phẩm"** (VD "ưu nhược điểm máy hút bụi cầm tay"), lấy danh sách bài (trang kết quả 2 chỉ tải khi trang 1 đã hết bài chưa mở), rồi mở từng bài.
-3. **Một bài mở ra, bổ sung đáp án cho mọi câu hỏi.** Mỗi bài chỉ mở **một lần**, được xử lý ngay thành tài liệu trong kho, rồi chấm cho **tất cả** câu hỏi cùng lúc; đáp án nào tìm thấy được thêm đúng vào block của câu hỏi đó. Đáp án đã lưu từ các bài cũ **không bao giờ bị xóa**, bài mới chỉ thêm đáp án (không trùng, tối đa 12 mỗi câu).
-4. **Bài đã mở không mở lại; bài không mở được thì bỏ qua ngay** (không chờ, không thử lại) và lấy bài khác. Mỗi câu hỏi mở tối đa 6 bài mới; dừng ngay khi đủ đáp án.
-5. **Đáp án phải đúng sản phẩm.** Khi đã có model (VD SHD4080): chỉ bài nhắc đúng model mới cho đáp án chính; câu nhắc một model khác (VD SHD4026) bị loại; đáp án từ bài chỉ nói về loại sản phẩm nói chung nằm riêng trong mục thu gọn "Tham khảo chung... KHÔNG nêu đúng model" và không được tính là đủ đáp án. Câu lấy từ nội dung chính của trang (bỏ menu, đầu trang, chân trang, thanh bên, danh sách toàn liên kết), chữ giống menu hoặc lặp ở từ 3 bài trở lên bị bỏ. Ký tự HTML tiếng Việt (`&ecirc;`, `&#7847;`...) được giải mã đầy đủ. Từ khóa kiểm tra bài đúng sản phẩm chỉ lấy 5 từ đầu của tên (tên dài kiểu quảng cáo làm lọc sai).
-6. **Kho và đáp án được lưu bền vững** trong trình duyệt (giữ kho của 10 yêu cầu gần nhất). Ô "Hỏi thêm" ở khối câu hỏi bổ sung chấm lại kho cho câu hỏi mới và trả lời ngay; chỉ khi chưa đủ mới tìm và mở bài mới (bài mới cũng bổ sung đáp án cho các block khác).
+## Dùng Google trong Chrome (ưu tiên, miễn phí, ít bị 403)
+
+Google chặn máy chủ nhưng không chặn Chrome thật của bạn. Tiện ích trong thư mục `extension/` cho app dùng **Google Chế độ AI** (hoặc kết quả tìm thường) ngay trong Chrome của bạn, và đọc trang web bằng **IP của bạn** thay vì IP máy chủ nên ít bị 403 hơn.
+
+**Cài (Chrome, Cốc Cốc, Edge, Brave trên máy tính):**
+1. Mở `chrome://extensions` (Cốc Cốc: `coccoc://extensions`), bật **Chế độ nhà phát triển**.
+2. Bấm **Tải tiện ích đã giải nén**, chọn thư mục `extension` của dự án.
+3. Mở app (địa chỉ `*.workers.dev` hoặc `http://localhost:8787`), bấm biểu tượng tiện ích → **Cho phép trang này**.
+4. Thanh tiêu đề app đổi thành “Google Chrome · Chế độ AI”. Tìm sản phẩm như bình thường.
+
+Điện thoại: Chrome Android không cài được tiện ích, nên điện thoại dùng đường máy chủ (AI có khóa hoặc tìm miễn phí). Muốn dùng Google trên điện thoại: tìm trên máy tính (kết quả lưu trong cache), xuất file cache rồi nạp vào điện thoại. Tên miền riêng (không phải workers.dev): thêm vào `content_scripts.matches` trong `extension/manifest.json`.
+
+**Tự động cập nhật tiện ích (không phải cập nhật tay):**
+
+| Cách cài | Cập nhật |
+|---|---|
+| **Chrome Web Store** (khuyên dùng) | **Chrome tự cập nhật hoàn toàn**, kể cả khi bạn không mở app. Hướng dẫn đăng và tự động đăng mỗi bản mới: `store/STORE.md` (cần tài khoản nhà phát triển 5 USD do bạn tạo; đẩy tag `ext-v1.2.0` là GitHub Actions tự đăng) |
+| Nạp từ thư mục (`extension/`) | Chrome **không** tự cập nhật loại này. Nhưng tiện ích **tự phát hiện file đổi** (mỗi phút) và **tự tải lại**: chỉ cần `git pull` trong thư mục dự án, không phải bấm “Tải lại” ở `chrome://extensions`. Đang làm việc thì hoãn, không ngắt giữa chừng |
+| Tải file .zip từ app | Giải nén đè lên thư mục cũ, tiện ích tự tải lại như trên. App tự báo “có bản mới” khi bản trên máy chủ cao hơn bản đang cài, và có link tải ở Cài đặt |
+
+Mỗi lần `npm run deploy` (hoặc `npm run dev`) tự chạy `npm run build:ext`, đóng gói tiện ích thành `/ext/mua-hang-extension.zip` + `/ext/version.json` phát hành cùng app. Chrome chặn tự cập nhật từ địa chỉ riêng (`update_url`) trên Windows/macOS trừ máy do tổ chức quản lý, nên không dùng cách đó.
+
+**Cách tránh 403 và spam request** (có trong cả tiện ích và app):
+- Google: tối đa **8 lần mở / 10 phút**, cách nhau ≥ 4 giây, mỗi truy vấn nhớ **24 giờ**. Gặp CAPTCHA: tiện ích **đưa tab lên cho bạn tự xác minh**, không tự giải; không xác minh thì nghỉ 30 phút.
+- Trang web: **cùng tên miền cách nhau ≥ 2,5 giây**, tối đa 2–3 trang cùng lúc, tối đa 2 trang mỗi tên miền mỗi lần tìm.
+- Bị 403/429/503 hoặc CAPTCHA: **tự ngắt tên miền đó 30 phút** (hoặc theo `Retry-After`), không gửi thêm; nút **Xóa chặn** ở Cài đặt / biểu tượng tiện ích.
+- **Cache trang 7 ngày**: trang đã đọc không tải lại; **đủ dữ liệu thì dừng mở thêm trang**.
+- Không bao giờ giải CAPTCHA, không gửi cookie của bạn tới các trang, chỉ mở địa chỉ công khai (chặn mạng nội bộ).
+
+Quyền tiện ích: “đọc dữ liệu trên mọi trang web” (cần để tải trang bán hàng và đọc Google). Tiện ích chỉ làm việc khi app yêu cầu, và chỉ nhận lệnh từ các trang bạn đã bấm “Cho phép”.
+
+Thứ tự ưu tiên khi chọn “Tự chọn”: **Google Chrome → AI có khóa → tìm miễn phí (DuckDuckGo)**.
+
+## Chọn chế độ tìm
+
+| Chế độ | Cần gì | Kết quả |
+|---|---|---|
+| **Gemini, khóa miễn phí** (khuyên dùng) | 1 khóa ở aistudio.google.com, không cần thẻ | Đủ: giá, ưu/nhược điểm, công nghệ, 4–5 hãng, kèm nguồn |
+| Claude | Khóa trả phí ở console.anthropic.com | Đủ như trên |
+| **Miễn phí không khóa** | Không cần gì | Hạn chế: không AI, hãng khác chỉ có giá + ảnh. Dùng DuckDuckGo nên **hay bị chặn**; khi đó **dán link sản phẩm** vào ô tìm để app đọc thẳng |
+
+Không nhập khóa thì app tự chạy chế độ miễn phí. Có khóa thì tự dùng AI.
+
+## Đưa lên online (Cloudflare Workers, gói Free)
+
+Cần tài khoản Cloudflare miễn phí (dash.cloudflare.com/sign-up) và Node.js 20+.
+
+**1. Lấy khóa Gemini miễn phí (khuyên dùng).** Vào aistudio.google.com → đăng nhập Google → *Get API key* → *Create API key*. Copy khóa (dạng `AIza...`).
+
+**2. Đăng nhập Cloudflare từ máy bạn.**
+
+```bash
+npm install
+```
+
+```bash
+npx wrangler login
+```
+
+Trình duyệt mở trang Cloudflare, bấm **Allow**.
+
+**3. Cất khóa trên máy chủ** (không bắt buộc: bỏ qua thì mỗi người tự nhập khóa ở ⚙ Cài đặt, lưu trên thiết bị họ).
+
+```bash
+npx wrangler secret put GEMINI_API_KEY
+```
+
+Dán khóa rồi Enter. Nên đặt thêm mã truy cập để người lạ không dùng hết hạn mức khóa của bạn:
+
+```bash
+npx wrangler secret put APP_CODE
+```
+
+**4. Đưa lên mạng.**
+
+```bash
+npm run deploy
+```
+
+Lệnh in địa chỉ dạng `https://mua-hang-thong-minh.<tên-bạn>.workers.dev`. Mở trên điện thoại:
+- **Android/Chrome**: menu ⋮ → *Cài đặt ứng dụng*.
+- **iPhone/Safari**: Chia sẻ → *Thêm vào MH chính*.
+
+Vào ⚙ **Cài đặt** nhập mã truy cập (nếu đã đặt) hoặc khóa của bạn. Cập nhật sau này: chạy lại `npm run deploy`.
+
+Dùng Claude thay Gemini: `npx wrangler secret put ANTHROPIC_API_KEY`. Đổi model bằng `CLAUDE_MODEL` / `GEMINI_MODEL` trong `wrangler.toml` (mặc định `claude-opus-5-5` / `gemini-2.5-flash`).
+
+**Gói Free**: giới hạn ~10 ms CPU mỗi lần gọi và hạn mức số lần gọi mỗi ngày (xem trang giá Cloudflare, có thể đổi). App giữ trang đọc ≤ 320 KB và mở từng trang một lần gọi để nằm trong giới hạn.
+
+## Dữ liệu và tự dọn
+
+Kết quả lưu trên thiết bị (IndexedDB). App **tự xóa mục cũ hơn N ngày** (mặc định 30, chỉnh ở Cài đặt), giữ tối đa 40 mục, và tự xóa bớt khi bộ nhớ đầy. **Gộp dữ liệu mới vào cache cũ:** mỗi lần tìm lại cùng sản phẩm, app (1) hiện dữ liệu đã lưu ngay, (2) dùng bộ từ khóa khác lần trước (4 cách hỏi Google AI, 3 bộ từ khóa DuckDuckGo) và báo cho AI những nguồn/ý đã có để tìm cái MỚI, (3) chỉ mở các trang chưa đọc (tối đa 5 trang mới mỗi lần), (4) gộp ưu/nhược điểm, giá, ảnh, hãng, công nghệ mới vào dữ liệu cũ, bỏ ý trùng, giữ nguyên mã nguồn cũ, giá quá 45 ngày bị bỏ khi đã có giá mới. Đã đủ 5 hãng so sánh thì không tìm thêm hãng. Tab **Nhật ký → Các lần tìm** ghi mỗi lần thêm được gì. Bị lỗi giữa chừng thì dữ liệu cũ vẫn nguyên. Ô “Khi đã có trong cache” chọn: tìm thêm (mặc định) / chỉ xem cache / làm lại từ đầu; nút **Tìm thêm dữ liệu mới** ngay trong kết quả.
 
 ## Giới hạn cần biết
 
-- Google có thể hiện trang xác minh hoặc báo 403 khi truy cập tự động. App báo rõ và **không vượt qua**; hãy tăng thời gian chờ, giảm số trang, hoặc mở google.com xác minh rồi thử lại.
-- Mỗi trang Google mở hết các link nên chạy lâu (vài phút); thời gian chờ càng lớn càng chậm nhưng càng ít bị chặn.
-- Câu trả lời tìm hiểu là câu trích nguyên văn từ bài viết bằng quy tắc từ khóa, không phải AI viết; hãy mở nguồn để kiểm tra. Giá chỉ để tham khảo vì trang có thể có nhiều phiên bản, khuyến mãi.
-- Dữ liệu và khóa chỉ lưu trong trình duyệt; ảnh album lưu thu nhỏ và không nằm trong file sao lưu.
+Xem **TODOAPP.md** (danh sách lỗi đã sửa và việc chưa kiểm chứng). Tóm tắt:
+- Chưa chạy thử với khóa Gemini/Claude thật.
+- Tìm miễn phí không khóa dễ bị DuckDuckGo chặn, nhất là từ máy chủ.
+- Web chặn máy chủ (403/CAPTCHA) hoặc vẽ giá bằng JavaScript (Shopee, TikTok): app bỏ qua và ghi log, không vượt CAPTCHA.
+- Giá chỉ để tham khảo; xác nhận báo giá chính thức trước khi mua.
 
-## Kiểm thử
+## Cấu trúc
 
-```bash
-node --test tests-js/core.test.mjs tests-js/flow.test.mjs tests-js/corpus.test.mjs tests-js/answers.test.mjs
-```
-
-Chạy thử giao diện như trang web thường (không có Google và crawl): `python tools/serve_docs.py` rồi mở http://localhost:8080.
-
----
-
-**Bản Python (Flask) dưới đây không còn được cập nhật, chỉ giữ để tham khảo.**
-
-# Bản Python (Flask)
-
-## Chạy trên máy
-
-Cách nhanh trên Windows: bấm đúp `run.bat` (tự cài thư viện, mở trình duyệt tại http://127.0.0.1:5000). Engine DuckDuckGo không cần khóa nên chạy được ngay.
-
-```bash
-pip install -r requirements.txt
-```
-
-```bash
-python app.py
-```
-
-Mở http://127.0.0.1:5000. Khóa API nhập ở tab **Cài đặt** (lưu trong `data/settings.json`, đã nằm trong `.gitignore`).
-
-Chạy test:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-## Đưa lên GitHub
-
-1. Tạo repository mới trên github.com (nên để **Private**).
-2. Trong thư mục dự án:
-
-```bash
-git init
-```
-
-```bash
-git add .
-```
-
-```bash
-git commit -m "Khởi tạo ứng dụng mua hàng tự động"
-```
-
-3. Liên kết và đẩy lên (thay đường dẫn bằng repository của bạn):
-
-```bash
-git remote add origin https://github.com/TEN_BAN/purchasing-app.git
-```
-
-```bash
-git push -u origin main
-```
-
-GitHub Actions (`.github/workflows/ci.yml`) tự chạy test mỗi lần push.
-
-Lưu ý bảo mật: `data/` và `jobs/` không được đưa lên. Khóa API chỉ lưu dạng văn bản trên máy chạy app. App chưa có đăng nhập, nên **không triển khai công khai lên internet** (GitHub Pages không chạy được Flask). Muốn dùng nhóm, hãy chạy trong mạng nội bộ hoặc thêm đăng nhập trước.
-
-## Đề xuất quy trình mua hàng hiệu quả hơn
-
-| Bước | Việc cần làm | App hỗ trợ |
-|---|---|---|
-| 1. Yêu cầu | Người dùng nêu nhu cầu, số lượng, mục đích | Form + question card xác nhận |
-| 2. Chuẩn hóa thông số | Chốt model, dung lượng, điện áp trước khi hỏi giá | Card thông số, đọc chữ trong ảnh |
-| 3. Tìm NCC | Tìm nhiều NCC, loại NCC không có VAT | Tìm theo engine, chấm điểm |
-| 4. Hỏi giá (RFQ) | Gửi cùng một mẫu yêu cầu cho 3 NCC trở lên | Khối Liên hệ NCC, nút sao chép email hỏi giá |
-| 5. So sánh | So sánh trên cùng điều kiện (VAT, bảo hành, giao hàng) | Bảng, biểu đồ tỷ lệ giá |
-| 6. Đàm phán | Chiết khấu số lượng, kéo dài bảo hành | Kịch bản đàm phán |
-| 7. Trình duyệt | Trình trưởng phòng kèm bảng so sánh | Luận điểm thuyết phục, gửi mail |
-| 8. Đặt hàng, nhận hàng | Hợp đồng/PO, kiểm tra hàng mẫu, nghiệm thu | Chưa làm |
-
-Đề xuất thêm (chưa làm, nên làm tiếp theo thứ tự này):
-1. **Lưu báo giá chính thức của NCC** thay cho giá lấy từ web, vì giá web thường là giá niêm yết hoặc giá phụ kiện.
-2. **Lịch sử giá theo NCC**: lưu mỗi lần tra giá để thấy xu hướng và dùng làm căn cứ đàm phán.
-3. **Danh sách NCC đã duyệt**: đánh dấu NCC tin cậy, đã mua, điểm đánh giá sau giao hàng.
-4. **Mua thử 1-2 sản phẩm mẫu** trước đơn lớn, ghi kết quả kiểm tra vào hồ sơ.
-5. **Quy trình duyệt nhiều cấp** (trưởng phòng, giám đốc) với trạng thái và nhắc việc.
-6. **Theo dõi đơn hàng**: ngày giao dự kiến, thanh toán, bảo hành.
+| Thư mục | Nội dung |
+|---|---|
+| `web/` | Giao diện PWA (`index.html`, `style.css`, `sw.js`, `manifest.webmanifest`, `js/`) |
+| `web/js/lib/` | Logic dùng chung: từ khóa, tổng hợp, chọn tối ưu, cache, pipeline |
+| `worker/` | Backend: AI (Claude/Gemini), đọc trang an toàn (chặn SSRF), trích xuất, API |
+| `store/` | Hướng dẫn đăng Chrome Web Store, nội dung listing |
+| `extension/` | Tiện ích Chrome “cầu nối Google” (Chế độ AI, đọc trang bằng IP của bạn) |
+| `dev/` | Máy chủ chạy thử bằng Node + dữ liệu mẫu |
+| `tests/` | Test (`npm test`) |
+| `TODOAPP.md` | Nhật ký lỗi đã sửa, việc còn lại |
+| `docs/`, `purchasing/`, `app.py`, `templates/` | Bản cũ (tiện ích Chrome, Flask). Không còn dùng, có thể xóa. Hướng dẫn cũ: `README-legacy.md` |

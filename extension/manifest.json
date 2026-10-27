@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Mua hàng thông minh — cầu nối Google Chrome",
+  "short_name": "Cầu nối Google",
+  "version": "1.1.0",
+  "description": "Cho ứng dụng Mua hàng thông minh dùng Google (gồm Chế độ AI) trong Chrome của bạn và đọc trang bằng IP của bạn, có giới hạn tốc độ để tránh lỗi 403 và spam.",
+  "minimum_chrome_version": "110",
+  "permissions": ["tabs", "scripting", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:8787/*", "http://127.0.0.1:8787/*", "https://*.workers.dev/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "Mua hàng thông minh — cầu nối Google",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icon-48.png", "48": "icon-48.png", "128": "icon-128.png" }
+  },
+  "icons": { "48": "icon-48.png", "128": "icon-128.png" }
+}

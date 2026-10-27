@@ -1,0 +1,7 @@
+# Sao chép thành .dev.vars (không đưa lên GitHub) rồi điền khóa để chạy thử với AI thật.
+# Không có khóa => ứng dụng chạy chế độ MẪU với dữ liệu hư cấu.
+ANTHROPIC_API_KEY=
+GEMINI_API_KEY=
+# APP_CODE=mat-khau-truy-cap
+# CLAUDE_MODEL=claude-opus-5-5
+# GEMINI_MODEL=gemini-2.5-flash

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8">
+<style>
+  body { width: 320px; margin: 0; padding: 12px; font: 13px/1.45 system-ui, sans-serif; color: #171b2e; }
+  h1 { font-size: 14px; margin: 0 0 6px; } .muted { color: #5d6580; font-size: 12px; }
+  button { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid #c9cfe6; background: #eef1f8; cursor: pointer; margin: 4px 4px 0 0; }
+  button.primary { background: #2b4ccf; color: #fff; border-color: transparent; }
+  ul { margin: 4px 0; padding-left: 18px; } .warn { color: #8a5a00; }
+</style></head>
+<body>
+  <h1>Cầu nối Google Chrome</h1>
+  <div id="state" class="muted">Đang đọc…</div>
+  <div id="origin" class="muted"></div>
+  <div><button id="allow" class="primary" hidden>Cho phép trang này</button><button id="clear" hidden>Xóa chặn</button><button id="check">Kiểm tra cập nhật</button></div>
+  <p class="muted">Tiện ích chỉ làm việc khi ứng dụng yêu cầu: mở Google (kể cả Chế độ AI) trong tab nền, tải trang web theo từng tên miền, giãn cách vài giây, tự ngừng khi bị chặn. Không giải CAPTCHA, không đọc cookie, không đọc trang bạn đang xem.</p>
+  <script src="popup.js"></script>
+</body></html>

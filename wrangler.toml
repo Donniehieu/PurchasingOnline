@@ -1,0 +1,19 @@
+name = "mua-hang-thong-minh"
+main = "worker/index.js"
+compatibility_date = "2025-10-01"
+
+# Giao diện (PWA) nằm trong web/, Worker chỉ xử lý /api/*
+[assets]
+directory = "./web"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[vars]
+# Đổi model nếu muốn (mặc định claude-opus-5-5 / gemini-2.5-flash):
+# CLAUDE_MODEL = "claude-sonnet-5-5"
+# GEMINI_MODEL = "gemini-2.5-flash"
+
+# Khóa và mã truy cập KHÔNG ghi ở đây. Đặt bằng lệnh:
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put APP_CODE

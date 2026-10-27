@@ -1,0 +1,328 @@
+// Điều phối một lần tìm hiểu: AI tìm trước -> lưu cache -> mở các trang nguồn -> tổng hợp.
+// Mỗi bước phát sự kiện ngay (emit) để giao diện hiện kết quả đến đâu làm đến đó.
+import { makePlan, cacheKey } from "./plan.js";
+import { newEntry, ingestProduct, ingestCompare, ingestPage, ingestListing, ingestAltInsight, dropStalePrices, logEvent } from "./entry.js";
+import { domainOf, normUrl, clip } from "./text.js";
+import { summarize } from "./aggregate.js";
+import { addSource } from "./entry.js";
+const URL_RE = /https?:\/\/[^\s<>"']+/gi;
+import { answerFromCache, contextForAI } from "./answer.js";
+
+export const CACHE_DAYS = 14;
+const SKIP_HOSTS = /(^|\.)(google\.[a-z.]+|bing\.com|facebook\.com|youtube\.com|youtu\.be|tiktok\.com|instagram\.com|twitter\.com|x\.com|pinterest\.[a-z]+|reddit\.com|zalo\.me|t\.me|wikipedia\.org)$/i;
+
+export const STEPS = [
+  { id: "plan", label: "Chọn từ khóa" },
+  { id: "product", label: "AI tìm sản phẩm" },
+  { id: "compare", label: "So sánh hãng khác" },
+  { id: "pages", label: "Mở trang nguồn" },
+  { id: "done", label: "Tổng hợp" },
+];
+
+const aborted = (signal) => { if (signal?.aborted) throw new DOMException("Đã dừng", "AbortError"); };
+
+/** Chọn các trang đáng mở: trang AI trích dẫn cho sản phẩm chính trước, rồi trang của đối thủ. */
+export function pickPages(entry, limit = 10, perHostCap = 2) {
+  const bySrc = new Map(entry.sources.map((s) => [s.id, s]));
+  const used = (ids) => ids.map((i) => bySrc.get(i)).filter(Boolean);
+  const mainCited = new Map(); // srcId -> số lần được trích
+  for (const c of [...entry.prices, ...entry.pros, ...entry.cons, ...entry.tech]) if (c.srcId) mainCited.set(c.srcId, (mainCited.get(c.srcId) ?? 0) + 1);
+  const out = [];
+  const seen = new Set(entry.pages.map((p) => normUrl(p.url))); // trang đã mở thì không mở lại
+  const perHost = new Map(); // tối đa 2 trang mỗi tên miền để không dồn yêu cầu vào một nơi
+  const push = (s, alt = null) => {
+    if (!s || seen.has(s.key) || SKIP_HOSTS.test(domainOf(s.url)) || /\.(pdf|jpe?g|png|webp|mp4)(\?|$)/i.test(s.url)) return;
+    const h = domainOf(s.url);
+    if ((perHost.get(h) ?? 0) >= perHostCap) return;
+    perHost.set(h, (perHost.get(h) ?? 0) + 1);
+    seen.add(s.key);
+    out.push({ url: s.url, srcId: s.id, alt });
+  };
+  for (const u of entry.seeds ?? []) push(entry.sources.find((s) => s.url === u));
+  const mainIds = [...mainCited.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  const altCap = entry.alternatives.length ? Math.min(entry.alternatives.length, 4) : 0;
+  const mainCap = Math.max(1, limit - altCap);
+  for (const id of mainIds) { if (out.length >= mainCap) break; push(bySrc.get(id)); }
+  // chỗ trống thì lấy trang từ kết quả tìm kiếm của AI chưa được trích
+  const altSrc = new Set(entry.alternatives.flatMap((a) => a.srcIds));
+  for (const s of entry.sources) { if (out.length >= mainCap) break; if (!altSrc.has(s.id)) push(s); }
+  for (const a of entry.alternatives) {
+    if (out.length >= limit) break;
+    const ids = [a.priceSrcId, ...a.srcIds].filter(Boolean);
+    const s = used(ids).find((x) => !seen.has(x.key) && !SKIP_HOSTS.test(domainOf(x.url)));
+    if (s) push(s, a);
+  }
+  return out.slice(0, limit);
+}
+
+/** Đủ dữ liệu để kết luận: không cần mở thêm trang cho sản phẩm chính (giảm số yêu cầu). */
+export function enough(entry) {
+  const readOk = entry.pages.filter((x) => x.ok).length;
+  return readOk >= 4 && entry.prices.length >= 4 && entry.pros.length >= 4 && entry.cons.length >= 3 && entry.images.length >= 3;
+}
+
+async function pool(items, size, fn, signal) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(size, items.length) }, async () => {
+    while (i < items.length) {
+      aborted(signal);
+      const idx = i++;
+      await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+}
+
+/**
+ * input: { text, model?, brand?, category?, ocrText? }
+ * opts: { api, store, emit, signal, force, pageLimit, concurrency }
+ * Trả về entry (cũng đã lưu vào store).
+ */
+export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 8, enrichPageLimit = 5, concurrency = 3, perHostCap = 2, freeGapMs = 4000 }) {
+  const step = (id, status, text = "") => emit({ type: "step", id, status, text });
+  const publish = (entry) => emit({ type: "entry", entry });
+  if (force) mode = "fresh";
+
+  step("plan", "running");
+  // Link dán vào ô nhập: đọc thẳng trang đó (không cần công cụ tìm kiếm), lấy tên sản phẩm từ trang
+  const seeds = [...new Set(String(input.text ?? "").match(URL_RE) ?? [])].slice(0, 3);
+  if (seeds.length) {
+    const rest = String(input.text).replace(URL_RE, " ").replace(/\s+/g, " ").trim();
+    let name = rest;
+    if (!name) {
+      step("plan", "running", "đọc link bạn dán…");
+      const first = await api.page(seeds[0], {}, signal);
+      if (!first.ok) throw new Error(`Không mở được link (${first.error}). Hãy gõ tên hoặc mã sản phẩm thay vì dán link.`);
+      name = first.product?.name || first.h1 || first.title;
+    }
+    input = { ...input, text: name };
+  }
+  const plan = makePlan(input);
+  if (!plan.query) throw new Error("Chưa nhập tên sản phẩm hoặc ảnh.");
+  const key = cacheKey(plan);
+
+  // 1) Cache: mặc định VẪN tìm thêm trang MỚI rồi gộp vào dữ liệu cũ (dữ liệu cũ đôi khi chưa đủ).
+  //    mode "cache": chỉ xem lại, không tìm. mode "fresh": làm lại từ đầu, bỏ dữ liệu cũ.
+  const old = mode === "fresh" ? null : await store.get(key);
+  if (old && mode === "cache") {
+    step("plan", "done", "Chỉ dùng cache (không tìm thêm)");
+    for (const s of STEPS.slice(1)) step(s.id, "skip", "không tìm thêm");
+    logEvent(old, "cache", "Mở lại từ cache, không tìm mới");
+    old.fromCache = true; // chỉ để hiển thị, không lưu
+    publish(old);
+    return old;
+  }
+
+  const enriching = !!old;
+  const entry = old ?? newEntry(plan, key);
+  entry.runs ??= [];
+  const before = enriching ? counts(entry) : counts(null);
+  if (enriching) {
+    entry.status = "running";
+    dropStalePrices(entry);
+    plan.variant = entry.runs.length;          // đổi cách đặt từ khóa mỗi lần để ra nguồn khác
+    plan.known = knownOf(entry);               // nguồn/ý đã có: tìm cái MỚI, không lặp lại
+    entry.seeds = [...new Set([...(entry.seeds ?? []), ...seeds])];
+    for (const u of seeds) addSource(entry, u, "", "user");
+    logEvent(entry, "plan", `Lần tìm thứ ${entry.runs.length + 1}: bổ sung vào dữ liệu đã lưu (${plan.known.urls.length} nguồn đã đọc sẽ không mở lại)`);
+    step("plan", "done", `Dùng dữ liệu đã lưu · tìm bổ sung lần ${entry.runs.length + 1}`);
+  } else {
+    entry.seeds = seeds;
+    for (const u of seeds) addSource(entry, u, "", "user");
+    logEvent(entry, "plan", `Từ khóa: ${plan.queries.slice(0, 4).join(" | ")}`);
+    step("plan", "done", `${plan.model ? "Model " + plan.model + " · " : ""}${plan.queries.length} từ khóa`);
+  }
+  publish(entry); // hiện dữ liệu cũ ngay, phần mới bổ sung dần
+
+  const save = () => store.save(entry).catch(() => {});
+  const finishRun = () => {
+    const after = counts(entry);
+    const added = Object.fromEntries(Object.keys(after).map((k) => [k, after[k] - before[k]]));
+    entry.runs.push({ ts: Date.now(), n: entry.runs.length + 1, added, via: entry.ai?.model || "" });
+    const parts = Object.entries(added).filter(([, v]) => v > 0).map(([k, v]) => `+${v} ${RUN_LABEL[k]}`);
+    logEvent(entry, "plan", `Lần tìm thứ ${entry.runs.length}: ${parts.join(", ") || "không có dữ liệu mới"}`);
+  };
+  try {
+    // 2) AI tìm thông tin sản phẩm
+    aborted(signal);
+    step("product", "running", "AI đang tìm trên web…");
+    let res;
+    try {
+      res = await api.search("product", plan, null, signal);
+    } catch (e) {
+      if (e.name === "AbortError" || e.status === 401 || !(e.extra?.free && (seeds.length || true))) throw e;
+      // chế độ miễn phí bị công cụ tìm kiếm chặn: ghi lại và đi tiếp với link đã có (nếu có)
+      logEvent(entry, "error", e.message);
+      res = { data: {}, sources: [], queries: [], provider: "free", model: "duckduckgo", free: true, ms: 0, searchFailed: true };
+    }
+    entry.ai = { provider: res.provider, model: res.model, mock: !!res.mock, free: !!res.free, chrome: !!res.chrome };
+    if (res.fallbackFrom) logEvent(entry, "error", res.fallbackFrom + " — chuyển sang nguồn dự phòng");
+    ingestProduct(entry, res);
+    if (res.chrome) {
+      logEvent(entry, "ai", `Google ${res.organic ? "(kết quả thường)" : "Chế độ AI"} trong Chrome của bạn: ${entry.prices.length} giá, ${entry.pros.length} ưu điểm, ${entry.cons.length} nhược điểm, đã mở ${res.resolved ?? 0} nguồn trích dẫn${res.cached ? " (từ cache Google 24 giờ)" : ""}`);
+      if (res.queries?.length) logEvent(entry, "ai", `Từ khóa đã tìm: ${res.queries.join(" | ")}`);
+    } else if (res.free) {
+      logEvent(entry, "ai", `Tìm miễn phí (${res.model}): ${res.sources.length} kết quả, ${entry.prices.length} giá đọc từ đoạn trích, trong ${(res.ms / 1000).toFixed(1)}s`);
+      if (res.errors?.length) logEvent(entry, "error", "Một số công cụ tìm lỗi: " + res.errors.join("; "));
+      if (res.queries?.length) logEvent(entry, "ai", `Từ khóa đã tìm: ${res.queries.join(" | ")}`);
+    } else {
+      logEvent(entry, "ai", `AI (${res.provider}) trả về ${entry.prices.length} giá, ${entry.pros.length} ưu điểm, ${entry.cons.length} nhược điểm trong ${(res.ms / 1000).toFixed(1)}s`);
+      if (res.queries?.length) logEvent(entry, "ai", `Từ khóa AI đã tìm: ${res.queries.join(" | ")}`);
+    }
+
+    // Thiếu giá: thử lại một lần với từ khóa chuẩn hóa theo hãng + model mà AI vừa xác định
+    if (!entry.prices.length && !res.mock && !res.free && !res.chrome && (entry.product.model || entry.product.name)) {
+      step("product", "running", "Chưa có giá, thử lại với từ khóa chính xác hơn…");
+      const plan2 = makePlan({ text: [entry.product.brand, entry.product.name].filter(Boolean).join(" "), model: entry.product.model, brand: entry.product.brand, category: entry.category });
+      plan2.queries.unshift(`${entry.product.brand ?? ""} ${entry.product.model ?? ""} giá bán chính hãng`.trim());
+      try {
+        const r2 = await api.search("product", plan2, null, signal);
+        ingestProduct(entry, r2);
+        logEvent(entry, "ai", `Tìm lại: thêm ${r2.data?.prices?.length ?? 0} giá`);
+      } catch (e) { if (e.name === "AbortError") throw e; logEvent(entry, "error", "Tìm lại giá thất bại: " + e.message); }
+    }
+    step("product", "done", `${entry.prices.length} giá · ${entry.pros.length}/${entry.cons.length} ưu/nhược`);
+    publish(entry);
+    await save();
+
+    // 3) So sánh 4–5 hãng khác
+    aborted(signal);
+    // Chrome + Chế độ AI: hỏi ưu/nhược điểm từng hãng còn thiếu (tối đa 3, dừng khi Google nhắc giới hạn)
+    const runInsights = async (planC) => {
+      if (!api.insight) return;
+      const todo = entry.alternatives.filter((a) => !a.pros.length && !a.cons.length).slice(0, 3);
+      let k = 0;
+      for (const alt of todo) {
+        aborted(signal);
+        step("compare", "running", `hỏi Google AI về hãng khác ${++k}/${todo.length}`);
+        const ins = await api.insight(planC, alt, signal).catch((e) => { if (e.name === "AbortError") throw e; return { ok: false, error: e.message }; });
+        if (!ins) break;
+        if (!ins.ok) { logEvent(entry, "error", `Google AI (${alt.brand}): ${ins.error}`); if (ins.blocked || ins.rate) break; continue; }
+        ingestAltInsight(entry, alt, ins);
+        publish(entry);
+      }
+    };
+    const planC = { ...plan, category: entry.category, model: entry.product.model || plan.model, brand: entry.product.brand || plan.brand, name: entry.product.name || plan.name };
+    if (enriching && entry.alternatives.length >= 5) {
+      // đã đủ 5 hãng: không tìm thêm hãng, chỉ bổ sung ưu/nhược điểm cho hãng còn thiếu
+      logEvent(entry, "plan", "Đã đủ 5 hãng so sánh, không tìm thêm hãng");
+      try { await runInsights(planC); } catch (e) { if (e.name === "AbortError") throw e; logEvent(entry, "error", "Bổ sung hãng thất bại: " + e.message); }
+      step("compare", "done", `${entry.alternatives.length} hãng (đã đủ)`);
+      publish(entry);
+      await save();
+    } else {
+    step("compare", "running", "AI đang tìm sản phẩm của hãng khác…");
+    // công cụ tìm miễn phí (DuckDuckGo) chặn khi gửi dồn: nghỉ vài giây giữa hai lượt tìm
+    if (entry.ai?.free && freeGapMs) await new Promise((r) => setTimeout(r, freeGapMs));
+    aborted(signal);
+    try {
+      const rc = await api.search("compare", planC, entry.product, signal);
+      if (rc.discover) {
+        // Không có AI: mở vài trang bán hàng cùng loại, lấy các hãng khác từ dữ liệu sản phẩm trên trang
+        const urls = rc.sources.filter((s) => !SKIP_HOSTS.test(domainOf(s.url))).slice(0, 5);
+        for (const q of rc.queries ?? []) if (!entry.queries.includes(q)) entry.queries.push(q);
+        let n = 0;
+        step("compare", "running", `mở trang bán hàng 0/${urls.length}`);
+        await pool(urls, concurrency, async (s) => {
+          let page;
+          try { page = await api.page(s.url, { model: "", name: planC.generic || planC.name, brand: "" }, signal); }
+          catch (e) { if (e.name === "AbortError" || e.status === 401) throw e; page = { ok: false, url: s.url, error: e.message }; }
+          ingestListing(entry, page);
+          step("compare", "running", `mở trang bán hàng ${++n}/${urls.length} · ${entry.alternatives.length} hãng`);
+          publish(entry);
+        }, signal);
+        logEvent(entry, "plan", `So sánh theo trang bán hàng: ${entry.alternatives.map((a) => a.brand).join(", ") || "chưa tìm được hãng khác"}`);
+        await runInsights(planC);
+      } else {
+        ingestCompare(entry, rc);
+        logEvent(entry, "ai", `So sánh: ${entry.alternatives.map((a) => a.brand).join(", ") || "không có"}`);
+      }
+      step("compare", "done", `${entry.alternatives.length} hãng`);
+    } catch (e) {
+      if (e.name === "AbortError" || e.status === 401) throw e;
+      logEvent(entry, "error", "Bước so sánh thất bại: " + e.message);
+      step("compare", "error", e.message);
+    }
+    publish(entry);
+    await save();
+    }
+
+    // 4) Mở từng trang nguồn MỚI: lấy giá thật, ảnh, ưu/nhược điểm và ghi log từng trang (trang đã đọc không mở lại)
+    const picks = pickPages(entry, enriching ? enrichPageLimit : pageLimit, perHostCap);
+    if (!picks.length) step("pages", "skip", "không có trang để mở");
+    else {
+      let done = 0, skippedEnough = 0;
+      step("pages", "running", `0/${picks.length}`);
+      await pool(picks, concurrency, async (p) => {
+        const hint = p.alt
+          ? { model: p.alt.model, name: p.alt.name, brand: p.alt.brand }
+          : { model: entry.product.model || plan.model, name: entry.product.name || plan.name, brand: entry.product.brand || plan.brand };
+        if (!p.alt && !enriching && enough(entry)) {
+          if (!skippedEnough++) logEvent(entry, "plan", "Đã đủ dữ liệu, không mở thêm trang cho sản phẩm chính (tránh gửi yêu cầu thừa)");
+          step("pages", "running", `${++done}/${picks.length} · đủ dữ liệu`);
+          return;
+        }
+        let page;
+        try { page = await api.page(p.url, hint, signal); }
+        catch (e) { if (e.name === "AbortError" || e.status === 401) throw e; page = { ok: false, url: p.url, error: e.message }; }
+        ingestPage(entry, page, { alt: p.alt, forLabel: p.alt ? p.alt.brand : "" });
+        step("pages", "running", `${++done}/${picks.length} · ${domainOf(p.url)}`);
+        publish(entry);
+      }, signal);
+      const ok = entry.pages.filter((x) => x.ok).length;
+      step("pages", "done", `${ok}/${picks.length} trang đọc được`);
+    }
+
+    if (!enriching && !entry.prices.length && !entry.pros.length && !entry.cons.length && !entry.pages.some((x) => x.ok)) {
+      throw new Error("Chưa thu được dữ liệu nào. Công cụ tìm kiếm miễn phí có thể đang chặn: hãy dán link trang sản phẩm vào ô tìm, hoặc nhập khóa Gemini miễn phí ở Cài đặt rồi thử lại.");
+    }
+    finishRun();
+    entry.status = "done";
+    step("done", "done", enriching ? entry.log[entry.log.length - 1].msg : "");
+    publish(entry);
+    await save();
+    return entry;
+  } catch (e) {
+    const aborted_ = e.name === "AbortError";
+    // đang bổ sung: dữ liệu cũ vẫn nguyên vẹn và dùng được, chỉ ghi nhận lần tìm này lỗi/dừng
+    entry.status = enriching ? "done" : aborted_ ? "partial" : "error";
+    logEvent(entry, aborted_ ? "plan" : "error", aborted_ ? "Đã dừng, giữ phần dữ liệu thu được" : e.message);
+    if (enriching) finishRun();
+    if (enriching || entry.prices.length || entry.pros.length || entry.pages.length) await save();
+    publish(entry);
+    throw e;
+  }
+}
+
+const RUN_LABEL = { pages: "trang", prices: "giá", pros: "ưu điểm", cons: "nhược điểm", tech: "công nghệ", images: "ảnh", alts: "hãng" };
+
+/** Số liệu của một entry (dùng để tính lần tìm này đã thêm được gì). */
+function counts(entry) {
+  if (!entry) return { pages: 0, prices: 0, pros: 0, cons: 0, tech: 0, images: 0, alts: 0 };
+  const s = summarize(entry);
+  return { pages: entry.pages.filter((p) => p.ok).length, prices: entry.prices.length, pros: s.pros.length, cons: s.cons.length, tech: s.tech.length, images: entry.images.length, alts: entry.alternatives.length };
+}
+
+/** Những gì đã biết, gửi kèm để tìm nguồn/ý MỚI thay vì lặp lại. */
+export function knownOf(entry) {
+  const s = summarize(entry);
+  const urls = [...entry.pages.map((p) => p.url), ...entry.sources.map((x) => x.url)];
+  return {
+    urls: [...new Set(urls)].slice(0, 25),
+    pros: s.pros.slice(0, 8).map((x) => clip(x.text, 90)),
+    cons: s.cons.slice(0, 8).map((x) => clip(x.text, 90)),
+    brands: entry.alternatives.map((a) => a.brand).filter(Boolean),
+  };
+}
+
+/** Trả lời câu hỏi: ưu tiên dữ liệu cache (không tốn lượt tìm), chỉ hỏi AI khi câu hỏi tự do. */
+export async function ask(entry, question, { api, signal } = {}) {
+  const local = answerFromCache(entry, question);
+  if (local) return { ...local, via: "cache" };
+  if (!api) return { text: "Câu hỏi này chưa có trong dữ liệu đã lưu.", srcIds: [], via: "cache" };
+  const r = await api.ask(question, contextForAI(entry), signal);
+  const ids = [...r.answer.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])).filter((id) => entry.sources.some((s) => s.id === id));
+  return { text: r.answer, srcIds: [...new Set(ids)], via: "ai", mock: r.mock };
+}
+
+export { normUrl };

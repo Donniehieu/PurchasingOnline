@@ -1,0 +1,19 @@
+{
+  "name": "Mua hàng thông minh",
+  "short_name": "Mua hàng",
+  "description": "AI tìm kiếm, tư vấn và so sánh sản phẩm: giá, ưu nhược điểm, công nghệ, kèm nguồn.",
+  "lang": "vi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f6fb",
+  "theme_color": "#2b4ccf",
+  "categories": ["shopping", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

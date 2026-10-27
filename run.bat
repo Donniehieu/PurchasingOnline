@@ -1,7 +1,7 @@
 @echo off
-rem Chay ung dung Mua hang tu dong (http://127.0.0.1:5000)
+rem Chay thu ung dung tren may (can Node.js 20+, khong can Python): http://localhost:8787
 cd /d "%~dp0"
-python -m pip install -q -r requirements.txt
-start "" http://127.0.0.1:5000
-python -X utf8 app.py
+if not exist node_modules call npm install
+start "" http://localhost:8787
+node dev\server.mjs
 pause

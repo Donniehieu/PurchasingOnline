@@ -6,3 +6,8 @@ __pycache__/
 .venv/
 .env
 ~$*.xlsx
+node_modules/
+.dev.vars
+.wrangler/
+web/ext/
+dist/
