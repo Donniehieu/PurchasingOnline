@@ -8,6 +8,11 @@ directory = "./web"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
+# Gemini/OpenAI chặn một số vùng ("User location is not supported"). Worker chạy ở trung tâm dữ liệu gần người dùng nên có thể rơi vào vùng bị chặn:
+# ghim vị trí chạy về vùng được hỗ trợ (Mỹ). Chỉ ảnh hưởng nơi Worker chạy, trang web vẫn tải từ gần bạn.
+[placement]
+region = "aws:us-east-1"
+
 [vars]
 # Đổi model nếu muốn (mặc định claude-opus-5-5 / gemini-3-flash-preview):
 # CLAUDE_MODEL = "claude-sonnet-5-5"

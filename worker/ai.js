@@ -200,6 +200,7 @@ async function geminiCall({ key, model, system, user, search, images, fetchImpl 
   if (!res.ok) {
     const msg = j?.error?.message || `HTTP ${res.status}`;
     if (res.status === 400 && /API key/i.test(msg)) throw new AIError("Khóa Gemini không hợp lệ.", 401);
+    if (/location is not supported/i.test(msg)) throw new AIError("Gemini không hỗ trợ vùng đặt máy chủ hiện tại (User location is not supported).", 403);
     if (res.status === 403 || res.status === 401) throw new AIError("Khóa Gemini không có quyền: " + msg.slice(0, 160), 403);
     if (res.status === 404) throw new AIError(`Không tìm thấy model Gemini dùng được (${model}${notFound ? "; " + notFound : ""}).`, 502);
     if (res.status === 429) throw new AIError("Đã vượt hạn mức Gemini, thử lại sau.", 429);

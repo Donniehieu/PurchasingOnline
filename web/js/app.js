@@ -14,6 +14,7 @@ import { analyzeInput, preCards, composeQuery, learnFromCache } from "./lib/inte
 import { makePlan, cacheKey } from "./lib/plan.js";
 import { adviseProducts } from "./lib/advisor.js";
 import { featuresFromRGBA } from "./lib/imagesim.js";
+import { ocrLocal } from "./lib/localocr.js";
 import { cfgFromSettings, normalizeCfg, PRESETS, matchPreset, keyHint } from "./lib/config.js";
 import { renderBanner, renderHeadline, renderVerdict, renderSummary, renderCompare, renderImages, renderTech, renderLog, renderSources, renderHistoryItem, renderSuppliers, chip } from "./render.js";
 
@@ -456,8 +457,19 @@ async function readImage(f) {
   $("ocrNote").textContent = "Đang đọc ảnh…";
   featuresOfBlob(f).then((x) => { refFeatures = x; }).catch(() => { refFeatures = null; });
   try {
-    const image = await shrink(f);
-    const r = await api.ocr(image);
+    let r, local = "";
+    try {
+      const image = await shrink(f);
+      r = await api.ocr(image);
+    } catch (e) {
+      // Dịch vụ AI không đọc được ảnh (hết hạn mức, bị chặn vùng, chưa có khóa): đọc ngay trên máy bằng Tesseract
+      $("ocrNote").textContent = "AI không đọc được ảnh, đang đọc trên máy bạn (lần đầu cần tải dữ liệu tiếng Việt)…";
+      try {
+        const o = await ocrLocal(f, (st, p) => { $("ocrNote").textContent = `Đọc ảnh trên máy: ${st} ${Math.round(p * 100)}%`; });
+        r = { ocr: o };
+        local = ` (đọc trên máy vì AI lỗi: ${friendly(e)})`;
+      } catch { throw e; }
+    }
     const o = r.ocr ?? {};
     if (o.unreadable) { $("ocrNote").textContent = "Ảnh khó đọc: " + clip(o.text || "chụp rõ hơn, gần nhãn/mã model", 80); return; }
     const text = [o.brand, o.name].filter(Boolean).join(" ").trim() || (o.keywords ?? [])[0] || "";
@@ -465,7 +477,7 @@ async function readImage(f) {
     $("q").value = withModel.trim();
     $("q").dispatchEvent(new Event("input"));
     ocrCtx = (o.specs ?? []).slice(0, 4).join(" ");
-    $("ocrNote").textContent = "Đã đọc từ ảnh — kiểm tra rồi bấm Tìm hiểu" + (r.mock ? " (mẫu)" : "");
+    $("ocrNote").textContent = "Đã đọc từ ảnh — kiểm tra rồi bấm Tìm hiểu" + (r.mock ? " (mẫu)" : "") + local;
   } catch (e) {
     $("ocrNote").textContent = "Không đọc được ảnh: " + friendly(e);
   }

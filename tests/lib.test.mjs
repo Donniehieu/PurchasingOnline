@@ -159,3 +159,12 @@ test("từ khóa tìm: giữ nguyên chuỗi người dùng gõ (không cắt t�
   assert.equal(extractModel("Máy lạnh Daikin FTKF25XVMV R32 2.5HP"), "FTKF25XVMV");
   assert.equal(exactQuery("  a   b " + String.fromCharCode(10) + " c "), "a b c");
 });
+
+test("parseOcrText: lấy tên dòng dài nhất, mã model, thông số; bỏ dòng rác", async () => {
+  const { parseOcrText } = await import("../web/js/lib/localocr.js");
+  const r = parseOcrText("~~ |||\nMỏ lết Hybrid Lobster\nModel: UM30XG\nDài 200mm\n@#$ %%^ &&");
+  assert.equal(r.model, "UM30XG");
+  assert.match(r.name, /Mỏ lết Hybrid Lobster/);
+  assert.ok(r.specs.some((s) => /200mm/.test(s)));
+  assert.equal(parseOcrText("### ~~~ |||").unreadable, true);
+});
