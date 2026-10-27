@@ -54,6 +54,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
           Ảnh
         </button>
+        <button type="button" id="btnCamera" class="btn ghost" title="Chụp ảnh sản phẩm bằng camera">Chụp ảnh</button>
         <button type="button" id="btnPaste" class="btn ghost" title="Dán ảnh đang sao chép (hoặc bấm Ctrl+V trong trang)">Dán ảnh</button>
         <label class="sr-only" for="cat">Loại hàng</label>
         <select id="cat" class="btn ghost">
@@ -88,6 +89,7 @@
           </select></label>
       </div>
       <input type="file" id="file" accept="image/*" hidden>
+      <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
     </form>
   </section>
 
@@ -216,6 +218,14 @@
       <button value="ok" class="btn primary" id="btnSave">Lưu</button>
     </div>
   </form>
+</dialog>
+<dialog id="camDlg" class="camdlg">
+  <div class="settings">
+    <h2>Chụp ảnh sản phẩm</h2>
+    <video id="camVideo" playsinline autoplay muted></video>
+    <p class="muted small" id="camNote" style="margin:0">Hướng camera vào nhãn hoặc mã model rồi bấm Chụp.</p>
+    <div class="row end"><button type="button" id="camClose" class="btn ghost">Đóng</button><button type="button" id="camShot" class="btn primary">Chụp</button></div>
+  </div>
 </dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script type="module" src="js/app.js"></script>

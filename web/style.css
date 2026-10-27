@@ -200,6 +200,8 @@ details > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .precards { border: 2px solid color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .pc-preview { margin: 12px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--accent-soft); font-size: .9rem; overflow-wrap: anywhere; }
 .pc-other { width: 100%; font: inherit; font-size: 14px; padding: 7px 11px; border: 1px dashed var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
+.camdlg { width: min(560px, calc(100% - 24px)); }
+#camVideo { width: 100%; max-height: 60vh; border-radius: 14px; background: #000; object-fit: contain; }
 .chat { display: grid; gap: 10px; margin: 10px 0; }
 .msg { padding: 11px 14px; border-radius: 16px; max-width: 92%; white-space: pre-wrap; }
 .msg.q { justify-self: end; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); }

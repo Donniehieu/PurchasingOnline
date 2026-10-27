@@ -463,6 +463,32 @@ function clearImage() {
   ocrCtx = "";
 }
 $("pasteClear").addEventListener("click", clearImage);
+
+// ---------- chụp ảnh trực tiếp ----------
+// Điện thoại: mở thẳng camera sau (capture). Máy tính: hộp thoại xem trước camera rồi chụp.
+let camStream = null;
+function stopCam() { camStream?.getTracks().forEach((t) => t.stop()); camStream = null; $("camVideo").srcObject = null; }
+$("fileCam").addEventListener("change", () => { const f = $("fileCam").files?.[0]; $("fileCam").value = ""; if (f) readImage(f); });
+$("btnCamera").addEventListener("click", async () => {
+  if (window.matchMedia("(pointer: coarse)").matches) { $("fileCam").click(); return; }
+  if (!navigator.mediaDevices?.getUserMedia) { toast("Trình duyệt không cho dùng camera: hãy chọn ảnh từ máy (nút Ảnh)"); return; }
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } }, audio: false });
+    $("camVideo").srcObject = camStream;
+    $("camNote").textContent = "Hướng camera vào nhãn hoặc mã model rồi bấm Chụp.";
+    $("camDlg").showModal();
+  } catch { toast("Không mở được camera (chưa cho phép hoặc không có camera). Dùng nút Ảnh hoặc Dán ảnh."); }
+});
+$("camShot").addEventListener("click", () => {
+  const v = $("camVideo");
+  if (!v.videoWidth) { $("camNote").textContent = "Camera chưa sẵn sàng, thử lại sau một giây."; return; }
+  const c = document.createElement("canvas");
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext("2d").drawImage(v, 0, 0);
+  c.toBlob((b) => { if (b) readImage(new File([b], "chup.jpg", { type: "image/jpeg" })); $("camDlg").close(); }, "image/jpeg", 0.9);
+});
+$("camClose").addEventListener("click", () => $("camDlg").close());
+$("camDlg").addEventListener("close", stopCam);
 const imageOf = (items) => [...(items ?? [])].find((it) => it.kind === "file" && String(it.type).startsWith("image/"));
 // Ctrl+V ở bất kỳ đâu trong trang: có ảnh trong clipboard thì đọc ảnh (chữ thì dán bình thường)
 document.addEventListener("paste", (e) => {

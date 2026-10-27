@@ -143,7 +143,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.11.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.12.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });
