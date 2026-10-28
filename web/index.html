@@ -58,6 +58,7 @@
         <div id="pasteInfo" class="paste-info" hidden>
           <img id="pastePreview" alt="Ảnh đã dán">
           <span id="ocrNote" class="muted"></span>
+          <button type="button" id="ocrRetry" class="chip" hidden title="Đọc lại bằng mô hình nhận diện khác và công cụ đọc chữ khác">Đọc lại</button>
           <button type="button" id="pasteClear" class="chip">Bỏ ảnh</button>
         </div>
         <div id="intentHint" class="intent-hint" hidden aria-live="polite"></div>
@@ -302,6 +303,13 @@
       <label>Tự xóa dữ liệu đã lưu sau
         <select id="sKeep"><option value="7">7 ngày</option><option value="14">14 ngày</option><option value="30">30 ngày</option><option value="90">90 ngày</option></select></label>
       <div class="row" style="margin:0"><button type="button" id="btnClear" class="btn ghost danger">Xóa cache…</button></div>
+      <div class="modelbox">
+        <h3 style="margin:0 0 4px">Mô hình đọc ảnh đã tải về máy</h3>
+        <p class="muted small" style="margin:0 0 6px">Mô hình chỉ tải một lần rồi dùng lại; ứng dụng chỉ tải lại khi nguồn gốc của mô hình có bản mới (kiểm tra tối đa 12 giờ một lần bằng một yêu cầu nhỏ).</p>
+        <ul id="modelList" class="small" style="margin:0 0 6px;padding-left:18px"></ul>
+        <div class="row" style="margin-top:0"><button type="button" id="modelCheck" class="btn ghost sm">Kiểm tra bản mới</button><button type="button" id="modelPurge" class="btn ghost sm danger">Xóa mô hình đã tải</button></div>
+        <div id="modelMsg" class="muted small" aria-live="polite"></div>
+      </div>
       <p class="muted small" style="margin:0">iPhone: mở bằng Safari → Chia sẻ → “Thêm vào MH chính”. Android/Chrome: menu ⋮ → “Cài đặt ứng dụng”.</p>
     </div>
 

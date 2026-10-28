@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.19.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.20.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -289,6 +289,22 @@ Cài đặt chia 3 tab: **Tìm kiếm** (mẫu Nhanh / Cân bằng / Đầy đ�
 - **Riêng tư:** địa chỉ trang được gửi tới dịch vụ chụp ảnh ngoài (ghi rõ ở Cài đặt).
 - **Về các mô hình bạn gửi:** OCR (paperless-ngx/Tesseract) dùng được ngay cho việc này. Mô hình phát hiện vật thể kiểu YOLO không giúp đọc chữ/giá trên ảnh chụp trang nên không dùng ở đây (đã dùng cho nhận diện sản phẩm từ ảnh, mục 2p).
 - **Hạn chế đã đo thật:** dịch vụ chụp ảnh miễn phí hay bị giới hạn (đã gặp HTTP 403 sau vài lần gọi liên tiếp, hàng chờ chuyển sang mShots); chụp 1–3 giây, OCR 10–15 giây mỗi trang. Chữ số OCR có thể sai, nhất là trang danh sách nhiều giá có giá gạch (đã thấy "490.000" đọc thành "496.999"), nên chỉ dùng cho trang sản phẩm và luôn gắn nhãn cần kiểm tra.
+
+## 2r. Nút "Đọc lại" và lưu mô hình, chỉ tải lại khi nguồn đổi (bản 2.20.0)
+
+**Nút Đọc lại** (cạnh ảnh xem trước): đọc lại ảnh bằng **mô hình nhận diện khác** (xoay hàng chờ CLIP → COCO-SSD → MobileNet: mỗi lần bấm bắt đầu từ mô hình kế tiếp, bỏ kết quả trùng lần trước) và **công cụ đọc chữ khác** (lần trước AI thì đọc bằng Tesseract trên máy, lần trước Tesseract thì thử AI). Chữ do lần đọc trước tự điền được thay mới; chữ bạn đã gõ thì giữ nguyên. Ghi rõ "lần đọc N: mô hình nào · công cụ đọc chữ nào".
+
+**Đã kiểm tra mô hình có tải lại mỗi lần không (đo thật):**
+- COCO-SSD và MobileNet (TensorFlow.js): trước đây **tải lại mỗi phiên** (nạp từ storage.googleapis.com/tfhub.dev, 5–10 giây mỗi mô hình). Nay lưu vào IndexedDB sau lần tải đầu; phiên sau nạp thẳng từ máy: **không còn yêu cầu mạng nào tới nơi chứa mô hình**.
+- CLIP (Transformers.js): tệp ~90 MB nằm sẵn trong Cache API `transformers-cache` nên không tải lại; nhưng **service worker cũ xóa mọi kho cache khác tên phiên bản** mỗi lần cập nhật ứng dụng, tức là có thể xóa luôn kho CLIP. Đã sửa: chỉ xóa vỏ ứng dụng `po-v*` cũ, giữ `transformers-cache` và `po-libs`.
+- Thư viện CDN có số phiên bản cố định (tf.min.js 1,4 MB, coco-ssd, mobilenet, tesseract...) nay được lưu một lần trong `po-libs` (cache-first), không tải lại mỗi lần mở.
+- Tesseract tự lưu dữ liệu tiếng Việt trong IndexedDB (đã có sẵn).
+
+**Chỉ tải lại khi nguồn đổi** (`web/js/lib/modelcache.js`): mỗi mô hình lưu "dấu vết bản" của nguồn: CLIP = sha trên Hugging Face, COCO-SSD/MobileNet = băm tệp `model.json`. Mỗi lần dùng, nếu đã quá 12 giờ kể từ lần kiểm tra trước thì gọi **một yêu cầu nhỏ** để so dấu vết: giống thì dùng luôn bản trên máy, khác thì xóa bản cũ và tải bản mới (đã thử: sửa dấu vết giả → app báo "nguồn mô hình có bản mới, tải lại" rồi tải lại đúng một lần). Mất mạng thì dùng bản đã lưu. Trong 12 giờ không hỏi nguồn.
+
+**Cài đặt → Dữ liệu → "Mô hình đọc ảnh đã tải về máy":** xem trạng thái từng mô hình (đã lưu từ khi nào, kiểm tra nguồn lần cuối), nút **Kiểm tra bản mới** (chỉ đánh dấu tải lại khi nguồn đổi) và **Xóa mô hình đã tải**.
+
+**Hạn chế:** "nguồn" là nơi chứa mô hình (Hugging Face, Google, TF Hub) chứ không phải kho git của dự án; mô hình không nằm trong git của ứng dụng. Tesseract đọc lại bằng máy cho kết quả nhiễu với ảnh sản phẩm có nhiều chữ quảng cáo.
 
 ## 3. Tự xóa dữ liệu cũ
 

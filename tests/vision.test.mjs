@@ -81,3 +81,61 @@ test("hàng chờ mô hình: thử lần lượt; mô hình trước lỗi hoặ
   assert.deepEqual(r.tried.map((t) => t.ok), [false, false, false, true]);
   assert.equal(await recognizeProduct(null, { queue: [mk("a", async () => null)] }), null);
 });
+
+import { decide, fnv, checkBeforeUse, markStored, getStamps, remoteStamp, CHECK_EVERY_MS, MODEL_SOURCES } from "../web/js/lib/modelcache.js";
+
+const memStore = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) }; };
+const fakeFetch = (map) => async (url) => {
+  const hit = Object.entries(map).find(([k]) => String(url).includes(k));
+  if (!hit) throw new Error("offline");
+  const [, body] = hit;
+  return { ok: true, status: 200, json: async () => JSON.parse(body), text: async () => body };
+};
+
+test("lưu mô hình: chỉ tải khi chưa có hoặc nguồn đổi; chưa đến hạn thì không hỏi nguồn; mất mạng thì dùng bản đã lưu", async () => {
+  const storage = memStore();
+  const now = 1_000_000;
+  // chưa có -> tải
+  assert.equal((await checkBeforeUse("coco", { storage, now })).action, "download");
+  assert.equal(decide({ stored: undefined, remote: "x" }), "download");
+  // sau khi lưu: trong 12 giờ dùng luôn, KHÔNG gọi nguồn
+  let asked = 0;
+  const f1 = async (...a) => { asked++; return fakeFetch({ "ssdlite_mobilenet_v2/model.json": '{"w":1}' })(...a); };
+  await markStored("coco", { storage, now, fetchImpl: f1 });
+  assert.equal(asked, 1);
+  assert.equal(getStamps(storage).coco.stamp, fnv('{"w":1}'));
+  const early = await checkBeforeUse("coco", { storage, now: now + 3600_000, fetchImpl: f1 });
+  assert.deepEqual([early.action, early.skipped], ["use", true]);
+  assert.equal(asked, 1, "trong hạn: không gọi nguồn");
+  // quá 12 giờ: hỏi nguồn, giống nhau -> dùng bản đã lưu, ghi lại thời điểm kiểm tra
+  const later = now + CHECK_EVERY_MS + 1;
+  assert.equal((await checkBeforeUse("coco", { storage, now: later, fetchImpl: f1 })).action, "use");
+  assert.equal(asked, 2);
+  assert.equal(getStamps(storage).coco.checkedAt, later);
+  // nguồn đổi -> cập nhật (tải lại)
+  const f2 = fakeFetch({ "ssdlite_mobilenet_v2/model.json": '{"w":2}' });
+  const upd = await checkBeforeUse("coco", { storage, now: later + CHECK_EVERY_MS + 1, fetchImpl: f2 });
+  assert.equal(upd.action, "update");
+  // mất mạng: dùng bản đã lưu, không báo lỗi
+  const off = await checkBeforeUse("coco", { storage, now: later + 3 * CHECK_EVERY_MS, fetchImpl: async () => { throw new Error("offline"); } });
+  assert.deepEqual([off.action, off.offline], ["use", true]);
+  // CLIP: dấu vết là sha trên Hugging Face
+  assert.equal(await remoteStamp("clip", fakeFetch({ "huggingface.co/api/models/Xenova/clip-vit-base-patch32": '{"sha":"abc123"}' })), "abc123");
+  assert.ok(Object.keys(MODEL_SOURCES).length === 3 && MODEL_SOURCES.coco.store.startsWith("indexeddb://"));
+});
+
+test("đọc lại: xoay hàng chờ sang mô hình kế tiếp và bỏ kết quả trùng lần trước", async () => {
+  const mk = (id, kw) => ({ id, label: id, minScore: 0.1, run: async () => ({ cls: id, kw, score: 0.9 }) });
+  const q = [mk("clip", "điều hòa"), mk("coco-ssd", "lò nướng"), mk("mobilenet", "điều hòa")];
+  const first = await recognizeProduct(null, { queue: q });
+  assert.equal(first.model, "clip");
+  // đọc lại lần 1: bắt đầu từ coco-ssd
+  const r1 = await recognizeProduct(null, { queue: q, start: 1, avoid: [first.kw] });
+  assert.equal(r1.model, "coco-ssd"); assert.equal(r1.kw, "lò nướng");
+  // đọc lại lần 2: bắt đầu từ mobilenet nhưng kết quả "điều hòa" trùng lần đầu -> bỏ, vòng sang clip (cũng trùng) -> coco-ssd
+  const r2 = await recognizeProduct(null, { queue: q, start: 2, avoid: ["điều hòa"] });
+  assert.equal(r2.model, "coco-ssd");
+  assert.deepEqual(r2.tried.map((t) => [t.id, t.ok]), [["mobilenet", false], ["clip", false], ["coco-ssd", true]]);
+  // tất cả trùng -> không có kết quả mới
+  assert.equal(await recognizeProduct(null, { queue: [mk("a", "x")], start: 5, avoid: ["x"] }), null);
+});

@@ -24,7 +24,8 @@ import { adviseProducts } from "./lib/advisor.js";
 import { featuresFromRGBA } from "./lib/imagesim.js";
 import { ocrLocal, ocrRaw } from "./lib/localocr.js";
 import { parseVisual } from "./lib/visualpage.js";
-import { recognizeProduct, composeImageQuery, buildQueue } from "./lib/vision.js";
+import { recognizeProduct, composeImageQuery, buildQueue, loadTf } from "./lib/vision.js";
+import { getStamps, MODEL_SOURCES, remoteStamp, purgeAll, forget, removeTfModel, purgeClipCache } from "./lib/modelcache.js";
 import { cfgFromSettings, normalizeCfg, PRESETS, matchPreset, keyHint } from "./lib/config.js";
 import { renderBanner, renderHeadline, renderVerdict, renderSummary, renderCompare, renderImages, renderTech, renderLog, renderSources, renderHistoryItem, renderSuppliers, chip } from "./render.js";
 
@@ -679,54 +680,76 @@ async function webImageFeatures(url) {
 $("btnPhoto").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", () => { const f = $("file").files?.[0]; $("file").value = ""; if (f) readImage(f); });
 
-async function readImage(f) {
+// Trạng thái lần đọc ảnh hiện tại, dùng cho nút "Đọc lại" (đổi mô hình nhận diện và công cụ đọc chữ)
+let imgRead = { file: null, n: 0, lastKw: "", lastFill: "", engine: "" };
+
+async function readImage(f, { retry = false } = {}) {
   if (!f || !String(f.type || "image/").startsWith("image/")) { toast("Đây không phải ảnh"); return; }
-  if (previewUrl) URL.revokeObjectURL(previewUrl);
-  previewUrl = URL.createObjectURL(f);
-  $("pastePreview").src = previewUrl;
+  if (!retry) {
+    imgRead = { file: f, n: 0, lastKw: "", lastFill: "", engine: "" };
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(f);
+    $("pastePreview").src = previewUrl;
+    featuresOfBlob(f).then((x) => { refFeatures = x; }).catch(() => { refFeatures = null; });
+  } else imgRead.n++;
   $("pasteInfo").hidden = false;
-  $("ocrNote").textContent = "Đang đọc ảnh…";
-  featuresOfBlob(f).then((x) => { refFeatures = x; }).catch(() => { refFeatures = null; });
-  // Người dùng đã gõ chữ thì giữ nguyên; chưa gõ thì nhận diện SẢN PHẨM trước để có từ khóa sản phẩm, rồi mới ghép chữ đọc được từ ảnh
-  const typedBefore = $("q").value.trim();
+  $("ocrRetry").disabled = true;
+  $("ocrNote").textContent = retry ? "Đọc lại bằng mô hình khác…" : "Đang đọc ảnh…";
+  // Người dùng đã gõ chữ thì giữ nguyên; chữ do lần đọc trước tự điền thì không tính là người dùng gõ
+  const cur = $("q").value.trim();
+  const typedBefore = cur && cur === imgRead.lastFill ? "" : cur;
   let det = null;
-  if (!typedBefore) {
-    // hàng chờ mô hình: CLIP, COCO-SSD rồi MobileNet ImageNet; mô hình nào nhận ra (đủ điểm) thì dừng, không ra thì sang mô hình kế
-    det = await recognizeProduct(f, { queue: buildQueue({ clip: cfgFromSettings(settings).visionClip }), onStatus: (st) => { $("ocrNote").textContent = "Ảnh: " + st + "…"; } }).catch(() => null); // không tải được mô hình: vẫn đọc chữ trên ảnh
-    if (det) $("ocrNote").textContent = `Nhận diện sản phẩm: ${det.kw} (${Math.round(det.score * 100)}%, ${det.modelLabel}). Đang đọc chữ trên ảnh…`;
-  }
   try {
-    let r, local = "";
-    try {
-      const image = await shrink(f);
-      r = await api.ocr(image);
-    } catch (e) {
-      // Dịch vụ AI không đọc được ảnh (hết hạn mức, bị chặn vùng, chưa có khóa): đọc ngay trên máy bằng Tesseract
-      $("ocrNote").textContent = "AI không đọc được ảnh, đang đọc trên máy bạn (lần đầu cần tải dữ liệu tiếng Việt)…";
-      try {
-        const o = await ocrLocal(f, (st, p) => { $("ocrNote").textContent = `Đọc ảnh trên máy: ${st} ${Math.round(p * 100)}%`; });
-        r = { ocr: o };
-        local = ` (đọc trên máy vì AI lỗi: ${friendly(e)})`;
-      } catch { throw e; }
+    if (!typedBefore) {
+      // hàng chờ mô hình: CLIP, COCO-SSD, MobileNet ImageNet; đọc lại thì bắt đầu từ mô hình kế tiếp và bỏ kết quả trùng lần trước
+      det = await recognizeProduct(f, { queue: buildQueue({ clip: cfgFromSettings(settings).visionClip }), start: imgRead.n, avoid: imgRead.lastKw ? [imgRead.lastKw] : [], onStatus: (st) => { $("ocrNote").textContent = "Ảnh: " + st + "…"; } }).catch(() => null); // không tải được mô hình: vẫn đọc chữ trên ảnh
+      if (det) $("ocrNote").textContent = `Nhận diện sản phẩm: ${det.kw} (${Math.round(det.score * 100)}%, ${det.modelLabel}). Đang đọc chữ trên ảnh…`;
     }
+    imgRead.lastKw = det?.kw || "";
+    let r, local = "", engine = "";
+    const viaLocal = async (note) => {
+      const o = await ocrLocal(f, (st, p) => { $("ocrNote").textContent = `Đọc ảnh trên máy (Tesseract): ${st} ${Math.round(p * 100)}%`; });
+      engine = "local"; local = note;
+      return { ocr: o };
+    };
+    const viaAi = async () => { const image = await shrink(f); const x = await api.ocr(image); engine = "ai"; return x; };
+    // đọc lại: đổi công cụ đọc chữ (lần trước dùng AI thì đọc bằng Tesseract trên máy, lần trước dùng Tesseract thì thử AI)
+    if (retry && imgRead.engine === "ai") {
+      try { r = await viaLocal(" (đọc lại bằng Tesseract trên máy)"); } catch (e) { r = await viaAi(); }
+    } else {
+      try { r = await viaAi(); }
+      catch (e) {
+        // Dịch vụ AI không đọc được ảnh (hết hạn mức, bị chặn vùng, chưa có khóa): đọc ngay trên máy bằng Tesseract
+        $("ocrNote").textContent = "AI không đọc được ảnh, đang đọc trên máy bạn (lần đầu cần tải dữ liệu tiếng Việt)…";
+        try { r = await viaLocal(` (đọc trên máy vì AI lỗi: ${friendly(e)})`); } catch { throw e; }
+      }
+    }
+    imgRead.engine = engine;
     const o = r.ocr ?? {};
+    const how = `lần đọc ${imgRead.n + 1}: ${det ? det.modelLabel : "không nhận ra vật thể"} · chữ bằng ${engine === "ai" ? "AI" : "Tesseract trên máy"}`;
     if (o.unreadable) {
-      if (det && !typedBefore) { $("q").value = det.kw; $("q").dispatchEvent(new Event("input")); $("ocrNote").textContent = `Nhận diện sản phẩm: ${det.kw}, nhưng chưa đọc được chữ trên ảnh. Hãy gõ thêm hãng/mã rồi bấm Tìm hiểu (hoặc chụp gần nhãn hơn).`; return; }
-      $("ocrNote").textContent = "Ảnh khó đọc: " + clip(o.text || "chụp rõ hơn, gần nhãn/mã model", 80); return;
+      if (det && !typedBefore) { $("q").value = det.kw; imgRead.lastFill = det.kw; $("q").dispatchEvent(new Event("input")); $("ocrNote").textContent = `Nhận diện sản phẩm: ${det.kw}, nhưng chưa đọc được chữ trên ảnh (${how}). Bấm Đọc lại, hoặc gõ thêm hãng/mã.`; return; }
+      $("ocrNote").textContent = `Ảnh khó đọc: ${clip(o.text || "chụp rõ hơn, gần nhãn/mã model", 80)} (${how}). Bấm Đọc lại để thử công cụ khác.`; return;
     }
     const ocrParts = { brand: o.brand, name: o.name || (o.keywords ?? [])[0] || "", model: o.model };
     // Chữ trên nhãn đã nói rõ loại sản phẩm thì tin chữ hơn mô hình nhận diện vật thể (mô hình chỉ có 80 loại vật thể thông dụng, dễ nhầm)
     if (det && detectType([ocrParts.brand, ocrParts.name, ...(o.keywords ?? [])].join(" "))) det = null;
     const query = composeImageQuery({ typed: typedBefore, product: det, ocr: ocrParts });
-    if (!typedBefore) { $("q").value = query; $("q").dispatchEvent(new Event("input")); }
+    if (!typedBefore) { $("q").value = query; imgRead.lastFill = $("q").value.trim(); $("q").dispatchEvent(new Event("input")); }
     ocrCtx = (o.specs ?? []).slice(0, 4).join(" ");
-    const seen = typedBefore ? `Giữ nguyên chữ bạn đã gõ; đọc được từ ảnh: ${composeImageQuery({ product: det, ocr: ocrParts }) || "(không có)"}` : `Sản phẩm${det ? " nhận diện tự động: " + det.kw + " (" + det.modelLabel + "; có thể chưa đúng, hãy sửa trong ô tìm) +" : ""} chữ đọc từ ảnh`;
-    $("ocrNote").textContent = seen + " — kiểm tra rồi bấm Tìm hiểu" + (r.mock ? " (mẫu)" : "") + local;
+    const seen = typedBefore ? `Giữ nguyên chữ bạn đã gõ; đọc được từ ảnh: ${composeImageQuery({ product: det, ocr: ocrParts }) || "(không có)"}` : `Sản phẩm${det ? " nhận diện tự động: " + det.kw + " (có thể chưa đúng, hãy sửa trong ô tìm) +" : ""} chữ đọc từ ảnh`;
+    $("ocrNote").textContent = `${seen} (${how}) — kiểm tra rồi bấm Tìm hiểu. Chưa đúng? bấm Đọc lại.` + (r.mock ? " (mẫu)" : "") + local;
   } catch (e) {
-    $("ocrNote").textContent = "Không đọc được ảnh: " + friendly(e);
+    $("ocrNote").textContent = "Không đọc được ảnh: " + friendly(e) + ". Bấm Đọc lại để thử lại.";
+  } finally {
+    $("ocrRetry").hidden = false;
+    $("ocrRetry").disabled = false;
   }
 }
+$("ocrRetry").addEventListener("click", () => { if (imgRead.file) readImage(imgRead.file, { retry: true }); });
 function clearImage() {
+  imgRead = { file: null, n: 0, lastKw: "", lastFill: "", engine: "" };
+  $("ocrRetry").hidden = true;
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = "";
   $("pasteInfo").hidden = true;
@@ -901,6 +924,37 @@ async function visualReadPage(url, hint, signal) {
   return parseVisual(await ocrRaw(blob), hint);
 }
 
+// Mô hình đọc ảnh đã tải về máy: xem trạng thái, kiểm tra bản mới (chỉ tải lại khi nguồn đổi), xóa
+function renderModelList() {
+  const st = getStamps();
+  const when = (t) => (t ? new Date(t).toLocaleString("vi-VN", { hour12: false, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
+  $("modelList").innerHTML = Object.entries(MODEL_SOURCES).map(([id, m]) => `<li><b>${esc(m.label)}</b> (${esc(m.size)}): ${st[id] ? `đã lưu trên máy từ ${when(st[id].storedAt)}, kiểm tra nguồn lần cuối ${when(st[id].checkedAt)}` : "chưa tải (tải lần đầu khi dùng)"}</li>`).join("");
+}
+$("modelCheck").addEventListener("click", async () => {
+  $("modelMsg").textContent = "Đang kiểm tra nguồn của các mô hình đã tải…";
+  const st = getStamps();
+  const lines = [];
+  for (const id of Object.keys(MODEL_SOURCES)) {
+    if (!st[id]) continue;
+    try {
+      const remote = await remoteStamp(id);
+      if (remote !== st[id].stamp) {
+        if (MODEL_SOURCES[id].store) await removeTfModel(await loadTf(), MODEL_SOURCES[id].store); else await purgeClipCache();
+        forget(id);
+        lines.push(`${MODEL_SOURCES[id].label}: có bản mới, sẽ tải lại ở lần dùng kế tiếp`);
+      } else lines.push(`${MODEL_SOURCES[id].label}: đã là bản mới nhất, không tải lại`);
+    } catch { lines.push(`${MODEL_SOURCES[id].label}: không kiểm tra được (mạng), giữ bản đã lưu`); }
+  }
+  $("modelMsg").textContent = lines.join(" · ") || "Chưa có mô hình nào được tải.";
+  renderModelList();
+});
+$("modelPurge").addEventListener("click", async () => {
+  if (!confirm("Xóa các mô hình đọc ảnh đã tải? Lần dùng sau sẽ tải lại.")) return;
+  await purgeAll(window.tf ?? (await loadTf().catch(() => null)));
+  $("modelMsg").textContent = "Đã xóa các mô hình đã tải.";
+  renderModelList();
+});
+
 function fillCfg(c) {
   for (const el of $("dlg").querySelectorAll("[data-cfg]")) {
     const v = c[el.dataset.cfg];
@@ -955,6 +1009,7 @@ function openSettings() {
   $("sKeep").value = String(settings.keepDays);
   $("sCode").value = settings.appCode;
   fillCfg(cfgFromSettings(settings));
+  renderModelList();
   updateKeyGuide();
   selectSettingsTab("search");
   $("healthOut").textContent = "";

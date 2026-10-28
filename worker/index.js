@@ -208,7 +208,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.19.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY, openai: !!env.OPENAI_API_KEY, custom: !!(env.CUSTOM_AI_KEY && env.CUSTOM_AI_URL) }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.20.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY, openai: !!env.OPENAI_API_KEY, custom: !!(env.CUSTOM_AI_KEY && env.CUSTOM_AI_URL) }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });

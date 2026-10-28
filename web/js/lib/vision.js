@@ -5,6 +5,7 @@
 // Chuỗi tìm = từ khóa sản phẩm (bước 1) + chữ đọc được (bước 2). Nếu người dùng đã gõ thì GIỮ NGUYÊN chữ đã gõ.
 // Phần tải mô hình nằm ở detectProduct (cần trình duyệt); các hàm còn lại là hàm thuần để kiểm thử.
 import { norm } from "./text.js";
+import { checkBeforeUse, markStored, hasTfModel, removeTfModel, purgeClipCache, getStamps, MODEL_SOURCES } from "./modelcache.js";
 
 const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 const COCO_URL = "https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js";
@@ -67,14 +68,36 @@ function loadScript(src) {
   });
 }
 
+/** Nạp TensorFlow.js (dùng chung cho COCO-SSD, MobileNet và việc quản lý mô hình đã lưu). */
+export async function loadTf() { await loadScript(TF_URL); return window.tf; }
+
+/**
+ * Nạp mô hình TensorFlow.js: có bản đã lưu trên máy (IndexedDB) thì dùng luôn, CHỈ tải lại khi nguồn gốc đã đổi
+ * (so dấu vết, tối đa 12 giờ một lần); chưa có thì tải rồi lưu cho lần sau. loader(opts) trả về mô hình có thuộc tính .model.
+ */
+async function loadCachedTf(id, loader, onStatus, firstMsg) {
+  const tf = await loadTf();
+  const store = MODEL_SOURCES[id].store;
+  const cached = await hasTfModel(tf, store);
+  let useCache = false;
+  if (cached) {
+    const c = await checkBeforeUse(id);
+    if (c.action === "update") { onStatus?.("nguồn mô hình đã có bản mới, tải lại"); await removeTfModel(tf, store); }
+    else { if (c.action === "download") await markStored(id); useCache = true; } // đã lưu từ trước nhưng chưa ghi dấu vết: ghi nhận rồi dùng
+  }
+  onStatus?.(useCache ? "nạp mô hình đã lưu trên máy (không tải lại)" : firstMsg);
+  const model = await loader(useCache ? { modelUrl: store } : {});
+  if (!useCache) { try { await model.model.save(store); await markStored(id); } catch { /* không lưu được: lần sau tải lại */ } }
+  return model;
+}
+
 let modelP = null;
 async function getModel(onStatus) {
   if (!modelP) {
     modelP = (async () => {
-      onStatus?.("tải mô hình nhận diện (lần đầu, vài MB)");
-      await loadScript(TF_URL);
+      await loadTf(); // thư viện mô hình cần TensorFlow.js đã có sẵn khi nạp
       await loadScript(COCO_URL);
-      return window.cocoSsd.load({ base: "lite_mobilenet_v2" });
+      return loadCachedTf("coco", (o) => window.cocoSsd.load({ base: "lite_mobilenet_v2", ...o }), onStatus, "tải mô hình nhận diện lần đầu (vài MB), lưu lại cho lần sau");
     })().catch((e) => { modelP = null; throw e; });
   }
   return modelP;
@@ -109,10 +132,9 @@ let mobileP = null;
 async function getMobilenet(onStatus) {
   if (!mobileP) {
     mobileP = (async () => {
-      onStatus?.("tải mô hình phân loại ImageNet (lần đầu)");
-      await loadScript(TF_URL);
+      await loadTf();
       await loadScript(MOBILENET_URL);
-      return window.mobilenet.load({ version: 2, alpha: 1.0 });
+      return loadCachedTf("mobilenet", (o) => window.mobilenet.load({ version: 2, alpha: 1.0, ...o }), onStatus, "tải mô hình phân loại ImageNet lần đầu (~14 MB), lưu lại cho lần sau");
     })().catch((e) => { mobileP = null; throw e; });
   }
   return mobileP;
@@ -158,10 +180,19 @@ let clipP = null;
 async function getClip(onStatus) {
   if (!clipP) {
     clipP = (async () => {
-      onStatus?.("tải mô hình CLIP (lần đầu ~90 MB, có thể mất ~30 giây)");
+      // Tệp CLIP nằm trong Cache API của trình duyệt: có rồi thì dùng luôn; chỉ xóa để tải lại khi nguồn trên Hugging Face đã đổi
+      const known = !!getStamps().clip?.stamp;
+      let fresh = !known;
+      if (known) {
+        const c = await checkBeforeUse("clip");
+        if (c.action === "update") { await purgeClipCache(); fresh = true; onStatus?.("nguồn CLIP đã có bản mới, tải lại (~90 MB)"); }
+        else onStatus?.("nạp CLIP đã lưu trên máy (không tải lại)");
+      } else onStatus?.("tải mô hình CLIP lần đầu (~90 MB, có thể mất ~30 giây), lưu lại cho lần sau");
       const tr = await import(/* @vite-ignore */ TRANSFORMERS_URL);
       tr.env.allowLocalModels = false;
-      return tr.pipeline("zero-shot-image-classification", "Xenova/clip-vit-base-patch32", { dtype: "q8" });
+      const pipe = await tr.pipeline("zero-shot-image-classification", "Xenova/clip-vit-base-patch32", { dtype: "q8" });
+      if (fresh || !known) await markStored("clip");
+      return pipe;
     })().catch((e) => { clipP = null; throw e; });
   }
   return clipP;
@@ -194,13 +225,17 @@ export const buildQueue = ({ clip = true } = {}) => [...(clip ? [CLIP] : []), CO
 export const MODEL_QUEUE = buildQueue();
 
 /** Trả về { cls, kw, score, model } của mô hình đầu tiên nhận ra sản phẩm, hoặc null; tried = các mô hình đã thử. */
-export async function recognizeProduct(blob, { onStatus, queue = MODEL_QUEUE } = {}) {
+export async function recognizeProduct(blob, { onStatus, queue = MODEL_QUEUE, start = 0, avoid = [] } = {}) {
   const tried = [];
-  for (const m of queue) {
+  // Đọc lại: bắt đầu từ mô hình kế tiếp (xoay vòng hàng chờ) và bỏ qua kết quả đã bị người dùng coi là chưa đúng (avoid)
+  const k = queue.length ? ((start % queue.length) + queue.length) % queue.length : 0;
+  const order = [...queue.slice(k), ...queue.slice(0, k)];
+  for (const m of order) {
     try {
       const r = await m.run(blob, (st) => onStatus?.(`${m.label}: ${st}`));
-      tried.push({ id: m.id, ok: !!r && r.score >= m.minScore });
-      if (r && r.score >= m.minScore) return { ...r, model: m.id, modelLabel: m.label, tried };
+      const good = !!r && r.score >= m.minScore && !avoid.includes(r.kw);
+      tried.push({ id: m.id, ok: good, ...(r && avoid.includes(r.kw) ? { skipped: "trùng kết quả lần trước" } : {}) });
+      if (good) return { ...r, model: m.id, modelLabel: m.label, tried };
     } catch (e) { tried.push({ id: m.id, ok: false, error: String(e?.message ?? e) }); }
   }
   return null;
