@@ -1,6 +1,6 @@
 # TODOAPP — nhật ký triển khai, lỗi đã sửa, việc còn lại
 
-Cập nhật: 27/10/2026. Bản hiện tại: **2.13.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
+Cập nhật: 27/10/2026. Bản hiện tại: **2.19.0** (PWA + Cloudflare Worker + tiện ích Chrome tự cập nhật).
 
 ## 1. Hiểu lại "lỗi SCOR" = lỗi CORS
 
@@ -258,6 +258,37 @@ Cài đặt chia 3 tab: **Tìm kiếm** (mẫu Nhanh / Cân bằng / Đầy đ�
 - **Bố cục:** khít đúng chiều ngang màn hình, không tràn ngang, không bị kéo lệch khi vuốt ngang. Chỉ cho phóng to, không cho thu nhỏ dưới khổ màn hình (`minimum-scale=1`). Đã kiểm tra ở 320px trên mọi tab (lưới nhà cung cấp và thanh công cụ bảng NCC đã sửa chỗ tràn).
 - **Ảnh theo ảnh tham chiếu:** khi bạn đưa ảnh (chọn/dán/chụp), app lưu "dấu vân tay" của ảnh (hình dạng dHash 64 bit + biểu đồ màu), tìm nhiều ảnh ứng viên hơn rồi **xếp giống/gần giống nhất lên trước**, giữ đúng số ảnh đã chọn; mỗi ảnh có nhãn "giống N%". Không cần giống hệt. Ảnh web được tải qua máy chủ (`/api/image`, chặn mạng nội bộ, chỉ nhận ảnh ≤1,5 MB) để đọc điểm ảnh. Đây là so sánh gần đúng về dáng và màu, không nhận diện vật thể: ảnh khác góc chụp hoặc nền khác có thể điểm thấp.
 - **Hướng dẫn khóa trong Cài đặt → Kết nối:** từng bước lấy khóa Gemini (miễn phí), Claude, cài tiện ích Google trong Chrome và nguồn miễn phí; mục tương ứng tự mở theo nguồn tìm đang chọn; dán khóa sai dạng/sai nguồn thì báo ngay.
+
+## 2p. Kiểm chứng công nghệ bằng tìm kiếm, đọc sản phẩm từ ảnh 2 bước (bản 2.18.0)
+
+**Công nghệ/tính năng phải kiểm tra trước khi dùng làm từ khóa** (`web/js/lib/techverify.js`):
+- Với mỗi công nghệ (do trang/AI nêu hoặc lấy từ ngân hàng công nghệ của nhóm sản phẩm) ứng dụng tìm **"<chuỗi bạn gõ / nhóm sản phẩm> <công nghệ>"** rồi xem kết quả có thật sự nhắc đúng cụm từ đó (hoặc ≥ 75% các từ của nó), **hoặc cùng chức năng** (nhắc phần lớn mô tả chức năng kèm một từ của tên), và phải nằm trong ngữ cảnh nhóm sản phẩm.
+- **Đạt** khi có ≥ 2 kết quả từ ≥ 2 website khác nhau. Đạt mới được đưa vào `entry.techKeywords` (từ khóa công nghệ đúng) và có nhãn "đã kiểm chứng"; không đạt thì nhãn "chưa kiểm chứng" và **không** dùng làm từ khóa, ghi chú công nghệ của nhóm sản phẩm cũng không được nhận. Công cụ tìm bị chặn thì giữ nguyên "chưa biết", không kết luận sai.
+- Tối đa 5 lần tìm cho mỗi lần chạy, giãn cách; có thể tắt ở Cài đặt → Tìm kiếm (mẫu Nhanh tắt sẵn). Nhật ký ghi từng công nghệ đạt/không đạt và lý do.
+
+**Đọc dữ liệu từ ảnh: nhận diện sản phẩm trước, rồi mới ghép chữ** (`web/js/lib/vision.js`):
+1. Người dùng **chưa gõ**: nhận diện sản phẩm trong ảnh bằng mô hình phát hiện vật thể chạy trên máy (COCO-SSD/MobileNet nạp từ CDN, cùng họ với các mô hình YOLO phát hiện vật thể) → từ khóa sản phẩm ("điện thoại", "tủ lạnh"…).
+2. Đọc chữ trên ảnh (dịch vụ AI nếu có, không thì Tesseract trên máy) → hãng, tên trên nhãn, mã model.
+3. Chuỗi tìm = từ khóa sản phẩm + chữ đọc được, bỏ phần trùng. Người dùng **đã gõ** thì giữ nguyên chữ đã gõ, không ghi đè.
+- Chữ trên nhãn đã nói rõ loại sản phẩm thì tin chữ hơn mô hình nhận diện.
+- **Hàng chờ mô hình** (`buildQueue` trong `vision.js`): thử lần lượt, mô hình nào nhận ra (đủ điểm) thì dừng, chưa ra thì sang mô hình kế:
+  1. **CLIP** (zero-shot theo danh sách ~40 tên sản phẩm của ứng dụng, Transformers.js, ~90 MB lần đầu; tắt được ở Cài đặt → Tìm kiếm).
+  2. **COCO-SSD** (phát hiện vật thể 80 loại, cùng họ YOLO/SSD).
+  3. **MobileNet ImageNet** (phân loại 1000 lớp, họ mô hình phân loại pretrained của ImageAI).
+  ImageAI là thư viện Python nên không chạy được trên Cloudflare Workers hay trình duyệt; app dùng đúng họ mô hình đã huấn luyện sẵn của nó (ImageNet/COCO) bản chạy trong trình duyệt. YOLOv3/RetinaNet của ImageAI (~100–240 MB) không bổ sung loại vật thể nào so với COCO-SSD nên chưa thêm.
+- **Hạn chế đã đo thật trên ảnh bán hàng (điều hòa, điện thoại, sữa):** cả 3 mô hình đều không đáng tin với đồ điện lạnh và điện thoại: COCO-SSD nhận điều hòa thành "lò nướng" 80% và điện thoại thành "điều khiển từ xa" 63%; MobileNet nhận điều hòa thành "modem" 80%, điện thoại gập thành "web site" 64%; CLIP nhỏ hay lẫn điều hòa/màn hình, điện thoại/máy tính bảng, sữa/máy lọc nước. Vì vậy ứng dụng **bỏ qua khi chưa chắc thay vì đoán**: lớp hay bị nhầm (lò nướng, điều khiển, lò vi sóng…) cần điểm ≥ 90%, CLIP phải hơn hạng 2 rõ rệt. Trên 3 ảnh khó trên, hàng chờ trả về "không nhận ra" (không sai); khi đó chữ trên ảnh (OCR) và chữ bạn gõ là nguồn chính. Kết quả nhận diện (nếu có) luôn hiện ra để bạn sửa. Muốn nhận đúng nhiều loại hàng cần mô hình huấn luyện riêng cho ảnh sản phẩm (gán nhãn bằng Yolo_Label rồi huấn luyện YOLO), chưa làm.
+- Lần đầu tải mô hình mất khoảng 15–20 giây (vài MB từ CDN), các lần sau dùng bộ nhớ đệm của trình duyệt.
+
+## 2q. Đọc trang bằng ảnh chụp + OCR: lớp dự phòng cuối (bản 2.19.0)
+
+**Ý tưởng:** tận dụng bộ máy đọc chữ (OCR Tesseract, cùng loại paperless-ngx/OCRmyPDF dùng) để "chụp và đọc" trang web khi các đường đọc khác không được: trang tải giá bằng JavaScript (HTML không có giá: hasaki, coolmate, bachhoaxanh...), hoặc trang chặn máy chủ/tiện ích (403). Đây là lớp cuối của hàng chờ đọc trang: HTML (tiện ích/máy chủ) → AI đọc sâu (nếu còn hạn mức) → ảnh chụp + OCR (không cần khóa AI, không tốn hạn mức AI).
+- `/api/shot` (máy chủ): chụp ảnh trang qua dịch vụ ngoài chạy JavaScript như trình duyệt thật. Hàng chờ: image.thum.io (hoặc `SHOT_URL` của bạn) → WordPress mShots (lần đầu trả ảnh chờ, thử lại tối đa 3 lần). Chặn địa chỉ nội bộ.
+- OCR chạy **trên máy bạn** (`ocrRaw` trong `localocr.js`), rồi `parseVisual` lấy giá ngay sau tên sản phẩm (bỏ dòng giảm giá/trả góp/phí), xác nhận đúng sản phẩm (khớp tên), nhận ra trang xác minh/chặn.
+- Giá đọc từ ảnh có nguồn `ocr`, nhãn "đọc từ ảnh chụp trang (OCR), cần kiểm tra", ghi log từng trang. Tối đa N trang mỗi lần tìm (Cài đặt → Tìm kiếm, mặc định 3, 0 = tắt; mẫu Nhanh tắt).
+- **Không vượt CAPTCHA:** ảnh chụp là trang xác minh/chặn thì bỏ qua và ghi log. Đã gặp thật: coolmate.me trả trang xác minh Cloudflare cho dịch vụ chụp ảnh.
+- **Riêng tư:** địa chỉ trang được gửi tới dịch vụ chụp ảnh ngoài (ghi rõ ở Cài đặt).
+- **Về các mô hình bạn gửi:** OCR (paperless-ngx/Tesseract) dùng được ngay cho việc này. Mô hình phát hiện vật thể kiểu YOLO không giúp đọc chữ/giá trên ảnh chụp trang nên không dùng ở đây (đã dùng cho nhận diện sản phẩm từ ảnh, mục 2p).
+- **Hạn chế đã đo thật:** dịch vụ chụp ảnh miễn phí hay bị giới hạn (đã gặp HTTP 403 sau vài lần gọi liên tiếp, hàng chờ chuyển sang mShots); chụp 1–3 giây, OCR 10–15 giây mỗi trang. Chữ số OCR có thể sai, nhất là trang danh sách nhiều giá có giá gạch (đã thấy "490.000" đọc thành "496.999"), nên chỉ dùng cho trang sản phẩm và luôn gắn nhãn cần kiểm tra.
 
 ## 3. Tự xóa dữ liệu cũ
 

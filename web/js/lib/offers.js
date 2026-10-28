@@ -286,4 +286,4 @@ export function cellValue(row, colId) {
   }
 }
 
-export const PRICE_NOTE = { page: "đọc từ trang", jsonld: "đọc từ trang", meta: "đọc từ trang", markup: "đọc từ trang", text: "ước lượng từ chữ trên trang", ai: "Google, chưa xác nhận", snippet: "trích từ kết quả tìm kiếm", listing: "từ trang danh sách, chưa mở trang sản phẩm" };
+export const PRICE_NOTE = { page: "đọc từ trang", jsonld: "đọc từ trang", meta: "đọc từ trang", markup: "đọc từ trang", ocr: "đọc từ ảnh chụp trang (OCR), cần kiểm tra", text: "ước lượng từ chữ trên trang", ai: "Google, chưa xác nhận", snippet: "trích từ kết quả tìm kiếm", listing: "từ trang danh sách, chưa mở trang sản phẩm" };

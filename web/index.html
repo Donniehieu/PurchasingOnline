@@ -196,12 +196,17 @@
         <input id="cImages" data-cfg="images" type="range" min="1" max="12" step="1"></label>
       <label>Số ảnh giữ cho mỗi hãng khác: <b data-val="imagesAlt"></b>
         <input id="cImagesAlt" data-cfg="imagesAlt" type="range" min="1" max="8" step="1"></label>
+      <label>Đọc bằng ảnh chụp trang + OCR khi trang không có giá trong HTML hoặc bị chặn (0 = tắt): <b data-val="visualPages"></b>
+        <input id="cVisual" data-cfg="visualPages" type="range" min="0" max="8" step="1">
+        <small class="muted">Địa chỉ trang được gửi tới dịch vụ chụp ảnh ngoài (image.thum.io) và ảnh được đọc chữ trên máy bạn. Chậm (10–30 giây/trang), giá đọc từ ảnh cần kiểm tra lại.</small></label>
       <label>Số trang đọc cùng lúc: <b data-val="concurrency"></b>
         <input id="cConc" data-cfg="concurrency" type="range" min="1" max="6" step="1"></label>
       <label>Tối đa số trang của cùng một website: <b data-val="perHost"></b>
         <input id="cPerHost" data-cfg="perHost" type="range" min="1" max="5" step="1"></label>
       <label class="check2"><input id="cContact" data-cfg="contactPages" type="checkbox"> Mở trang “Liên hệ” của nhà cung cấp để lấy SĐT/email</label>
       <label class="check2"><input id="cSupp" data-cfg="supplement" type="checkbox"> Đọc thêm DuckDuckGo + Bing qua tiện ích Chrome (nhiều nguồn hơn)</label>
+      <label class="check2"><input id="cClip" data-cfg="visionClip" type="checkbox"> Nhận diện sản phẩm từ ảnh bằng mô hình CLIP (chính xác hơn, tải ~90 MB lần đầu; tắt thì dùng mô hình nhẹ hơn)</label>
+      <label class="check2"><input id="cVerify" data-cfg="verifyTech" type="checkbox"> Kiểm tra công nghệ/tính năng bằng tìm kiếm trước khi dùng làm từ khóa</label>
       <label class="check2"><input id="cStop" data-cfg="stopEarly" type="checkbox"> Dừng sớm khi đã đủ dữ liệu (ít yêu cầu hơn)</label>
     </div>
 

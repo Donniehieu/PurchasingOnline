@@ -351,6 +351,14 @@ const wordsOf = (s) => norm(s).replace(/(\d)([a-z])/g, "$1 $2").replace(/([a-z])
 // Từ đặc trưng của tên sản phẩm: từ có ≥3 chữ hoặc số ≥2 chữ số; không trùng; tối đa 10
 const nameWords = (name) => [...new Set(wordsOf(name || "").filter((t) => t.length >= 3 || /^\d{2,}$/.test(t)))].slice(0, 10);
 
+/** Điểm 0..1: tên sản phẩm khớp bao nhiêu với một đoạn chữ (so theo từ đặc trưng, tách chữ/số). Dùng cho chữ đọc từ ảnh chụp trang. */
+export function nameMatchScore(text, name) {
+  const toks = nameWords(name);
+  if (!toks.length) return 0;
+  const set = new Set(wordsOf(text));
+  return toks.filter((t) => set.has(t)).length / toks.length;
+}
+
 /**
  * hint: { model, name, brand }
  */

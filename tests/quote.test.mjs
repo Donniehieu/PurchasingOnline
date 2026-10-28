@@ -112,7 +112,7 @@ test("expandResearch: đọc trang theo thông tin, thêm hãng đối thủ, l�
     results: {
       "đối thủ cạnh tranh": [{ url: "https://news.vn/top", title: "Karofi và Sunhouse là đối thủ của Kangaroo", snippet: "Karofi" }],
       "Karofi giá bán": [{ url: "https://shop.vn/karofi-k9", title: "Máy lọc nước Karofi K9", snippet: "Karofi 7 lõi 5.490.000đ" }],
-      "công nghệ RO": [{ url: "https://blog.vn/ro", title: "RO là gì", snippet: "Công nghệ RO loại bỏ kim loại nặng" }],
+      "công nghệ RO": [{ url: "https://blog.vn/ro", title: "RO là gì", snippet: "Công nghệ RO máy lọc nước loại bỏ kim loại nặng" }, { url: "https://shop3.vn/ro", title: "Máy lọc nước RO", snippet: "Công nghệ RO lọc nước tinh khiết" }],
       "KG100 giá bán": [{ url: "https://shop2.vn/kg100", title: "Kangaroo KG100", snippet: "giá" }],
     },
     pages: {
@@ -309,4 +309,55 @@ test("Tổng hợp: giá chỉ có giá + link; ưu/nhược có link đứng tr
   const head = renderHeadline(e);
   assert.ok(!/Thông tin bạn đã cung cấp|đã lưu/.test(head));
   assert.match(head, /Kangaroo · KG100 · RO · 7 lõi/);
+});
+
+import { judgeTech, resultConfirms, verifyEntryTech, recordTech, techStatus } from "../web/js/lib/techverify.js";
+
+test("kiểm chứng công nghệ bằng tìm kiếm: cần ≥ 2 website nhắc đúng cụm (hoặc chức năng tương đồng) trong ngữ cảnh nhóm sản phẩm", () => {
+  const spec = { term: "Công nghệ Inverter", group: "điều hòa Daikin" };
+  const good = [
+    { url: "https://a.vn/x", title: "Điều hòa inverter là gì", snippet: "Máy nén inverter tiết kiệm điện" },
+    { url: "https://b.vn/y", title: "Điều hòa Daikin Inverter 1HP", snippet: "công nghệ inverter" },
+  ];
+  assert.equal(judgeTech(spec, good).ok, true);
+  assert.equal(judgeTech(spec, good).domains, 2);
+  assert.equal(judgeTech(spec, [good[0]]).ok, false, "chỉ 1 kết quả thì chưa đủ");
+  assert.equal(judgeTech(spec, [good[0], { ...good[0], url: "https://a.vn/z" }]).ok, false, "2 kết quả nhưng cùng 1 website");
+  // không đúng nhóm sản phẩm (nói về máy giặt) thì không tính
+  assert.equal(resultConfirms(spec, { url: "https://c.vn", title: "Máy giặt inverter", snippet: "inverter" }), false);
+  // không nhắc cụm từ
+  assert.equal(judgeTech({ term: "Công nghệ Plasma Quantum", group: "điều hòa" }, [{ url: "https://a.vn", title: "Điều hòa tốt", snippet: "làm lạnh nhanh" }, { url: "https://b.vn", title: "Điều hòa", snippet: "tiết kiệm" }]).ok, false);
+  // cùng chức năng dù gọi tên khác: mô tả chức năng khớp phần lớn kèm 1 từ của tên
+  const fn = { term: "Turbo Heat", group: "nồi chiên không dầu", benefit: "làm nóng nhanh chóng tiết kiệm thời gian nấu" };
+  const alt = [
+    { url: "https://a.vn", title: "Nồi chiên không dầu làm nóng nhanh", snippet: "Chế độ turbo làm nóng nhanh chóng, tiết kiệm thời gian nấu" },
+    { url: "https://b.vn", title: "Nồi chiên không dầu Turbo", snippet: "làm nóng nhanh, tiết kiệm thời gian nấu ăn" },
+  ];
+  assert.equal(judgeTech(fn, alt).ok, true);
+  assert.equal(judgeTech({ ...fn, benefit: "" }, alt).ok, false, "không có mô tả chức năng thì không đủ");
+});
+
+test("verifyEntryTech: tìm '<chuỗi gõ> <công nghệ>', chỉ công nghệ đạt mới thành từ khóa; lỗi tìm giữ nguyên chưa biết", async () => {
+  const entry = newEntry(makePlan({ text: "Điều hòa Daikin FTKF25", category: "tech" }), "kv");
+  entry.tech = [{ name: "Công nghệ Inverter", benefit: "", srcId: 1 }, { name: "Công nghệ Quantum X", benefit: "", srcId: 1 }];
+  const asked = [];
+  const api = { discover: async ([q]) => { asked.push(q); return /Inverter/.test(q) ? { results: [{ url: "https://a.vn/1", title: "Điều hòa Daikin inverter", snippet: "inverter tiết kiệm điện" }, { url: "https://b.vn/2", title: "Daikin FTKF25 inverter", snippet: "điều hòa inverter" }] } : { results: [{ url: "https://c.vn", title: "Điều hòa Daikin", snippet: "bền" }] }; } };
+  const v = await verifyEntryTech(entry, { api, typed: "Điều hòa Daikin FTKF25", group: "Điều hòa Daikin FTKF25", gapMs: 0 });
+  assert.deepEqual(asked, ["Điều hòa Daikin FTKF25 Inverter", "Điều hòa Daikin FTKF25 Quantum X"], "chuỗi gõ nguyên vẹn + tên công nghệ");
+  assert.equal(v.checked, 2); assert.equal(v.ok, 1);
+  assert.equal(techStatus(entry, "Công nghệ Inverter"), true);
+  assert.equal(techStatus(entry, "Công nghệ Quantum X"), false);
+  assert.equal(techStatus(entry, "Công nghệ Khác"), null);
+  assert.deepEqual(entry.techKeywords, ["Công nghệ Inverter"], "chỉ công nghệ đạt thành từ khóa");
+  // đã kiểm rồi thì không tìm lại
+  asked.length = 0;
+  await verifyEntryTech(entry, { api, typed: "x", gapMs: 0 });
+  assert.equal(asked.length, 0);
+  // tìm bị chặn: không kết luận sai
+  const e2 = newEntry(makePlan({ text: "Điều hòa Daikin FTKF25", category: "tech" }), "kv2");
+  e2.tech = [{ name: "Inverter", benefit: "" }];
+  const blocked = await verifyEntryTech(e2, { api: { discover: async () => { throw new Error("DuckDuckGo chặn"); } }, typed: "Điều hòa Daikin", gapMs: 0 });
+  assert.equal(blocked.failed, 1);
+  assert.equal(techStatus(e2, "Inverter"), null);
+  void recordTech;
 });

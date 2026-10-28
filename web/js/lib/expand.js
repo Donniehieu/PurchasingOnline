@@ -8,6 +8,7 @@ import { domainOf, normUrl, norm, clip } from "./text.js";
 import { detectBrands, canonBrand } from "./plan.js";
 import { cleanTechName } from "./extract.js";
 import { brandKeys, interleave } from "./keygen.js";
+import { judgeTech, recordTech } from "./techverify.js";
 
 const SKIP_HOSTS = /(^|\.)(google\.[a-z.]+|bing\.com|facebook\.com|youtube\.com|youtu\.be|tiktok\.com|instagram\.com|twitter\.com|x\.com|pinterest\.[a-z]+|reddit\.com|zalo\.me|t\.me|wikipedia\.org)$/i;
 const MAX_ALTS = 8;
@@ -88,9 +89,18 @@ export async function expandResearch(entry, keys, { api, store, emit = () => {},
       entry.expand.done.push(k.key);
       const fresh = (res.results ?? []).filter((r) => !SKIP_HOSTS.test(domainOf(r.url)) && !known.has(normUrl(r.url)));
       let used = 0;
+      // công nghệ của nhóm sản phẩm: chỉ nhận khi kết quả tìm "<nhóm sản phẩm> công nghệ <tên>" thật sự nhắc cụm đó (hoặc chức năng tương đồng)
+      let techOk = true;
+      if (k.group === "tech" && k.tech) {
+        const v = judgeTech({ term: k.tech, group: kind || entry.plan.query }, res.results ?? []);
+        recordTech(entry, k.tech, v, k.key);
+        techOk = v.ok;
+        logEvent(entry, "plan", `Kiểm tra công nghệ “${k.tech}”: ${v.ok ? "đạt, dùng làm từ khóa" : "chưa kiểm chứng, không dùng làm từ khóa"} (${v.hits} kết quả nhắc, ${v.domains} website)`);
+      }
       for (const r of fresh) {
         const key = normUrl(r.url);
         if (k.group === "tech") {
+          if (!techOk) { known.add(key); continue; }
           entry.techNotes ??= [];
           if (entry.techNotes.length < MAX_NOTES && !entry.techNotes.some((n) => n.url === r.url)) entry.techNotes.push({ url: r.url, title: clip(r.title, 100), text: clip(r.snippet, 240), tech: k.tech || "" });
           known.add(key);

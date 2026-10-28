@@ -30,6 +30,13 @@ export function parseOcrText(raw) {
   return { text: good.join("\n"), name: name.slice(0, 90), model, specs, keywords, unreadable: !name && !model };
 }
 
+/** Đọc chữ thô từ ảnh (ví dụ ảnh chụp trang web) bằng Tesseract. Trả về chuỗi nhiều dòng. */
+export async function ocrRaw(blob, onStatus) {
+  const w = await getWorker(onStatus);
+  const { data } = await w.recognize(blob);
+  return String(data?.text ?? "");
+}
+
 /** Đọc ảnh (Blob/File) bằng Tesseract trong trình duyệt. Lần đầu tải thư viện + dữ liệu tiếng Việt (~vài MB). */
 export async function ocrLocal(blob, onStatus) {
   const w = await getWorker(onStatus);

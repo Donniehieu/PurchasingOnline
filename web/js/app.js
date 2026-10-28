@@ -22,7 +22,9 @@ import { analyzeInput, preCards, composeQuery, learnFromCache, detectType } from
 import { makePlan, cacheKey } from "./lib/plan.js";
 import { adviseProducts } from "./lib/advisor.js";
 import { featuresFromRGBA } from "./lib/imagesim.js";
-import { ocrLocal } from "./lib/localocr.js";
+import { ocrLocal, ocrRaw } from "./lib/localocr.js";
+import { parseVisual } from "./lib/visualpage.js";
+import { recognizeProduct, composeImageQuery, buildQueue } from "./lib/vision.js";
 import { cfgFromSettings, normalizeCfg, PRESETS, matchPreset, keyHint } from "./lib/config.js";
 import { renderBanner, renderHeadline, renderVerdict, renderSummary, renderCompare, renderImages, renderTech, renderLog, renderSources, renderHistoryItem, renderSuppliers, chip } from "./render.js";
 
@@ -685,6 +687,14 @@ async function readImage(f) {
   $("pasteInfo").hidden = false;
   $("ocrNote").textContent = "Đang đọc ảnh…";
   featuresOfBlob(f).then((x) => { refFeatures = x; }).catch(() => { refFeatures = null; });
+  // Người dùng đã gõ chữ thì giữ nguyên; chưa gõ thì nhận diện SẢN PHẨM trước để có từ khóa sản phẩm, rồi mới ghép chữ đọc được từ ảnh
+  const typedBefore = $("q").value.trim();
+  let det = null;
+  if (!typedBefore) {
+    // hàng chờ mô hình: CLIP, COCO-SSD rồi MobileNet ImageNet; mô hình nào nhận ra (đủ điểm) thì dừng, không ra thì sang mô hình kế
+    det = await recognizeProduct(f, { queue: buildQueue({ clip: cfgFromSettings(settings).visionClip }), onStatus: (st) => { $("ocrNote").textContent = "Ảnh: " + st + "…"; } }).catch(() => null); // không tải được mô hình: vẫn đọc chữ trên ảnh
+    if (det) $("ocrNote").textContent = `Nhận diện sản phẩm: ${det.kw} (${Math.round(det.score * 100)}%, ${det.modelLabel}). Đang đọc chữ trên ảnh…`;
+  }
   try {
     let r, local = "";
     try {
@@ -700,13 +710,18 @@ async function readImage(f) {
       } catch { throw e; }
     }
     const o = r.ocr ?? {};
-    if (o.unreadable) { $("ocrNote").textContent = "Ảnh khó đọc: " + clip(o.text || "chụp rõ hơn, gần nhãn/mã model", 80); return; }
-    const text = [o.brand, o.name].filter(Boolean).join(" ").trim() || (o.keywords ?? [])[0] || "";
-    const withModel = o.model && !text.toUpperCase().includes(String(o.model).toUpperCase()) ? `${text} ${o.model}` : text;
-    $("q").value = withModel.trim();
-    $("q").dispatchEvent(new Event("input"));
+    if (o.unreadable) {
+      if (det && !typedBefore) { $("q").value = det.kw; $("q").dispatchEvent(new Event("input")); $("ocrNote").textContent = `Nhận diện sản phẩm: ${det.kw}, nhưng chưa đọc được chữ trên ảnh. Hãy gõ thêm hãng/mã rồi bấm Tìm hiểu (hoặc chụp gần nhãn hơn).`; return; }
+      $("ocrNote").textContent = "Ảnh khó đọc: " + clip(o.text || "chụp rõ hơn, gần nhãn/mã model", 80); return;
+    }
+    const ocrParts = { brand: o.brand, name: o.name || (o.keywords ?? [])[0] || "", model: o.model };
+    // Chữ trên nhãn đã nói rõ loại sản phẩm thì tin chữ hơn mô hình nhận diện vật thể (mô hình chỉ có 80 loại vật thể thông dụng, dễ nhầm)
+    if (det && detectType([ocrParts.brand, ocrParts.name, ...(o.keywords ?? [])].join(" "))) det = null;
+    const query = composeImageQuery({ typed: typedBefore, product: det, ocr: ocrParts });
+    if (!typedBefore) { $("q").value = query; $("q").dispatchEvent(new Event("input")); }
     ocrCtx = (o.specs ?? []).slice(0, 4).join(" ");
-    $("ocrNote").textContent = "Đã đọc từ ảnh — kiểm tra rồi bấm Tìm hiểu" + (r.mock ? " (mẫu)" : "") + local;
+    const seen = typedBefore ? `Giữ nguyên chữ bạn đã gõ; đọc được từ ảnh: ${composeImageQuery({ product: det, ocr: ocrParts }) || "(không có)"}` : `Sản phẩm${det ? " nhận diện tự động: " + det.kw + " (" + det.modelLabel + "; có thể chưa đúng, hãy sửa trong ô tìm) +" : ""} chữ đọc từ ảnh`;
+    $("ocrNote").textContent = seen + " — kiểm tra rồi bấm Tìm hiểu" + (r.mock ? " (mẫu)" : "") + local;
   } catch (e) {
     $("ocrNote").textContent = "Không đọc được ảnh: " + friendly(e);
   }
@@ -877,8 +892,15 @@ $("clearForm").addEventListener("submit", async () => {
 // Cấu hình tìm kiếm (số trang, ảnh, luồng...) lấy từ settings.cfg
 function runOptions() {
   const c = cfgFromSettings(settings);
-  return { pageLimit: c.pagesFull, explorePageLimit: c.pagesExplore, enrichPageLimit: c.pagesEnrich, imageLimit: c.images, imageLimitAlt: c.imagesAlt, concurrency: c.concurrency, perHostCap: c.perHost, contactPages: c.contactPages, stopEarly: c.stopEarly, refImage: refFeatures, imageFeatures: refFeatures ? webImageFeatures : null };
+  return { pageLimit: c.pagesFull, explorePageLimit: c.pagesExplore, enrichPageLimit: c.pagesEnrich, imageLimit: c.images, imageLimitAlt: c.imagesAlt, concurrency: c.concurrency, perHostCap: c.perHost, contactPages: c.contactPages, stopEarly: c.stopEarly, verifyTech: c.verifyTech, visualPages: c.visualPages, visualRead: c.visualPages > 0 ? visualReadPage : null, refImage: refFeatures, imageFeatures: refFeatures ? webImageFeatures : null };
 }
+// Đọc trang bằng ảnh chụp: máy chủ chụp (chạy JavaScript) -> OCR trên máy bạn -> giá + xác nhận đúng sản phẩm
+async function visualReadPage(url, hint, signal) {
+  const blob = await serverApi.shot(url, signal);
+  if (!blob) return null;
+  return parseVisual(await ocrRaw(blob), hint);
+}
+
 function fillCfg(c) {
   for (const el of $("dlg").querySelectorAll("[data-cfg]")) {
     const v = c[el.dataset.cfg];

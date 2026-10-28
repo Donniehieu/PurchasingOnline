@@ -5,6 +5,7 @@ import { CATEGORY_LABELS } from "./lib/plan.js";
 import { MAX_IMAGES } from "./lib/entry.js";
 import { suppliersOf } from "./lib/offers.js";
 import { contactText } from "./lib/contact.js";
+import { techStatus } from "./lib/techverify.js";
 import { techLandscape, PRIORITY_LABEL } from "./lib/techkb.js";
 
 const RUN_LABEL = { pages: "trang", prices: "giá", pros: "ưu điểm", cons: "nhược điểm", tech: "công nghệ", images: "ảnh", alts: "hãng" };
@@ -77,6 +78,12 @@ function itemList(entry, list, cls, empty) {
   return `<ul class="items ${cls}">${list.map((x) => `<li>${chips(entry, x.srcIds)} <span class="t">${esc(x.text)}</span></li>`).join("")}</ul>`;
 }
 
+// Trạng thái kiểm chứng công nghệ bằng tìm kiếm: đã kiểm chứng (dùng làm từ khóa) / chưa kiểm chứng được
+function techBadge(entry, name) {
+  const s = techStatus(entry, name);
+  return s === true ? `<span class="badge good" title="Tìm nhóm sản phẩm + công nghệ này ra kết quả nhắc đúng cụm từ hoặc chức năng tương đồng">đã kiểm chứng</span>` : s === false ? `<span class="badge warn" title="Kết quả tìm chưa nhắc đủ rõ: chưa dùng làm từ khóa">chưa kiểm chứng</span>` : "";
+}
+
 export function renderSummary(entry) {
   const s = summarize(entry);
   const running = entry.status === "running";
@@ -90,7 +97,7 @@ export function renderSummary(entry) {
     <div class="card"><h2>Nhược điểm <span class="count">${s.cons.length}</span></h2>${itemList(entry, s.cons, "cons", wait)}</div>
     ${s.usage.length ? `<div class="card"><h2>Cách dùng <span class="count">${s.usage.length}</span></h2><ol class="items">${s.usage.map((x) => `<li><span class="t">${esc(x.text)}</span> ${chips(entry, x.srcIds)}</li>`).join("")}</ol></div>` : ""}
     ${entry.category === "tech"
-      ? `<div class="card"><h2>Công nghệ &amp; tính năng chung nhóm sản phẩm này <span class="count">${s.tech.length}</span></h2>${s.tech.length ? `<ul class="items">${s.tech.map((t) => `<li>${chips(entry, t.srcIds)} <span class="t"><span class="tech-name">${esc(t.name)}</span>${t.benefit ? `<br><span style="color:var(--good)">Ưu:</span> ${esc(t.benefit)}` : ""}${t.drawback ? `<br><span style="color:var(--bad)">Nhược:</span> ${esc(t.drawback)}` : ""}</span></li>`).join("")}</ul>` : `<p class="muted">${wait}</p>`}</div>
+      ? `<div class="card"><h2>Công nghệ &amp; tính năng chung nhóm sản phẩm này <span class="count">${s.tech.length}</span></h2>${s.tech.length ? `<ul class="items">${s.tech.map((t) => `<li>${chips(entry, t.srcIds)} <span class="t"><span class="tech-name">${esc(t.name)}</span>${techBadge(entry, t.name)}${t.benefit ? `<br><span style="color:var(--good)">Ưu:</span> ${esc(t.benefit)}` : ""}${t.drawback ? `<br><span style="color:var(--bad)">Nhược:</span> ${esc(t.drawback)}` : ""}</span></li>`).join("")}</ul>` : `<p class="muted">${wait}</p>`}</div>
          ${entry.specs.length ? `<div class="card"><h2>Thông số</h2><dl class="kv">${entry.specs.map((x) => `<dt>${esc(x.name)}</dt><dd>${esc(x.value)}</dd>`).join("")}</dl></div>` : ""}`
       : `<div class="card"><p class="muted" style="margin:0">Hàng tiêu dùng: chỉ so sánh giá, ưu điểm, nhược điểm với sản phẩm tương tự — không phân tích công nghệ.</p></div>`}`;
 }
@@ -210,7 +217,7 @@ function renderTechClusters(entry) {
     <div class="chips" style="margin-top:8px">${tc.brands.map((b) => `<span class="badge${b.isMain ? " good" : ""}">${esc(b.brand)}: ${b.count} công nghệ</span>`).join("")}</div></div>`;
   const cards = tc.clusters.map((c) => `
     <div class="card">
-      <h2>${esc(c.name)} <span class="badge ${c.shared ? "good" : ""}">${c.shared ? c.brands.length + " hãng dùng chung" : "riêng 1 hãng"}</span></h2>
+      <h2>${esc(c.name)} ${techBadge(entry, c.name)} <span class="badge ${c.shared ? "good" : ""}">${c.shared ? c.brands.length + " hãng dùng chung" : "riêng 1 hãng"}</span></h2>
       <div class="chips" style="margin-bottom:8px">${c.brands.map(brandChip).join("")}</div>
       <h3 style="color:var(--good)">Ưu điểm của công nghệ</h3>${claims(c.benefits, "pros", "Chưa có thông tin ưu điểm.")}
       <h3 style="color:var(--bad);margin-top:10px">Nhược điểm của công nghệ</h3>${claims(c.drawbacks, "cons", "Chưa có thông tin nhược điểm.")}

@@ -4,6 +4,8 @@ import { makePlan, cacheKey } from "./plan.js";
 import { hasContact, mergeContact } from "./contact.js";
 import { PAGE_LOGIC_VERSION } from "./entry.js";
 import { rankBySimilarity } from "./imagesim.js";
+import { verifyEntryTech } from "./techverify.js";
+import { needsVisual, visualPage } from "./visualpage.js";
 import { newEntry, ingestProduct, ingestCompare, ingestPage, ingestListing, ingestAltInsight, dropStalePrices, sellersNeedingContact, ingestContactPage, logEvent } from "./entry.js";
 import { domainOf, normUrl, clip, modelKey } from "./text.js";
 import { summarize } from "./aggregate.js";
@@ -93,7 +95,7 @@ async function pool(items, size, fn, signal) {
  * opts: { api, store, emit, signal, force, pageLimit, concurrency }
  * Trả về entry (cũng đã lưu vào store).
  */
-export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 12, enrichPageLimit = 10, explorePageLimit = 6, concurrency = 3, perHostCap = 2, freeGapMs = 4000, contactPages = true, stopEarly = true, imageLimit = 5, imageLimitAlt = 5, refImage = null, imageFeatures = null }) {
+export async function research(input, { api, store, emit = () => {}, signal, mode = "enrich", force = false, pageLimit = 12, enrichPageLimit = 10, explorePageLimit = 6, concurrency = 3, perHostCap = 2, freeGapMs = 4000, contactPages = true, stopEarly = true, imageLimit = 5, imageLimitAlt = 5, refImage = null, imageFeatures = null, verifyTech = false, visualRead = null, visualPages = 0 }) {
   const step = (id, status, text = "") => emit({ type: "step", id, status, text });
   const publish = (entry) => emit({ type: "entry", entry });
   if (force) mode = "fresh";
@@ -274,7 +276,7 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
     const picks = pickPages(entry, enriching ? enrichPageLimit : pageLimit, perHostCap);
     if (!picks.length) step("pages", "skip", "không có trang để mở");
     else {
-      let done = 0, skippedEnough = 0, deepLeft = 3; // đọc sâu bằng AI tối đa vài trang đầu (tiết kiệm hạn mức khóa)
+      let done = 0, skippedEnough = 0, deepLeft = 3, visualLeft = visualPages; // đọc sâu bằng AI tối đa vài trang đầu (tiết kiệm hạn mức khóa)
       step("pages", "running", `0/${picks.length}`);
       await pool(picks, concurrency, async (p) => {
         const hint = p.alt
@@ -288,12 +290,33 @@ export async function research(input, { api, store, emit = () => {}, signal, mod
         let page;
         try { page = await api.page(p.url, hint, signal, { deep: !p.alt && deepLeft-- > 0 }); }
         catch (e) { if (e.name === "AbortError" || e.status === 401) throw e; page = { ok: false, url: p.url, error: e.message }; }
+        // Lớp dự phòng cuối: trang tải giá bằng JavaScript hoặc bị chặn -> chụp ảnh trang + OCR (có giới hạn số trang vì chậm)
+        if (visualRead && visualLeft > 0 && !p.alt && needsVisual(page)) {
+          visualLeft--;
+          step("pages", "running", `đọc bằng ảnh chụp · ${domainOf(p.url)}`);
+          let v = null;
+          try { v = await visualRead(p.url, hint, signal); } catch (e) { if (e.name === "AbortError") throw e; }
+          if (v?.ok && v.price) {
+            page = visualPage(p.url, v, page);
+            logEvent(entry, "page", `Đọc bằng ảnh chụp (OCR) ${domainOf(p.url)}: giá ${v.price.toLocaleString("vi-VN")}đ — cần kiểm tra vì chữ OCR có thể sai`, { url: p.url, ok: true });
+          } else logEvent(entry, "page", `Ảnh chụp ${domainOf(p.url)}: ${v ? (v.reason === "challenge" ? "trang yêu cầu xác minh/chặn, bỏ qua (không vượt CAPTCHA)" : v.reason === "empty" ? "không đọc được chữ" : "không thấy giá") : "không chụp được"}`, { url: p.url, ok: false });
+        }
         ingestPage(entry, page, { alt: p.alt, forLabel: p.alt ? p.alt.brand : "", imageLimit, imageLimitAlt, imageKeep: refImage && imageFeatures ? { main: imageLimit * 4, alt: imageLimitAlt * 3 } : null });
         step("pages", "running", `${++done}/${picks.length} · ${domainOf(p.url)}`);
         publish(entry);
       }, signal);
       const ok = entry.pages.filter((x) => x.ok).length;
       step("pages", "done", `${ok}/${picks.length} trang đọc được`);
+    }
+
+    // Công nghệ/tính năng chỉ được coi là từ khóa đúng khi tìm "<chuỗi gõ> <công nghệ>" ra kết quả nhắc đúng cụm đó (hoặc chức năng tương đồng)
+    if (verifyTech && entry.category === "tech" && scenario !== "explore" && api.discover && entry.tech.length) {
+      aborted(signal);
+      step("pages", "running", "kiểm tra công nghệ bằng tìm kiếm…");
+      try {
+        const v = await verifyEntryTech(entry, { api, typed: plan.query, group: plan.query, signal, log: (m) => logEvent(entry, "plan", m) });
+        if (v.checked) logEvent(entry, "plan", `Kiểm tra công nghệ: ${v.ok}/${v.checked} đạt, dùng làm từ khóa`);
+      } catch (e) { if (e.name === "AbortError") throw e; logEvent(entry, "error", "Kiểm tra công nghệ thất bại: " + e.message); }
     }
 
     // Có ảnh tham chiếu: ưu tiên ảnh giống hoặc gần giống nhất (không cần giống hệt), giữ đúng số ảnh đã chọn

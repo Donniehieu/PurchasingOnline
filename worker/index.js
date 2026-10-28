@@ -6,7 +6,7 @@
 //   POST /api/ocr     {image:{mime,data}}                         -> đọc chữ/nhận diện sản phẩm từ ảnh
 import { AIError, pickProvider, callAI, extractJson, verifyClaims } from "./ai.js";
 import { SYSTEM, productPrompt, comparePrompt, ASK_SYSTEM, askPrompt, OCR_SYSTEM, OCR_PROMPT } from "./prompts.js";
-import { fetchHtml, fetchImage } from "./safe-url.js";
+import { fetchHtml, fetchImage, checkUrl } from "./safe-url.js";
 import { extractFacts, priceFromSnippet, pageMainText } from "../web/js/lib/extract.js";
 import { deepRead } from "./page-ai.js";
 import { searchMany } from "./websearch.js";
@@ -151,6 +151,32 @@ async function handleImage(request, env) {
   return new Response(got.bytes, { status: 200, headers: { ...CORS, "content-type": got.type, "cache-control": "private, max-age=86400" } });
 }
 
+// Chụp ảnh trang web (dịch vụ ngoài image.thum.io chạy JavaScript như trình duyệt thật) để đọc giá bằng OCR ở trình duyệt.
+// Chỉ nhận địa chỉ công khai (chặn mạng nội bộ). Địa chỉ trang được gửi tới dịch vụ chụp ảnh: nói rõ ở Cài đặt và trang riêng tư.
+async function handleShot(request, env) {
+  const body = await readBody(request, 3_000);
+  const target = str(body.url, 1000);
+  const chk = checkUrl(target, { allowLocal: env.ALLOW_LOCAL === "1" });
+  if (!chk.ok) return fail(chk.reason, 400);
+  // Hàng chờ dịch vụ chụp ảnh: (1) image.thum.io (hoặc SHOT_URL của bạn), (2) WordPress mShots (lần đầu trả ảnh chờ, thử lại tối đa 3 lần)
+  const href = chk.url.href;
+  const providers = [
+    { name: "thum.io", url: (env.SHOT_URL || "https://image.thum.io/get/width/1280/crop/1800/noanimate/") + href, tries: 1 },
+    { name: "mshots", url: "https://s0.wp.com/mshots/v1/" + encodeURIComponent(href) + "?w=1280&h=1800", tries: 3 },
+  ];
+  const errors = [];
+  for (const p of providers) {
+    for (let i = 0; i < p.tries; i++) {
+      const got = await fetchImage(p.url, { timeoutMs: 20_000, maxBytes: 4_000_000, allowLocal: env.ALLOW_LOCAL === "1", referer: false });
+      if (got.ok && !(got.type === "image/gif" && got.bytes.length < 20_000)) return new Response(got.bytes, { status: 200, headers: { ...CORS, "content-type": got.type, "cache-control": "private, max-age=3600", "x-shot-provider": p.name } });
+      if (!got.ok) { errors.push(p.name + ": " + got.error); break; }
+      await new Promise((r) => setTimeout(r, Number(env.SHOT_RETRY_MS ?? 3500))); // ảnh chờ ("đang chụp"): đợi rồi thử lại
+      if (i === p.tries - 1) errors.push(p.name + ": chưa chụp xong");
+    }
+  }
+  return fail("Không chụp được ảnh trang (" + errors.join("; ") + ")", 502);
+}
+
 async function handleAsk(request, env, origin) {
   const body = await readBody(request, 80_000);
   const question = str(body.question, 400).trim();
@@ -182,7 +208,7 @@ export async function handle(request, env = {}) {
   }
   try {
     if (url.pathname === "/api/health") {
-      return json({ ok: true, version: "2.15.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY, openai: !!env.OPENAI_API_KEY, custom: !!(env.CUSTOM_AI_KEY && env.CUSTOM_AI_URL) }, mock: env.MOCK === "1", free: true });
+      return json({ ok: true, version: "2.19.0", needsCode: !!env.APP_CODE, serverKey: { claude: !!env.ANTHROPIC_API_KEY, gemini: !!env.GEMINI_API_KEY, openai: !!env.OPENAI_API_KEY, custom: !!(env.CUSTOM_AI_KEY && env.CUSTOM_AI_URL) }, mock: env.MOCK === "1", free: true });
     }
     if (request.method !== "POST") return fail("Phương thức không hỗ trợ.", 405);
     if (env.APP_CODE && request.headers.get("x-app-code") !== env.APP_CODE) return fail("Sai hoặc thiếu mã truy cập.", 401, { needsCode: true });
@@ -190,6 +216,7 @@ export async function handle(request, env = {}) {
       case "/api/search": return await handleSearch(request, env, url.origin);
       case "/api/page": return await handlePage(request, env);
       case "/api/image": return await handleImage(request, env);
+      case "/api/shot": return await handleShot(request, env);
       case "/api/discover": return await handleDiscover(request, env);
       case "/api/ask": return await handleAsk(request, env, url.origin);
       case "/api/ocr": return await handleOcr(request, env, url.origin);

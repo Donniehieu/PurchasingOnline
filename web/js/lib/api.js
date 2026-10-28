@@ -42,6 +42,16 @@ export function createApi(getSettings, fetchImpl = (...a) => fetch(...a)) {
     discover: (queries, signal) => call("/api/discover", { queries }, signal),
     ask: (question, context, signal) => call("/api/ask", { question, context }, signal),
     ocr: (image, signal) => call("/api/ocr", { image }, signal),
+    /** Chụp ảnh một trang web qua máy chủ (để OCR). Trả về Blob hoặc null. */
+    async shot(url, signal) {
+      const s = getSettings();
+      const headers = { "content-type": "application/json" };
+      if (s.appCode) headers["x-app-code"] = s.appCode;
+      try {
+        const res = await fetchImpl((s.apiBase || "").replace(/\/+$/, "") + "/api/shot", { method: "POST", headers, body: JSON.stringify({ url }), signal });
+        return res.ok && /^image\//.test(res.headers.get("content-type") || "") ? await res.blob() : null;
+      } catch (e) { if (e?.name === "AbortError") throw e; return null; }
+    },
     /** Tải ảnh web qua máy chủ (để đọc điểm ảnh, tính độ giống). Trả về Blob hoặc null. */
     async image(url, signal) {
       const s = getSettings();

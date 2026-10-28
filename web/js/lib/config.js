@@ -12,16 +12,19 @@ export const DEFAULT_CFG = {
   contactPages: true, // mở trang "Liên hệ" của NCC để lấy SĐT/email
   supplement: true,  // đọc thêm DuckDuckGo + Bing qua tiện ích Chrome
   stopEarly: true,   // dừng mở thêm trang khi đã đủ dữ liệu
+  verifyTech: true,  // kiểm tra công nghệ/tính năng bằng tìm kiếm trước khi coi là từ khóa đúng
+  visualPages: 3,    // số trang đọc bằng ảnh chụp + OCR khi HTML không có giá (tải giá bằng JavaScript) hoặc bị chặn; 0 = tắt
+  visionClip: true,  // nhận diện sản phẩm từ ảnh bằng CLIP (chính xác hơn, tải ~90 MB lần đầu); tắt thì chỉ dùng mô hình nhẹ
 };
 
 export const LIMITS = {
-  pagesFull: [4, 40], pagesExplore: [2, 12], pagesEnrich: [3, 24], images: [1, 12], imagesAlt: [1, 8], concurrency: [1, 6], perHost: [1, 5],
+  pagesFull: [4, 40], pagesExplore: [2, 12], pagesEnrich: [3, 24], images: [1, 12], imagesAlt: [1, 8], visualPages: [0, 8], concurrency: [1, 6], perHost: [1, 5],
 };
 
 export const PRESETS = {
-  fast: { label: "Nhanh", note: "Ít trang, ít ảnh, bỏ trang liên hệ: tải nhanh, ít yêu cầu.", cfg: { pagesFull: 6, pagesExplore: 4, pagesEnrich: 5, images: 3, imagesAlt: 2, concurrency: 4, perHost: 1, contactPages: false, supplement: false, stopEarly: true } },
+  fast: { label: "Nhanh", note: "Ít trang, ít ảnh, bỏ trang liên hệ: tải nhanh, ít yêu cầu.", cfg: { pagesFull: 6, pagesExplore: 4, pagesEnrich: 5, images: 3, imagesAlt: 2, concurrency: 4, perHost: 1, visualPages: 0, contactPages: false, supplement: false, stopEarly: true, verifyTech: false, visionClip: false } },
   balanced: { label: "Cân bằng", note: "Mặc định: đủ dữ liệu để so sánh mà vẫn nhẹ.", cfg: { ...DEFAULT_CFG } },
-  full: { label: "Đầy đủ", note: "Nhiều trang, nhiều ảnh, đọc thêm nguồn: nhiều dữ liệu nhất nhưng chậm và nhiều yêu cầu hơn.", cfg: { pagesFull: 24, pagesExplore: 8, pagesEnrich: 16, images: 8, imagesAlt: 5, concurrency: 3, perHost: 3, contactPages: true, supplement: true, stopEarly: false } },
+  full: { label: "Đầy đủ", note: "Nhiều trang, nhiều ảnh, đọc thêm nguồn: nhiều dữ liệu nhất nhưng chậm và nhiều yêu cầu hơn.", cfg: { pagesFull: 24, pagesExplore: 8, pagesEnrich: 16, images: 8, imagesAlt: 5, concurrency: 3, perHost: 3, visualPages: 6, contactPages: true, supplement: true, stopEarly: false, verifyTech: true, visionClip: true } },
 };
 
 const clamp = (v, [lo, hi], fallback) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback; };
@@ -30,7 +33,7 @@ const clamp = (v, [lo, hi], fallback) => { const n = Math.round(Number(v)); retu
 export function normalizeCfg(c = {}) {
   const out = { ...DEFAULT_CFG };
   for (const [k, lim] of Object.entries(LIMITS)) out[k] = clamp(c[k], lim, DEFAULT_CFG[k]);
-  for (const k of ["contactPages", "supplement", "stopEarly"]) out[k] = c[k] === undefined ? DEFAULT_CFG[k] : !!c[k];
+  for (const k of ["contactPages", "supplement", "stopEarly", "verifyTech", "visionClip"]) out[k] = c[k] === undefined ? DEFAULT_CFG[k] : !!c[k];
   return out;
 }
 

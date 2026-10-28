@@ -104,7 +104,7 @@ async function readLimited(res, maxBytes, type) {
 }
 
 /** Tải một ảnh công khai (tối đa maxBytes) để trình duyệt tính độ giống ảnh. Kiểm tra SSRF từng chặng chuyển hướng. */
-export async function fetchImage(rawUrl, { timeoutMs = 8000, maxBytes = 1_500_000, allowLocal = false, fetchImpl = fetch } = {}) {
+export async function fetchImage(rawUrl, { timeoutMs = 8000, maxBytes = 1_500_000, allowLocal = false, fetchImpl = fetch, referer = true } = {}) {
   let current = rawUrl;
   for (let hop = 0; hop <= 3; hop++) {
     const chk = checkUrl(current, { allowLocal });
@@ -112,7 +112,7 @@ export async function fetchImage(rawUrl, { timeoutMs = 8000, maxBytes = 1_500_00
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     try {
-      const res = await fetchImpl(chk.url.href, { redirect: "manual", signal: ctl.signal, headers: { "user-agent": UA, accept: "image/avif,image/webp,image/*,*/*;q=0.8", referer: chk.url.origin + "/" } });
+      const res = await fetchImpl(chk.url.href, { redirect: "manual", signal: ctl.signal, headers: { "user-agent": UA, accept: "image/avif,image/webp,image/*,*/*;q=0.8", ...(referer ? { referer: chk.url.origin + "/" } : {}) } });
       if ([301, 302, 303, 307, 308].includes(res.status)) { const loc = res.headers.get("location"); if (!loc) return { ok: false, error: "Chuyển hướng lỗi" }; current = new URL(loc, chk.url).href; continue; }
       if (!res.ok) return { ok: false, error: "HTTP " + res.status };
       const type = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
